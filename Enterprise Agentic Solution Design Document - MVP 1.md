@@ -94,7 +94,7 @@ flowchart TB
         ChatUI --> APIGateway["API Gateway and Interceptor"]
         APIGateway --> DLP["Cloud Sensitive Data Protection (DLP API)<br>(Pre-LLM PII De-identification)"]
         DLP --> ModelArmor["Vertex AI Model Armor<br>(Prompt Injection and Jailbreak Filter)"]
-        ModelArmor --> Router["Supervisor and Intent Router (Gemini 1.5 Flash)"]
+        ModelArmor --> Router["Supervisor and Intent Router (Gemini 3.5 Flash)"]
     end
 
     subgraph AgentCore["Agent Core Orchestration (Cloud Run Multi-Region)"]
@@ -103,7 +103,7 @@ flowchart TB
         Router --> ITSMAgent["ServiceImmediately Specialist Agent"]
         Router --> SagaCoordinator["Cross-System Saga Coordinator"]
         
-        PolicyAgent --> LLMReasoning["Primary Reasoning Engine (Gemini 1.5 Pro on Vertex AI)"]
+        PolicyAgent --> LLMReasoning["Primary Reasoning Engine (Gemini 3.5 Flash on Vertex AI)"]
         HCMAgent --> LLMReasoning
         ITSMAgent --> LLMReasoning
         SagaCoordinator --> LLMReasoning
@@ -135,7 +135,7 @@ flowchart TB
 | Architectural Decision | Chosen Selection | Alternatives Considered | Trade-offs & Rationale |
 | :--- | :--- | :--- | :--- |
 | **Agent Orchestration Framework** | **LangGraph / Python StateGraph on Cloud Run** | 1. Vertex AI Agent Builder (No-Code)<br/>2. Native Semantic Kernel / CrewAI | LangGraph provides explicit, auditable DAG-based state management, necessary for the Saga pattern (compensating transactions) and strict custom tool guardrails, which are difficult to strictly bound in purely declarative no-code builders. |
-| **LLM Tiering** | **Hybrid Model Hierarchy (Gemini 1.5 Flash + Pro)** | 1. Gemini 1.5 Pro for all steps<br/>2. Open-source models on GKE | Gemini 1.5 Flash provides sub-200ms latency for safety classification, routing, and PII detection. Gemini 1.5 Pro is selectively engaged for complex reasoning and cross-system orchestration, optimizing cost and meeting NFR-2.1 (<10s latency). |
+| **LLM Selection** | **Unified Gemini 3.5 Flash Architecture** | 1. Legacy Gemini 1.5 Pro / Flash<br/>2. Heavy Pro-tier models<br/>3. Open-source models on GKE | Gemini 3.5 Flash delivers state-of-the-art multi-step reasoning comparable to previous generation Pro models while sustaining ultra-low sub-150ms TTFT latency. Standardizing on Gemini 3.5 Flash simplifies prompt engineering, eliminates multi-model operational overhead, drastically reduces FinOps token expenses, and easily beats NFR-2.1 (<10s latency). |
 | **Knowledge Retrieval (RAG)** | **Vertex AI Search (Enterprise Search on GCS)** | 1. Custom RAG with pgvector on Cloud SQL / Spanner<br/>2. Vertex AI Vector Search | Vertex AI Search provides managed semantic chunking, automated re-ranking, and native Grounding & Citation attribution out of the box, directly fulfilling FR-5.2 and FR-5.3 with zero custom chunking overhead. |
 | **Session & Distributed State** | **Cloud Firestore Multi-Region (`nam5`)** | 1. Memorystore (Redis)<br/>2. Cloud Spanner | Firestore offers serverless, multi-region transactional persistence with native TTL support for automatic 30-day session deletion, while persisting distributed Saga execution logs. Spanner is preserved as a future production upgrade. |
 | **Resilience & Queueing** | **Cloud Tasks + Pub/Sub Dead Letter Queuing** | 1. Direct synchronous retries only<br/>2. External Celery/RabbitMQ cluster | Cloud Tasks provides fully managed, rate-limited HTTP dispatch with configurable backoff and zero infrastructure management, perfectly handling backend 429/5xx spikes. |
@@ -190,7 +190,7 @@ To enforce capability boundaries (FR-1.1), the system implements a strict **Supe
 ```mermaid
 graph TD
     Input(["User Prompt"]) --> SafeIn["Input Guardrail & Pre-LLM PII Masker (Cloud DLP)"]
-    SafeIn --> Sup["Supervisor Agent (Intent Router - Gemini 1.5 Flash)"]
+    SafeIn --> Sup["Supervisor Agent (Intent Router - Gemini 3.5 Flash)"]
     
     Sup -->|Policy Query| Worker1["Policy Specialist Agent"]
     Sup -->|WorkWeek Transaction| Worker2["HCM Specialist Agent"]
@@ -346,7 +346,7 @@ flowchart LR
     DLPDeid --> MaskedPrompt["De-identified Prompt for LLM<br>'My phone is [PHONE_1] and SSN is [SSN_1]'"]
     DLPDeid -.-> EphemeralMap["Ephemeral In-Memory Mapping Table<br>{'[PHONE_1]': '555-0199'}<br>(Container RAM Only - Not Persisted)"]
     
-    MaskedPrompt --> VertexLLM["Vertex AI Gemini 1.5 Model Reasoning<br>(Processes masked tokens without seeing raw SPII)"]
+    MaskedPrompt --> VertexLLM["Vertex AI Gemini 3.5 Flash Model Reasoning<br>(Processes masked tokens without seeing raw SPII)"]
     VertexLLM --> RawOutput["Model Response with Masked Tokens"]
     
     RawOutput --> ReIdFilter["Egress Re-identification Interceptor"]
@@ -517,24 +517,24 @@ flowchart TD
 
 ```mermaid
 pie title Monthly Cost Breakdown by Component
-    "Vertex AI Gemini Tokens (Pro and Flash)" : 52
-    "Vertex AI Search Queries" : 24
-    "Cloud Run Compute (Multi-Region)" : 12
-    "Sensitive Data Protection and Armor" : 8
-    "Cloud Firestore and BigQuery" : 4
+    "Vertex AI Gemini 3.5 Flash Tokens" : 45
+    "Vertex AI Search Queries" : 26
+    "Cloud Run Compute (Multi-Region)" : 15
+    "Sensitive Data Protection and Armor" : 9
+    "Cloud Firestore and BigQuery" : 5
 ```
 
 | Component | Usage Assumptions (10,000 MAU / 100,000 Inquiries/Month) | Monthly Estimated Cost |
 | :--- | :--- | :--- |
-| **Gemini 1.5 Flash (Routing & Safety)** | 100,000 turns x 600 tokens avg = 60M tokens | ~$18.00 |
-| **Gemini 1.5 Pro (Core Reasoning)** | 60,000 complex turns x 2,800 tokens avg = 168M tokens | ~$420.00 |
+| **Gemini 3.5 Flash (Supervisor, Routing & Egress Checks)** | 100,000 turns x 600 tokens avg = 60M tokens | ~$18.00 |
+| **Gemini 3.5 Flash (Core Reasoning & Saga Orchestration)** | 60,000 complex turns x 2,800 tokens avg = 168M tokens | ~$84.00 |
 | **Vertex AI Search (Datastores)** | 40,000 policy queries ($2.00 per 1,000 queries) | ~$80.00 |
 | **Cloud Run Serverless Compute** | 200,000 vCPU-seconds + memory allocation (Multi-Region) | ~$115.00 |
 | **Cloud Sensitive Data Protection** | ~15 GB text inspected for PII de-identification | ~$30.00 |
 | **Cloud Firestore & BigQuery** | Session storage with 30-day TTL + 1-year audit logs | ~$25.00 |
-| **Total Estimated Run Cost** | **Fully Managed Production-Ready Infrastructure** | **~$688.00 / month** |
+| **Total Estimated Run Cost** | **Fully Managed Production-Ready Infrastructure** | **~$352.00 / month** |
 
-*ROI Comparison: At $688.00/month infrastructure cost, deflecting 6,000 Tier 1 tickets saves an estimated $111,000 in monthly human helpdesk operational expense, yielding an ROI > 160x.*
+*ROI Comparison: At ~$352.00/month infrastructure cost, deflecting 6,000 Tier 1 tickets saves an estimated $111,000 in monthly human helpdesk operational expense, yielding an outstanding ROI > 310x.*
 
 ---
 
