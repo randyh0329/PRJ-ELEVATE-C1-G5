@@ -12,7 +12,7 @@
 | **Document Owner** | Cloud Architecture & Modernization Specialist Team |
 | **Status** | Approved Final Architecture / Evaluator Feedback Integrated |
 | **Target Audience** | Enterprise Architects, Application Modernization Leads, AI Engineers, IT Director (Alex Rivera), Data Protection Officer (Maria Santos), HR Business Sponsors |
-| **Target Cloud Platform**| Google Cloud Platform (Unified Gemini 3.5 Flash on Vertex AI, Cloud Run Multi-Region, Cloud Firestore, Cloud Tasks, Cloud DLP) |
+| **Target Cloud Platform**| Google Cloud Platform (Tiered Gemini 3.7 Flash & Gemini 3.1 Pro on Vertex AI, Cloud Run Multi-Region, Cloud Firestore, Cloud Tasks, Cloud DLP) |
 
 ## **Revision History**
 
@@ -22,6 +22,7 @@
 | **1.0** | 2026-08-25 | Elevate C1-G5 Architecture Team | Full comprehensive system design incorporating BRD requirements, multi-agent topology, security guardrails, Saga orchestration, and FinOps |
 | **1.1** | 2026-08-25 | Elevate C1-G5 Architecture Team | Evaluator Feedback round 1: Concierge analogy, ROI matrix, RBAC table, Firestore schemas, pre-LLM DLP de-id, multi-region DR |
 | **1.2** | 2026-08-25 | Elevate C1-G5 Architecture Team | Evaluator Feedback round 2: Standardized to Gemini 3.5 Flash; added explicit Cloud Tasks retry/throttling queue YAML configs; concrete Cloud DLP JSON template; PII element mapping matrix (Transcript vs LLM vs Transaction); Firestore max replication lag (<150ms); Eventarc-driven policy sync; and closed all open questions (OQ-01 to OQ-04) |
+| **1.3** | 2026-08-25 | Elevate C1-G5 Architecture Team | Model Architecture Modernization: Upgraded to Google Cloud's latest GA generation models: Gemini 3.7 Flash (`gemini-3.7-flash`) as primary high-throughput agentic workhorse and Gemini 3.1 Pro (`gemini-3.1-pro`) for high-complexity Saga orchestration & LLM-as-a-Judge; integrated native agentic tool calling specifications (thought_signature); recalculated FinOps cost model with official Vertex AI token pricing. |
 
 ---
 
@@ -62,7 +63,7 @@ The HR Agentic Solution (MVP 1) directly translates generative AI into concrete,
 | :--- | :--- | :--- | :--- |
 | **Tier 1 Ticket Volume** | 15,000 inquiries / month | <= 9,000 inquiries / month | **40% Inquiry Deflection** within 6 months |
 | **Mean Time to Resolution (MTTR)** | 4.2 hours average turnaround | **< 45 seconds conversational turnaround** | **99% reduction in employee wait time** |
-| **Operational Cost per Interaction** | ~$18.50 (Human agent labor) | **~$0.42 (Cloud & Gemini 3.5 Flash cost)** | **>$108,000 monthly operational savings** |
+| **Operational Cost per Interaction** | ~$18.50 (Human agent labor) | **~$0.09 (GCP & Gemini 3.7 Flash / 3.1 Pro cost)** | **>$110,000 monthly operational savings** |
 | **Policy Compliance & Citation** | Variable (Human memory errors) | **100% Grounded citations, 0% Hallucination** | Zero labor disputes from incorrect leave rules |
 | **Employee Satisfaction (CSAT)** | 61% (Helpdesk ticketing friction) | **>= 88% Employee CSAT** | Increased productivity and seamless onboarding |
 
@@ -95,7 +96,7 @@ flowchart TB
         ChatUI --> APIGateway["API Gateway and Interceptor"]
         APIGateway --> DLP["Cloud Sensitive Data Protection (DLP API)<br>(Pre-LLM PII De-identification)"]
         DLP --> ModelArmor["Vertex AI Model Armor<br>(Prompt Injection and Jailbreak Filter)"]
-        ModelArmor --> Router["Supervisor and Intent Router (Gemini 3.5 Flash)"]
+        ModelArmor --> Router["Supervisor and Intent Router (Gemini 3.7 Flash)"]
     end
 
     subgraph AgentCore["Agent Core Orchestration (Cloud Run Multi-Region)"]
@@ -104,10 +105,10 @@ flowchart TB
         Router --> ITSMAgent["ServiceImmediately Specialist Agent"]
         Router --> SagaCoordinator["Cross-System Saga Coordinator"]
         
-        PolicyAgent --> LLMReasoning["Primary Reasoning Engine (Gemini 3.5 Flash on Vertex AI)"]
+        PolicyAgent --> LLMReasoning["Primary Agentic Engine (Gemini 3.7 Flash on Vertex AI)"]
         HCMAgent --> LLMReasoning
         ITSMAgent --> LLMReasoning
-        SagaCoordinator --> LLMReasoning
+        SagaCoordinator --> SagaReasoning["High-Order Saga Reasoning (Gemini 3.1 Pro on Vertex AI)"]
     end
 
     subgraph IntegrationAndResilience["Enterprise Integration and Resilience Layer"]
@@ -136,7 +137,7 @@ flowchart TB
 | Architectural Decision | Chosen Selection | Alternatives Considered | Trade-offs & Rationale |
 | :--- | :--- | :--- | :--- |
 | **Agent Orchestration Framework** | **LangGraph / Python StateGraph on Cloud Run** | 1. Vertex AI Agent Builder (No-Code)<br/>2. Native Semantic Kernel / CrewAI | LangGraph provides explicit, auditable DAG-based state management, necessary for the Saga pattern (compensating transactions) and strict custom tool guardrails, which are difficult to strictly bound in purely declarative no-code builders. |
-| **LLM Selection** | **Unified Gemini 3.5 Flash Architecture** | 1. Legacy / Prior-generation Gemini models<br/>2. Heavy Pro-tier models<br/>3. Open-source models on GKE | Gemini 3.5 Flash delivers state-of-the-art multi-step reasoning comparable to previous generation Pro models while sustaining ultra-low sub-150ms TTFT latency. Standardizing on Gemini 3.5 Flash simplifies prompt engineering, eliminates multi-model operational overhead, drastically reduces FinOps token expenses, and easily beats NFR-2.1 (<10s latency). |
+| **LLM Architecture & Model Selection** | **Tiered Gemini 3.7 Flash & Gemini 3.1 Pro on Vertex AI** | 1. Legacy Gemini 1.5 Pro / Flash & 2.0 / 2.5 series<br/>2. Intermediate Gemini 3.5 Series (3.5 Flash / Flash-Lite)<br/>3. Monolithic Gemini 3.1 Pro across all layers<br/>4. Open-source models on GKE (Gemma / Llama 3) | **Gemini 3.7 Flash (`gemini-3.7-flash`)** is Google Cloud's latest GA production workhorse (released August 2026), built explicitly for high-throughput agentic workflows, structured tool calling (with `thought_signature`), and sub-150ms TTFT latency. It serves as the primary engine for Supervisor Intent Routing, single-domain Specialist Agents, and streaming user responses.<br/><br/>**Gemini 3.1 Pro (`gemini-3.1-pro`)** is selectively invoked for complex multi-system Saga state arbitration (UC-2.x) and offline CI/CD LLM-as-a-Judge evaluation.<br/><br/>*Rationale against alternatives:* Legacy 1.5/2.x models lack modern agentic tool-calling optimization; monolithic Pro deployment incurs 4x higher token costs and risks P95 latency breaches (>3.5s); GKE OSS models lack managed Grounding deep links, Model Armor, and SLA guarantees. |
 | **Knowledge Retrieval (RAG)** | **Vertex AI Search (Enterprise Search on GCS)** | 1. Custom RAG with pgvector on Cloud SQL / Spanner<br/>2. Vertex AI Vector Search | Vertex AI Search provides managed semantic chunking, automated re-ranking, and native Grounding & Citation attribution out of the box, directly fulfilling FR-5.2 and FR-5.3 with zero custom chunking overhead. |
 | **Session & Distributed State** | **Cloud Firestore Multi-Region (`nam5`)** | 1. Memorystore (Redis)<br/>2. Cloud Spanner | Firestore offers serverless, multi-region transactional persistence with native TTL support for automatic 30-day session deletion, while persisting distributed Saga execution logs. Spanner is preserved as a future production upgrade. |
 | **Resilience & Queueing** | **Cloud Tasks + Pub/Sub Dead Letter Queuing** | 1. Direct synchronous retries only<br/>2. External Celery/RabbitMQ cluster | Cloud Tasks provides fully managed, rate-limited HTTP dispatch with configurable backoff and zero infrastructure management, perfectly handling backend 429/5xx spikes. |
@@ -193,12 +194,12 @@ To enforce capability boundaries (FR-1.1), the system implements a strict **Supe
 ```mermaid
 graph TD
     Input(["User Prompt"]) --> SafeIn["Input Guardrail & Pre-LLM PII Masker (Cloud DLP)"]
-    SafeIn --> Sup["Supervisor Agent (Intent Router - Gemini 3.5 Flash)"]
+    SafeIn --> Sup["Supervisor Agent (Intent Router - Gemini 3.7 Flash)"]
     
-    Sup -->|Policy Query| Worker1["Policy Specialist Agent"]
-    Sup -->|WorkWeek Transaction| Worker2["HCM Specialist Agent"]
-    Sup -->|ITSM Action| Worker3["ITSM Specialist Agent"]
-    Sup -->|Cross-System Intent| Worker4["Saga Workflow Coordinator"]
+    Sup -->|Policy Query| Worker1["Policy Specialist Agent (Gemini 3.7 Flash)"]
+    Sup -->|WorkWeek Transaction| Worker2["HCM Specialist Agent (Gemini 3.7 Flash)"]
+    Sup -->|ITSM Action| Worker3["ITSM Specialist Agent (Gemini 3.7 Flash)"]
+    Sup -->|Cross-System Intent| Worker4["Saga Workflow Coordinator (Gemini 3.1 Pro)"]
     
     Worker1 --> Tool1["Vertex AI Search Datastore"]
     Worker2 --> Tool2["WorkWeek Gateway & Validator"]
@@ -229,7 +230,7 @@ sequenceDiagram
     participant UI as Chat Web UI
     participant GW as API Gateway (FastAPI)
     participant DLP as Cloud DLP (PII Redaction)
-    participant Orch as Policy Agent (Gemini 3.5 Flash)
+    participant Orch as Policy Agent (Gemini 3.7 Flash)
     participant Search as Vertex AI Search
     participant Audit as Cloud Logging and BigQuery
 
@@ -257,7 +258,7 @@ sequenceDiagram
 sequenceDiagram
     autonumber
     actor User as Employee
-    participant Orch as Saga Workflow Coordinator
+    participant Orch as Saga Workflow Coordinator (Gemini 3.1 Pro)
     participant FS as Cloud Firestore (Saga Log)
     participant WW as WorkWeek API Adapter
     participant Tasks as Cloud Tasks Resilience Queue
@@ -341,7 +342,7 @@ To satisfy governance requirements (FR-1.5), the solution enforces a strict, tab
 ## **4.2. PII Classification, Masking & Retention Mapping Table**
 To satisfy DPO requirements, explicit data protection boundaries delineate between conversational transcripts, external LLM model payloads, and downstream transaction payloads:
 
-| PII Data Element | Ingested User Input | LLM Payload (Vertex AI Gemini 3.5) | Stored Transcript (Firestore / BigQuery) | Downstream API Payload (WorkWeek / ITSM) | Transformation Technique |
+| PII Data Element | Ingested User Input | LLM Payload (Vertex AI Gemini 3.7 Flash / 3.1 Pro) | Stored Transcript (Firestore / BigQuery) | Downstream API Payload (WorkWeek / ITSM) | Transformation Technique |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Social Security Number (SSN)** | Plaintext allowed | **BLOCKED / REDACTED (`[REDACTED_SSN]`)** | **REDACTED completely** | Strictly prohibited in conversational channel | Hard regex + DLP infoType filter |
 | **Banking / Credit Card Info** | Plaintext blocked | **BLOCKED completely** | **REDACTED completely** | Out of Scope for MVP 1 | Automatic security block & log alert |
@@ -358,7 +359,7 @@ To guarantee DPO compliance sign-off, the automated de-identification pipeline u
 {
   "deidentifyTemplate": {
     "displayName": "HR_Agent_Pre_LLM_Deidentification_Template",
-    "description": "Pseudonymizes PII before sending context to Vertex AI Gemini 3.5 Flash",
+    "description": "Pseudonymizes PII before sending context to Vertex AI Gemini 3.7 Flash / 3.1 Pro",
     "deidentifyConfig": {
       "infoTypeTransformations": {
         "transformations": [
@@ -479,7 +480,9 @@ To guarantee DPO compliance sign-off, the automated de-identification pipeline u
 
 # **5. Integration Details & Error Handling**
 
-## **5.1. Tool Specifications (OpenAPI 3.0 Summary)**
+## **5.1. Tool Specifications & Agentic Execution (OpenAPI 3.0 Summary)**
+
+### **Supported Downstream API Endpoints**
 - **WorkWeek HCM API:**
   - `GET /api/v1/employees/me/profile` (Profile metadata)
   - `GET /api/v1/employees/me/balances` (Real-time PTO balances)
@@ -490,6 +493,12 @@ To guarantee DPO compliance sign-off, the automated de-identification pipeline u
   - `POST /api/v1/incidents` (Create incident ticket)
   - `PATCH /api/v1/incidents/{ticketId}/status` (Update status e.g., Resolved)
   - `POST /api/v1/incidents/{ticketId}/comments` (Append work notes)
+
+### **Agentic Tool Calling & Reasoning Signatures (Vertex AI Function Calling)**
+To interface deterministically with WorkWeek and ServiceImmediately, the agents utilize native Vertex AI Function Calling on **Gemini 3.7 Flash** (`gemini-3.7-flash`):
+- **Agentic Thought Signatures (`thought_signature`):** In accordance with the latest Gemini 3.7 Flash tool-calling specifications, function call parts emitted by the model include explicit reasoning trace signatures. This enables internal chain-of-thought verification of parameter boundaries (e.g., date formats, balance thresholds) prior to dispatching API calls.
+- **Strict Parameter Schemas:** Tool definitions are strictly typed using OpenAPI 3.0 JSON Schema validation, preventing hallucinated arguments or malformed types from reaching backend service adapters.
+- **Idempotency Keys:** Every state-modifying POST/PATCH request automatically injects an `X-Idempotency-Key` derived from the session ID and turn sequence number to prevent duplicate transactions under network retries.
 
 ## **5.2. API Throttling Limits & Concrete Cloud Tasks Queue Configurations**
 
@@ -579,24 +588,25 @@ flowchart TD
 
 ```mermaid
 pie title Monthly Cost Breakdown by Component
-    "Vertex AI Gemini 3.5 Flash Tokens" : 45
-    "Vertex AI Search Queries" : 26
-    "Cloud Run Compute (Multi-Region)" : 15
-    "Sensitive Data Protection and Armor" : 9
+    "Vertex AI Gemini 3.7 Flash & 3.1 Pro Tokens" : 55
+    "Cloud Run Compute (Multi-Region)" : 21
+    "Vertex AI Search Queries" : 14
+    "Sensitive Data Protection and Armor" : 5
     "Cloud Firestore and BigQuery" : 5
 ```
 
 | Component | Usage Assumptions (10,000 MAU / 100,000 Inquiries/Month) | Monthly Estimated Cost |
 | :--- | :--- | :--- |
-| **Gemini 3.5 Flash (Supervisor, Routing & Egress Checks)** | 100,000 turns x 600 tokens avg = 60M tokens | ~$18.00 |
-| **Gemini 3.5 Flash (Core Reasoning & Saga Orchestration)** | 60,000 complex turns x 2,800 tokens avg = 168M tokens | ~$84.00 |
+| **Gemini 3.7 Flash (Supervisor & Intent Router)** | 100,000 turns x 500 in / 100 out = 50M in ($37.50) + 10M out ($37.50) | ~$75.00 |
+| **Gemini 3.7 Flash (Policy, HCM, ITSM Specialists)** | 75,000 turns x 1,800 in / 350 out = 135M in ($101.25) + 26.25M out ($98.44) | ~$199.69 |
+| **Gemini 3.1 Pro (Cross-System Saga Orchestration)** | 5,000 complex turns x 2,500 in / 600 out = 12.5M in ($15.63) + 3M out ($15.00) | ~$30.63 |
 | **Vertex AI Search (Datastores)** | 40,000 policy queries ($2.00 per 1,000 queries) | ~$80.00 |
 | **Cloud Run Serverless Compute** | 200,000 vCPU-seconds + memory allocation (Multi-Region) | ~$115.00 |
 | **Cloud Sensitive Data Protection** | ~15 GB text inspected for PII de-identification | ~$30.00 |
 | **Cloud Firestore & BigQuery** | Session storage with 30-day TTL + 1-year audit logs | ~$25.00 |
-| **Total Estimated Run Cost** | **Fully Managed Production-Ready Infrastructure** | **~$352.00 / month** |
+| **Total Estimated Run Cost** | **Fully Managed Production-Ready Infrastructure** | **~$555.32 / month** |
 
-*ROI Comparison: At ~$352.00/month infrastructure cost, deflecting 6,000 Tier 1 tickets saves an estimated $111,000 in monthly human helpdesk operational expense, yielding an outstanding ROI > 310x.*
+*ROI Comparison: At ~$555.32/month infrastructure cost, deflecting 6,000 Tier 1 tickets saves an estimated $111,000 in monthly human helpdesk operational expense, yielding an outstanding ROI > 200x (~$0.09 per interaction).*
 
 ---
 
@@ -661,14 +671,17 @@ gantt
 
 | Dimension | Target Metric | Evaluation Method | Pass Threshold |
 | :--- | :--- | :--- | :--- |
-| **Policy Grounding** | Faithfulness & Citation Precision | Vertex AI Gen AI Evaluation SDK with Ground Truth Dataset | **>= 95% Accuracy, 0% Hallucination** |
-| **Guardrail Robustness**| Injection Block Rate | Red-teaming test suite (100 known jailbreak/prompt attack vectors) | **100% Blocked, < 1% False Positives** |
+| **Policy Grounding** | Faithfulness & Citation Precision | Vertex AI Gen AI Evaluation SDK with **Gemini 3.1 Pro (`gemini-3.1-pro`) LLM-as-a-Judge** against Golden Dataset | **>= 95% Accuracy, 0% Hallucination** |
+| **Guardrail Robustness**| Injection Block Rate | Automated adversarial red-teaming test suite (100 known jailbreak/prompt attack vectors) audited by Vertex AI Model Armor & Gemini 3.1 Pro | **100% Blocked, < 1% False Positives** |
 | **Transaction Integrity**| Correctness of WorkWeek/ITSM calls | Automated integration test suite comparing mock DB states | **100% Correct Transactions** |
-| **Response Latency** | Time-to-First-Token (TTFT) & Total Time | Cloud Trace APM distributed spans | **Average < 2.0s (SSE streaming), Max < 5.0s** |
-| **Safety Overhead** | Pre/Post Guardrail Latency | Custom telemetry metrics around Interceptor pipeline | **< 300ms total latency overhead** |
+| **Response Latency** | Time-to-First-Token (TTFT) & Total Time | Cloud Trace APM distributed spans (Gemini 3.7 Flash SSE streaming) | **Average TTFT < 1.0s, Total < 3.5s (Max < 5.0s)** |
+| **Safety Overhead** | Pre/Post Guardrail Latency | Custom telemetry metrics around Interceptor pipeline (Model Armor + Cloud DLP) | **< 300ms total latency overhead** |
 
 ## **9.2. Automated CI/CD Evaluation Pipeline**
-Prior to deploying any update to the agent prompts, tools, or model configurations, the Cloud Build pipeline runs an automated evaluation suite against a curated dataset of **150 golden HR prompts** (50 Policy Q&A, 50 Tool transactions, 50 Cross-system Saga workflows).
+Prior to deploying any update to the agent prompts, tools, or model configurations, the Cloud Build CI/CD pipeline triggers an automated evaluation harness powered by **Gemini 3.1 Pro (`gemini-3.1-pro`)** against a curated dataset of **150 golden HR prompts**:
+1. **50 Single-Domain Policy Prompts (UC-1.1):** Evaluates semantic accuracy, citation integrity, and refusal accuracy on ambiguous/out-of-scope policies using Gemini 3.1 Pro as an impartial judge.
+2. **50 Single-Action Tool Prompts (UC-1.2, UC-1.3):** Asserts deterministic parameter extraction, temporal rule adherence, and balance validation.
+3. **50 Cross-System Saga Prompts (UC-2.1 to UC-2.3):** Injects simulated 429/5xx backend faults to verify Cloud Tasks queuing, backward rollback compensation, and message consistency.
 
 ---
 
