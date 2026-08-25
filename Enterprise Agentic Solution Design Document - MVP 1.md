@@ -21,6 +21,7 @@
 | **0.1** | 2026-08-25 | Elevate C1-G5 Architecture Team | Initial outline setup |
 | **1.0** | 2026-08-25 | Elevate C1-G5 Architecture Team | Full comprehensive system design incorporating BRD requirements, multi-agent topology, security guardrails, Saga orchestration, and FinOps |
 | **1.1** | 2026-08-25 | Elevate C1-G5 Architecture Team | Incorporated Stakeholder & Evaluator Feedback: Enterprise Concierge analogy, quantitative ROI matrix, explicit RBAC table, Firestore document schemas & 30-day lifecycle, pre-LLM PII de-identification (Cloud DLP), GDPR Art. 17 purge workflow, API throttling & Cloud Tasks async resilience queues, OBO token revocation, and multi-region DR architecture |
+| **1.2** | 2026-08-25 | Elevate C1-G5 Architecture Team | Resolved Technical Gaps: Explicit OpenAPI 3.0 JSON schemas, Step-by-Step State Management & User Context Injection, VPC Service Controls & Network Isolation, Granular LLM/Agent Node Observability Schemas, and Semantic Policy Caching Layer |
 
 ---
 
@@ -309,8 +310,80 @@ sequenceDiagram
     User->>Agent: "Submit a vacation request"
     Agent->>FS: Check token_cache and session status
     FS-->>Agent: Token Status: REVOKED / EXPIRED
-    Agent-->>User: "Your session credentials have been updated or revoked. Please re-authenticate."
 ```
+
+## **3.3. State Management & User Context Injection Pipeline**
+
+To prevent redundant API roundtrips and ensure deterministic isolation across agent boundaries, the architecture enforces a centralized, typed **StateGraph Context Management Pipeline** (implemented in LangGraph / Python StateGraph):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Employee
+    participant GW as API Gateway & Auth Interceptor
+    participant StateEngine as LangGraph State Engine
+    participant WW as WorkWeek Adapter
+    participant Sup as Supervisor Router (Flash)
+    participant Worker as Specialist Agent (Pro)
+    participant FS as Cloud Firestore
+
+    User->>GW: POST /v1/chat (Prompt, SessionID, JWT)
+    GW->>GW: Validate JWT & Extract Claims (userId, employeeId, role, tenantId)
+    
+    alt Session Not In-Memory (First Turn / Cold Start)
+        GW->>FS: Fetch Session Snapshot (sessions/{sessionId})
+        GW->>WW: Parallel Pre-fetch User Profile & Balances (GET /me/profile, GET /me/balances)
+        WW-->>GW: Base Profile Data (Name, Dept, Manager, PTO Accruals)
+        GW->>StateEngine: Hydrate `AgentState` with Prefetched `UserProfileContext`
+    else Active In-Memory Session
+        GW->>StateEngine: Load Cached `AgentState`
+    end
+
+    Note over StateEngine, Sup: Step 2: Context Injection & Routing
+    StateEngine->>Sup: Pass Immutable Read-Only Context + Sanitized Prompt
+    Sup->>Sup: Evaluate Intent (e.g., WorkWeek Vacation Booking)
+    Sup-->>StateEngine: Route Decision (Target: HCMAgent, ContextKeysNeeded: [balances, employeeId])
+
+    Note over StateEngine, Worker: Step 3: Scoped Sub-State Dispatch
+    StateEngine->>Worker: Inject Scoped Worker State (UserContext + ConversationHistory + ToolDefinitions)
+    Worker->>Worker: Execute Reasoning & Tool Invocations
+    Worker-->>StateEngine: Return AgentTurnResult (Messages, ToolOutputs, MutationFlags)
+
+    Note over StateEngine, FS: Step 4: State Reconciliation & Persistence
+    StateEngine->>StateEngine: Apply State Reducer (Increment turnCount, Append Messages, Update StateVersion)
+    StateEngine->>FS: Async Write Updated State Snapshot (sessions/{sessionId}, messages)
+    StateEngine-->>User: Stream Final Grounded & Sanitized Response
+```
+
+### **Typed AgentState Schema Definition (Python / Pydantic)**
+```python
+class UserProfileContext(BaseModel):
+    user_id: str
+    employee_id: str
+    full_name: str
+    department: str
+    manager_email: str
+    roles: List[str]  # e.g., ["EMPLOYEE"]
+    tenant_id: str
+    geo_location: str  # e.g., "US-CA"
+    pto_balances: Optional[Dict[str, float]] = None  # Pre-fetched: {"vacation": 120.0, "sick": 40.0}
+    last_synced_at: datetime
+
+class AgentState(TypedDict):
+    session_id: str
+    user_context: UserProfileContext
+    conversation_history: Annotated[List[BaseMessage], add_messages]
+    active_intent: Optional[str]
+    current_agent: str
+    saga_context: Optional[Dict[str, Any]]
+    execution_trace_id: str
+    state_version: int
+    ttl_expiry: datetime
+```
+
+### **Context Isolation & Boundary Rules**
+1. **Zero Downstream Mutation by Workers:** Specialist worker agents cannot directly overwrite `UserProfileContext`. Mutations to profile or balances occur strictly via deterministic tool execution responses processed by state reducers.
+2. **Context Scope Pruning:** The Supervisor agent only passes the subset of `UserProfileContext` required by the delegated worker (e.g., the Policy Agent receives only `roles` and `geo_location` for document ACL filtering, keeping personal PTO balances isolated).
 
 ---
 
@@ -428,21 +501,321 @@ flowchart LR
      3. For stale embeddings in Vertex AI Search (e.g., if personal user documents or policy snippets mention the employee), a Cloud Function triggers the **Vertex AI Search Datastore Sync API** with document deletion flags to purge vector embeddings within 60 minutes.
      4. A signed cryptographic confirmation token is returned to the Compliance Office.
 
+### **Structured Log Payload Schemas (Cloud Logging & BigQuery Sink)**
+
+To enable granular observability and fulfill compliance audit requirements without logging sensitive raw PII, all system components emit structured JSON events to Cloud Logging:
+
+#### **Log Schema 1: Granular LLM Execution Trace (`llm_execution_event`)**
+```json
+{
+  "timestamp": "2026-08-25T10:00:08.450Z",
+  "severity": "INFO",
+  "traceId": "projects/elevate-c1-g5/traces/4bf92f3577b34da6a3ce929d0e0e4736",
+  "spanId": "00f067aa0ba902b7",
+  "sessionId": "session-uuid-v4",
+  "agentNode": "PolicySpecialistAgent",
+  "model": "gemini-1.5-pro-002",
+  "modelVersion": "2026-08-01",
+  "temperature": 0.0,
+  "metrics": {
+    "promptTokens": 1420,
+    "completionTokens": 185,
+    "totalTokens": 1605,
+    "timeToFirstTokenMs": 420,
+    "totalLatencyMs": 1850,
+    "cacheHit": true,
+    "cachedTokens": 1120
+  },
+  "grounding": {
+    "groundingScore": 0.94,
+    "retrievedChunksCount": 3,
+    "citationCount": 2
+  },
+  "safetyRatings": {
+    "harassment": "NEGLIGIBLE",
+    "hateSpeech": "NEGLIGIBLE",
+    "promptInjectionScore": 0.02
+  }
+}
+```
+
+#### **Log Schema 2: Agent Node Lifecycle & Routing Event (`agent_node_lifecycle`)**
+```json
+{
+  "timestamp": "2026-08-25T10:00:05.120Z",
+  "severity": "INFO",
+  "traceId": "projects/elevate-c1-g5/traces/4bf92f3577b34da6a3ce929d0e0e4736",
+  "sessionId": "session-uuid-v4",
+  "employeeIdHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "nodeName": "SupervisorRouter",
+  "nodeStateVersion": 1,
+  "intentClassified": "POLICY_QUERY",
+  "confidence": 0.98,
+  "routedTargetNode": "PolicySpecialistAgent",
+  "nodeExecutionLatencyMs": 145,
+  "dlpMaskedCount": 0
+}
+```
+
+#### **Log Schema 3: Tool & Backend Execution Telemetry (`tool_execution_event`)**
+```json
+{
+  "timestamp": "2026-08-25T10:01:15.120Z",
+  "severity": "INFO",
+  "traceId": "projects/elevate-c1-g5/traces/4bf92f3577b34da6a3ce929d0e0e4736",
+  "sessionId": "session-uuid-v4",
+  "employeeIdHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "agentName": "WorkWeekHCMAgent",
+  "toolName": "submit_leave_request",
+  "targetSystem": "WorkWeek",
+  "endpoint": "/api/v1/employees/me/leaves",
+  "httpMethod": "POST",
+  "httpStatus": 201,
+  "executionDurationMs": 245,
+  "throttled": false,
+  "circuitBreakerStatus": "CLOSED",
+  "sagaContext": {
+    "sagaId": "saga-998",
+    "stepIndex": 1,
+    "workflowType": "UC-2.2-MEDICAL-LEAVE"
+  }
+}
+```
+
+---
+
+## **4.5. Network-Level Isolation, Zero-Trust Ingress/Egress & VPC Service Controls**
+
+To satisfy enterprise security and eliminate data exfiltration risks across internal service communications:
+
+```mermaid
+flowchart TD
+    subgraph VPC_SC_Perimeter["VPC Service Controls Security Perimeter (accessPolicies/elevate_perimeter)"]
+        subgraph ServerlessVPC["Internal VPC Network (10.10.0.0/16)"]
+            VPCConnector["Serverless VPC Access Connector<br>(10.10.1.0/28)"]
+            PSC_Endpoints["Private Service Connect (PSC) Endpoints<br>HCM & ITSM Internal Services"]
+            CloudNAT["Cloud NAT Gateway<br>(Restricted External Egress)"]
+        end
+        
+        subgraph GoogleManagedServices["Restricted Google API Endpoints (restricted.googleapis.com)"]
+            Vertex_Perimeter["Vertex AI Models & Search Datastores"]
+            Firestore_Perimeter["Cloud Firestore Multi-Region Database"]
+            Secrets_Perimeter["Secret Manager (Vault)"]
+            GCS_Perimeter["Cloud Storage Policy Document Buckets"]
+            DLP_Perimeter["Cloud DLP Sensitive Data Protection"]
+        end
+    end
+
+    UserTraffic["External User / Cloud Armor WAF"] -->|HTTPS Ingress| GLB["Global External Application Load Balancer"]
+    GLB -->|Internal Serverless NEG| CloudRun["Cloud Run Multi-Region Containers<br>(Ingress: internal-and-cloud-load-balancing)"]
+    
+    CloudRun --> VPCConnector
+    VPCConnector --> PSC_Endpoints
+    VPCConnector --> GoogleManagedServices
+```
+
+### **1. VPC Service Controls (VPC-SC) Perimeter**
+- A **Service Perimeter** encloses the project resources (`Vertex AI`, `Cloud Storage`, `Cloud Firestore`, `Secret Manager`, `Cloud Logging`, and `Cloud DLP`).
+- Prevents data exfiltration by blocking API calls to resources outside the perimeter even if credentials are compromised.
+- Ingress/Egress rules are managed through Access Context Manager policies scoped strictly to authorized corporate identity pools.
+
+### **2. Serverless VPC Access & Private Google Access**
+- **Cloud Run Ingress Controls:** Configured with `ingress = "internal-and-cloud-load-balancing"`, completely rejecting any direct public internet invocations that bypass Cloud Armor and the Global Load Balancer.
+- **Serverless VPC Access Connectors:** Deployed in both primary (`us-central1`) and secondary (`us-east4`) regions. All outbound Cloud Run traffic (`egress = "all-traffic"`) is routed through the VPC connector.
+- **Private Google Access:** All Google Cloud API traffic is routed internally to `restricted.googleapis.com` (`199.36.153.4/30`), never traversing the public internet.
+
+### **3. Private Service Connect (PSC) for Backend Integrations**
+- Downstream communication to WorkWeek and ServiceImmediately enterprise hubs traverses dedicated **Private Service Connect (PSC) endpoints**, ensuring end-to-end encrypted private network isolation (mTLS).
+
 ---
 
 # **5. Integration Details & Error Handling**
 
-## **5.1. Tool Specifications (OpenAPI 3.0 Summary)**
-- **WorkWeek HCM API:**
-  - `GET /api/v1/employees/me/profile` (Profile metadata)
-  - `GET /api/v1/employees/me/balances` (Real-time PTO balances)
-  - `POST /api/v1/employees/me/leaves` (Submit leave request)
-  - `DELETE /api/v1/employees/me/leaves/{leaveId}` (Compensating action: Cancel leave)
-- **ServiceImmediately ITSM API:**
-  - `GET /api/v1/incidents/{ticketId}` (Ticket details & comments)
-  - `POST /api/v1/incidents` (Create incident ticket)
-  - `PATCH /api/v1/incidents/{ticketId}/status` (Update status e.g., Resolved)
-  - `POST /api/v1/incidents/{ticketId}/comments` (Append work notes)
+## **5.1. Tool Specifications (OpenAPI 3.0 Explicit Request & Response Schemas)**
+
+To eliminate ambiguity and provide exact payload contracts for integration engineers, all tool schemas are explicitly defined below:
+
+### **1. WorkWeek HCM API Schemas**
+
+#### **Endpoint: `GET /api/v1/employees/me/profile`**
+* **Headers:** `Authorization: Bearer <delegated_token>`, `X-User-Context: <base64_json>`
+* **Response `200 OK` (JSON):**
+```json
+{
+  "employeeId": "EMP-44210",
+  "userId": "usr_99812",
+  "firstName": "Alex",
+  "lastName": "Rivera",
+  "email": "alex.rivera@corp.internal",
+  "phone": "+1-555-0199",
+  "department": "Engineering",
+  "jobTitle": "Staff Cloud Architect",
+  "manager": {
+    "employeeId": "EMP-10023",
+    "name": "Sarah Chen",
+    "email": "sarah.chen@corp.internal"
+  },
+  "workLocation": "US-SVL-B1",
+  "employmentStatus": "ACTIVE"
+}
+```
+
+#### **Endpoint: `GET /api/v1/employees/me/balances`**
+* **Response `200 OK` (JSON):**
+```json
+{
+  "employeeId": "EMP-44210",
+  "asOfDate": "2026-08-25T00:00:00Z",
+  "balances": [
+    {
+      "leaveType": "VACATION",
+      "accruedHours": 160.0,
+      "usedHours": 40.0,
+      "pendingHours": 0.0,
+      "availableHours": 120.0
+    },
+    {
+      "leaveType": "SICK",
+      "accruedHours": 80.0,
+      "usedHours": 8.0,
+      "pendingHours": 0.0,
+      "availableHours": 72.0
+    },
+    {
+      "leaveType": "FLOATING_HOLIDAY",
+      "accruedHours": 16.0,
+      "usedHours": 0.0,
+      "pendingHours": 0.0,
+      "availableHours": 16.0
+    }
+  ]
+}
+```
+
+#### **Endpoint: `POST /api/v1/employees/me/leaves`**
+* **Request Body (JSON):**
+```json
+{
+  "leaveType": "VACATION", // VACATION | SICK | MEDICAL | BEREAVEMENT
+  "startDate": "2026-09-01",
+  "endDate": "2026-09-05",
+  "totalHours": 40.0,
+  "reason": "Personal family travel",
+  "autoNotifyManager": true
+}
+```
+* **Response `201 Created` (JSON):**
+```json
+{
+  "leaveId": "LV-4012",
+  "employeeId": "EMP-44210",
+  "leaveType": "VACATION",
+  "startDate": "2026-09-01",
+  "endDate": "2026-09-05",
+  "totalHours": 40.0,
+  "status": "APPROVED", // APPROVED | PENDING_MANAGER_REVIEW
+  "submittedAt": "2026-08-25T10:01:15Z"
+}
+```
+
+#### **Endpoint: `DELETE /api/v1/employees/me/leaves/{leaveId}` (Saga Compensating Action)**
+* **Response `200 OK` (JSON):**
+```json
+{
+  "leaveId": "LV-4012",
+  "status": "CANCELLED",
+  "cancelledAt": "2026-08-25T10:01:45Z",
+  "reason": "Saga compensating rollback: Downstream IT access routing failed"
+}
+```
+
+---
+
+### **2. ServiceImmediately ITSM API Schemas**
+
+#### **Endpoint: `GET /api/v1/incidents/{ticketId}`**
+* **Response `200 OK` (JSON):**
+```json
+{
+  "ticketId": "INC-88901",
+  "shortDescription": "VPN connection drops after 10 minutes",
+  "category": "Network",
+  "priority": "P3",
+  "state": "IN_PROGRESS", // NEW | IN_PROGRESS | ON_HOLD | RESOLVED | CLOSED
+  "callerEmployeeId": "EMP-44210",
+  "assignedGroup": "Corp-Network-Ops",
+  "assignedTo": "jordan.smit@corp.internal",
+  "createdAt": "2026-08-24T14:30:00Z",
+  "updatedAt": "2026-08-25T08:15:00Z",
+  "comments": [
+    {
+      "author": "jordan.smit@corp.internal",
+      "timestamp": "2026-08-25T08:15:00Z",
+      "comment": "Investigating RADIUS server timeouts for SVL gateway."
+    }
+  ]
+}
+```
+
+#### **Endpoint: `POST /api/v1/incidents`**
+* **Request Body (JSON):**
+```json
+{
+  "category": "Hardware", // Hardware | Software | Network | Access
+  "shortDescription": "Ergonomic 27-inch 4K monitor requested",
+  "description": "Employee relocation to home office requires external display per UC-2.1.",
+  "urgency": "LOW",
+  "impact": "INDIVIDUAL",
+  "customFields": {
+    "originatingAgent": "HR-Agentic-Solution-MVP1",
+    "sagaId": "saga-998"
+  }
+}
+```
+* **Response `201 Created` (JSON):**
+```json
+{
+  "ticketId": "INC-99042",
+  "state": "NEW",
+  "shortDescription": "Ergonomic 27-inch 4K monitor requested",
+  "assignedGroup": "IT-Hardware-Provisioning",
+  "createdAt": "2026-08-25T10:01:20Z",
+  "trackingUrl": "https://serviceimmediately.corp.internal/nav_to.do?uri=incident.do?sys_id=INC-99042"
+}
+```
+
+#### **Endpoint: `PATCH /api/v1/incidents/{ticketId}/status`**
+* **Request Body (JSON):**
+```json
+{
+  "state": "RESOLVED",
+  "resolutionCode": "SOLVED_BY_SELF_SERVICE",
+  "closeNotes": "Resolved via HR Digital Concierge automated provisioning."
+}
+```
+* **Response `200 OK` (JSON):**
+```json
+{
+  "ticketId": "INC-99042",
+  "state": "RESOLVED",
+  "updatedAt": "2026-08-25T10:02:00Z"
+}
+```
+
+#### **Standard Error Response Schema (`4xx / 5xx`)**
+```json
+{
+  "error": {
+    "code": "RATE_LIMIT_EXCEEDED", // INVALID_ARGUMENT | UNAUTHORIZED | NOT_FOUND | RATE_LIMIT_EXCEEDED | BACKEND_UNAVAILABLE
+    "message": "WorkWeek HCM rate limit of 50 rps exceeded.",
+    "targetSystem": "WorkWeek",
+    "retryAfterSeconds": 2,
+    "traceId": "projects/elevate-c1-g5/traces/4bf92f3577b34da6a3ce929d0e0e4736"
+  }
+}
+```
+
+---
 
 ## **5.2. API Throttling, Rate Limits & Cloud Tasks / Pub/Sub Asynchronous Queueing**
 To ensure the solution remains stable during peak HR events (e.g., open enrollment, holiday booking deadlines), explicit technical boundaries and queueing mechanisms are established:
@@ -508,6 +881,50 @@ flowchart TD
 | **Partial Cross-System Failure (Saga Step 2)** | HTTP 5xx on ServiceImmediately after WorkWeek success | Execute Compensating Action (Cancel leave in WorkWeek via DELETE /leaves/id). | *"We could not complete your IT request. Any pending leave changes have been rolled back to prevent inconsistent records."* |
 | **Prompt Injection Detected** | Safety Score > 0.85 on Model Armor filter | Immediate turn termination; tool execution aborted; log security incident. | *"I am unable to process this request as it violates enterprise acceptable usage policies."* |
 | **OBO Token Revoked / Expired** | HTTP 401 Unauthorized from backend | Invalidate local token cache; prompt user for re-authentication. | *"Your security credentials have expired or were updated. Please refresh your browser to re-authenticate."* |
+
+---
+
+## **5.5. Semantic Caching Layer for Static Policy Retrieval & RAG Optimization**
+
+To eliminate redundant vector lookups in Vertex AI Search, reduce LLM inference costs, and guarantee sub-second responses for popular policy questions, the solution implements a **Multi-Tier Semantic Caching Layer**:
+
+```mermaid
+flowchart TD
+    Prompt["User Policy Query<br>'What is the parental leave duration?'"] --> L1Cache{"L1 Local In-Memory Cache<br>(Cloud Run LRU - Exact Prompt Match)"}
+    
+    L1Cache -->|Hit (TTL 5m)| ReturnL1["Return Cached Response (< 10ms)"]
+    
+    L1Cache -->|Miss| EmbedQuery["Generate Embedding via text-embedding-004"]
+    EmbedQuery --> L2Redis{"L2 Shared Semantic Cache<br>(Cloud Memorystore for Redis)<br>Cosine Similarity >= 0.96"}
+    
+    L2Redis -->|Semantic Hit (TTL 24h)| ReturnL2["Return Cached Grounded Answer + Citations (< 150ms)"]
+    
+    L2Redis -->|Semantic Miss| VAISearch["Execute Vertex AI Search & Gemini 1.5 Pro Reasoning"]
+    VAISearch --> CacheWrite["Write Vector & Grounded Answer to L2 Redis & L1 LRU"]
+    CacheWrite --> FinalResp["Stream Response to Employee"]
+```
+
+### **1. Cache Architecture & Matching Parameters**
+* **L1 Instance Cache:** Local in-process LRU cache (1,000 entries, 5-minute TTL) per Cloud Run instance for rapid burst queries.
+* **L2 Distributed Semantic Cache:** Cloud Memorystore for Redis using vector search extension:
+  * Embedding Model: `text-embedding-004` (768 dimensions).
+  * Similarity Threshold: **Cosine Similarity >= 0.96**.
+  * TTL: **24 Hours** (86,400 seconds).
+  * Metadata Stored: Sanitized answer text, source document URI, exact page citation, and grounding confidence score.
+
+### **2. Event-Driven Cache Invalidation Protocol**
+* When HR publishes updated policy handbooks to Google Cloud Storage:
+  1. A GCS object change notification triggers a Cloud Function.
+  2. The function flushes the Redis semantic cache keyspace (`hr:policy:semantic:*`).
+  3. Subsequent queries automatically trigger fresh retrieval against the updated Vertex AI Search index, guaranteeing zero stale policy citations.
+
+### **3. Performance & Cost Benefit Matrix**
+
+| Metric | Without Semantic Cache | With Multi-Tier Semantic Cache | Net Benefit |
+| :--- | :--- | :--- | :--- |
+| **Policy Query Latency (p95)** | 4.2 seconds | **< 200 ms (Cache Hit)** | **95% Latency Reduction** |
+| **Vertex AI Search API Invocations**| 40,000 queries / mo | ~14,000 queries / mo | **65% Reduction in RAG Query Volume** |
+| **LLM Token Consumption (Policy Q&A)**| 168M tokens / mo | ~58M tokens / mo | **>$270 / mo Direct Token Savings** |
 
 ---
 
@@ -604,6 +1021,10 @@ gantt
 | **Transaction Integrity**| Correctness of WorkWeek/ITSM calls | Automated integration test suite comparing mock DB states | **100% Correct Transactions** |
 | **Response Latency** | Time-to-First-Token (TTFT) & Total Time | Cloud Trace APM distributed spans | **Average < 5.0s, Max < 10.0s** |
 | **Safety Overhead** | Pre/Post Guardrail Latency | Custom telemetry metrics around Interceptor pipeline | **< 300ms total latency overhead** |
+| **LLM Token Efficiency**| Prompt Caching & Token Tracking | Cloud Monitoring custom metric `agent/llm/token_usage` | **>= 60% Cached Tokens for Policy Turns** |
+| **Agent Node Routing** | Supervisor Intent Classification Acc | Automated test suite with golden intent matrix | **>= 98% Correct Node Routing** |
+| **Semantic Cache Hit**| Cache Hit Ratio for Top-20 Queries | Cloud Memorystore Redis Hit Telemetry | **>= 65% Semantic Cache Hit Rate** |
+| **Saga Resilience** | Compensating Action Execution Rate | Cloud Trace & BigQuery Saga Step Telemetry | **100% Deterministic Rollbacks on Failure** |
 
 ## **9.2. Automated CI/CD Evaluation Pipeline**
 Prior to deploying any update to the agent prompts, tools, or model configurations, the Cloud Build pipeline runs an automated evaluation suite against a curated dataset of **150 golden HR prompts** (50 Policy Q&A, 50 Tool transactions, 50 Cross-system Saga workflows).
