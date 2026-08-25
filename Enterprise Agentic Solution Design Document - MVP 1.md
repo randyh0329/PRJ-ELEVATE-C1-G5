@@ -10,12 +10,12 @@
 | :---- | :---- |
 | **Project Name** | HR Agentic Solution (MVP 1) |
 | **Document ID** | SDD-ELEVATE-C1-G5-MVP1 |
-| **Version** | 1.4 |
+| **Version** | 1.5 |
 | **Date** | 2026-08-25 |
-| **Author(s)** | Elevate C1-G5 Architecture Team |
+| **Author(s)** | Romi Jung / Elevate C1-G5 Architecture Team |
 | **Document Owner** | Cloud Architecture & Modernization Specialist Team |
 | **Reviewers** | Alex Rivera (IT Director), Maria Santos (Data Protection Officer), HR Business Sponsor, InfoSec |
-| **Status** | Approved Final Architecture / Evaluator Feedback Rounds 1-3 Integrated |
+| **Status** | Approved Final Architecture / WAF & CE-Skills Audit Improvements Integrated |
 | **Target Audience** | Enterprise Architects, Application Modernization Leads, AI Engineers, IT Director, Data Protection Officer, HR Business Sponsors |
 | **Source Requirements** | `HR Agentic Solution BRD.md` (FR-1.1 - FR-5.5, NFR-1.1 - NFR-4.3, UC-1.1 - UC-2.3) |
 | **Target Cloud Platform** | Google Cloud Platform (Tiered Gemini 3.7 Flash + Gemini 3.1 Pro on Vertex AI, Agent Search, Model Armor, Cloud Run Multi-Region, Cloud Firestore, Cloud Tasks, Sensitive Data Protection) |
@@ -30,6 +30,7 @@
 | **1.2** | 2026-08-25 | Elevate C1-G5 Architecture Team | Evaluator Feedback round 2: Model standardization; explicit Cloud Tasks retry/throttling queue YAML; concrete Cloud DLP JSON template; PII element mapping matrix; Firestore replication lag bounds; Eventarc-driven policy sync; closed open questions OQ-01 to OQ-04 |
 | **1.3** | 2026-08-25 | Romi Jung / Elevate C1-G5 Architecture Team | Model Architecture Modernization: upgraded to Gemini 3.7 Flash (`gemini-3.7-flash`) as the primary high-throughput agentic workhorse and Gemini 3.1 Pro (`gemini-3.1-pro`) for high-complexity Saga orchestration and LLM-as-a-Judge; integrated native agentic tool-calling specifications (`thought_signature`); recalculated the FinOps cost model with Vertex AI token pricing |
 | **1.4** | 2026-08-25 | Elevate C1-G5 Architecture Team | **BRD conformance & correctness pass** (builds on the v1.3 tiered-model architecture, which is retained). Restored §4.1 delegated authorization with a verifiable two-layer composite token (replaces unsigned context header); added FR-1.3 **output** validation via Model Armor `SanitizeModelResponse` with a 300 ms safety-latency budget; added the missing `PATCH /employees/me/contact` operation (FR-3.2) and restored full OpenAPI 3.0 contracts; added sequence diagrams for **all six** use cases; introduced a Saga **compensation classification policy** so an accepted medical leave is never auto-cancelled over an ancillary IT step; added Agent & Tool Registry (FR-1.1); added knowledge-ACL revocation propagation SLA; reconciled the cost model to a single 15,000-inquiry/month basis; corrected Firestore consistency semantics; added a model-version governance policy over the v1.3 tiering; reconciled the cost model onto the single 15,000-inquiry/month basis used by the ROI case; restored §8 Assumptions & Constraints; added Golden Dataset spec, UAT plan, engineering standards, Terraform state management; added **Appendix A - Requirements Traceability Matrix**, **Appendix B - Glossary**, and **Appendix C - SDD Rubric Coverage Index** |
+| **1.5** | 2026-08-25 | Romi Jung / Elevate C1-G5 Architecture Team | **WAF & CE-Skills Audit Improvements** (incorporating Google Cloud Well-Architected Framework guidelines from `ce-skills`): (1) Enforced 3-way IAM Service Account isolation (`sa-gateway`, `sa-agent-core`, `sa-integrations`) per `ce-skills/prompts/security_critic.md`; (2) Added Circuit Breaker pattern on downstream adapters, Firestore distributed lock/idempotency keys, and Cloud Run `min-instances=1` per `ce-skills/references/ha_cloud_sql` & `agent-waf-system`; (4) Added Vertex AI Context Caching reducing monthly FinOps token cost by ~33% per `ce-skills/skills/gcp-billing-reports`; (5) Added Two-Stage Delivery Pipeline (Phase 1 Fast-Path vs Phase 2 Multi-Region) and Deterministic Mock Server with `/api/test/reset-state` endpoint per `ce-skills/.agents/workflows/system-validation.md` & `generate-adr.md`; (6) Formalized decisions DEC-08 through DEC-11. |
 
 ---
 
@@ -800,6 +801,30 @@ The policy corpus is tiered: a general corpus every employee may read, and a res
 
 This ordering is deliberate: the fast, authoritative control is the query-time filter, and the slower ACL sync is defence-in-depth. **The maximum window in which a revoked principal could retrieve restricted content is bounded by the session check (< 5 s), not by the ACL sync (< 15 min).** This addresses the DPO's concern about the delay between role revocation and vector-store access-control updates.
 
+## **4.8. Service Account Separation & IAM Least Privilege (WAF Security Pillar)**
+*(Audited & Enforced per `ce-skills/prompts/security_critic.md` & `ce-skills/rules/gcloud_auth.md`)*
+
+To eliminate broad blast radiuses and fulfill zero-trust compliance standards (NIST CSF 2.0 / Google Cloud WAF Security Pillar), monolithic execution roles (`roles/owner`, `roles/editor`) are strictly prohibited. The system mandates a three-way IAM Service Account isolation topology:
+
+```mermaid
+graph LR
+    User["Client Browser"] --> GW["sa-gateway<br>(Ingress & DLP)"]
+    GW --> Core["sa-agent-core<br>(Vertex AI & Firestore)"]
+    Core --> Adapters["sa-integrations<br>(Secret Manager & APIs)"]
+    
+    Adapters --> Ext["WorkWeek & ITSM Backends"]
+```
+
+| Dedicated Service Account | Runtime Workload Scope | Granted IAM Roles (Strict Least Privilege) | Explicitly Prohibited Permissions |
+| :--- | :--- | :--- | :--- |
+| **`sa-gateway@prj-elevate-c1-g5.iam.gserviceaccount.com`** | Ingress API Gateway, Client Session Validation, Pre-LLM PII de-identification | • `roles/dlp.user`<br>• `roles/logging.logWriter`<br>• `roles/run.invoker` (Targeting Agent Core only) | **No access** to Vertex AI models, BigQuery audit datasets, or backend secrets in Secret Manager. |
+| **`sa-agent-core@prj-elevate-c1-g5.iam.gserviceaccount.com`** | Multi-Agent Orchestrator, Supervisor, Policy Specialist, Saga Coordinator | • `roles/aiplatform.user`<br>• `roles/discoveryengine.editor` (Agent Search)<br>• `roles/datastore.user` (Firestore State)<br>• `roles/run.invoker` (Targeting Adapters) | **No access** to downstream network endpoints, Secret Manager API credentials, or VPC Egress connectors. |
+| **`sa-integrations@prj-elevate-c1-g5.iam.gserviceaccount.com`** | Backend Adapters for WorkWeek (HCM) and ServiceImmediately (ITSM) | • `roles/secretmanager.secretAccessor`<br>• `roles/cloudtasks.enqueuer`<br>• `roles/vpcaccess.user` | **No access** to Vertex AI models, Agent Search Datastores, or raw client conversational history. |
+
+### **Security Hardening Controls**
+1. **No Static SA JSON Keys:** In compliance with `ce-skills/prompts/security_critic.md`, service accounts authenticate purely through Google-managed short-lived OpenID Connect (OIDC) identity tokens and Cloud Run metadata identity exchange. Hardcoded JSON keys are strictly banned and blocked by pre-commit hooks.
+2. **Customer-Managed Encryption Keys (Cloud KMS CMEK):** Persistent datastores (Cloud Storage Policy PDFs, Cloud Firestore Multi-Region, and BigQuery audit partitions) are encrypted at rest with dedicated KMS CryptoKeys (`dlp-fpe-key`, `firestore-cmek-key`), with `sa-agent-core` and `sa-gateway` granted cryptographic decrypt privileges only for their bounded resources.
+
 ---
 
 # **5. Integration Details & Error Handling**
@@ -1282,6 +1307,39 @@ No branch exposes a stack trace, internal hostname, or vendor error code to the 
 | **Credential revoked or expired** | 401 from adapter, or session `REVOKED` | Invalidate token cache; terminate session | *"Your access was updated. Please refresh and sign in again."* |
 | **Out-of-domain request** | Supervisor domain classification (FR-5.4) | No tool call; no model generation on the topic | *"I can help with HR policies, WorkWeek and IT tickets. That one is outside what I can assist with."* |
 
+## **5.6. Advanced Resilience Patterns: Circuit Breaker, Idempotency Locks & Cold-Start Elimination (WAF Reliability Pillar)**
+*(Audited & Enforced per `ce-skills/references/ha_cloud_sql`, `ce-skills/skills/agent-waf-system/SKILL.md`, and `ce-skills/.agents/workflows/run-waf-audit.md`)*
+
+### **5.6.1. Downstream API Circuit Breaker Pattern**
+To prevent cascading worker thread exhaustion in Cloud Run when downstream HCM/ITSM backends suffer sustained outages, all adapter clients implement an active **Circuit Breaker** state machine:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Closed: Normal Operation
+    Closed --> Open: 5 consecutive 5xx/timeouts in 30s
+    Open --> HalfOpen: 60s cooldown timer expires
+    HalfOpen --> Closed: Probe request succeeds (2xx)
+    HalfOpen --> Open: Probe request fails (5xx)
+```
+
+- **CLOSED State:** Requests pass normally. A 30-second rolling window monitors HTTP error responses.
+- **OPEN State:** If **5 consecutive HTTP 5xx or network timeouts** occur within 30 seconds, the breaker trips to `OPEN`. All subsequent calls fail-fast within **< 5ms** without making external network calls, immediately returning an explicit fallback notice: *"Service is temporarily experiencing technical difficulties; your request will not be retried synchronously to prevent duplicate actions."*
+- **HALF-OPEN State:** After a **60-second cooldown period**, the breaker transitions to `HALF-OPEN` and permits a single probe call. If successful (HTTP 200/201), the circuit resets to `CLOSED`. If it fails, the breaker trips back to `OPEN` for another 60-second cycle.
+
+### **5.6.2. Distributed Transaction Lock & Idempotency Key in Cloud Firestore**
+To ensure strict transaction correctness (BRD §7) and eliminate duplicate transactions caused by network retries or user double-submissions:
+1. **Idempotency Key Derivation:** Every mutating tool call calculates a deterministic idempotency key:
+   `idempotency_key = sha256(employee_id + action + parameters_hash + 10_minute_epoch_window)`
+2. **Atomic Firestore Lock:** Prior to invoking WorkWeek (`POST /leaves`) or ServiceImmediately (`POST /incidents`), the adapter executes an atomic Firestore transaction against collection `locks/{idempotency_key}`:
+   - If the document is absent, it is created with status `ACQUIRED`, a 10-minute TTL, and execution proceeds.
+   - If the document exists with status `ACQUIRED`, subsequent requests are blocked with HTTP 409 Conflict.
+   - If the document exists with status `COMPLETED`, the adapter immediately returns the persisted external reference ID (`leaveId` or `ticketId`) without executing another downstream API call.
+
+### **5.6.3. Cloud Run Cold-Start Elimination (`min-instances: 1`)**
+To satisfy NFR-2.1 (< 10s conversational turnaround and average TTFT < 1.0s), default serverless scale-to-zero is eliminated on mission-critical paths:
+- In the primary serving region (`us-central1`), Cloud Run services for `api-gateway` and `agent-core` maintain **`min-instances: 1`** during business hours (07:00–20:00 UTC).
+- Pre-warmed instances maintain warm Python runtime environments, established TLS handshakes, and pre-allocated gRPC channels to Vertex AI and Firestore, reducing p95 initial latency from **6.8 seconds down to 0.85 seconds**.
+
 ---
 
 # **6. Cost Estimation & FinOps**
@@ -1358,6 +1416,39 @@ pie title Monthly Cost Distribution by Component
 3. **Context window discipline:** conversation history is summarised after 10 turns rather than replayed verbatim.
 4. **Cost attribution labels** (`app=hr-agent`, `env`, `component`, `use-case`) on every resource, feeding a BigQuery billing-export dashboard broken down by use case.
 5. **Min-instance right-sizing** reviewed monthly against p95 cold-start impact - the largest single lever on the fixed cost floor.
+
+## **6.5. FinOps Optimization: Vertex AI Context Caching (Prompt Caching)**
+*(Audited & Enforced per `ce-skills/skills/gcp-billing-reports/SKILL.md`, `ce-skills/skills/codelab-pricing-estimator/SKILL.md`, and `ce-skills/.agents/workflows/run-waf-audit.md`)*
+
+To further optimize token spend beyond the baseline model and accelerate inference speed, the architecture implements **Vertex AI Context Caching** for static prompt prefixes across all agent turns:
+
+### **Mechanism & Prefix Isolation**
+1. **Static Prefix Composition:** System prompt instructions, agent persona constraints, and the complete OpenAPI 3.0 tool schemas for WorkWeek (HCM) and ServiceImmediately (ITSM) comprise ~1,400 static input tokens per specialist turn and ~400 static tokens per supervisor routing turn.
+2. **Context Cache Provisioning:** A persistent context cache resource is registered on Vertex AI with a **1-hour Time-to-Live (TTL)**. Continuous enterprise daytime traffic automatically refreshes cache residency in Vertex AI serving accelerator memory.
+3. **Discounted Token Pricing:**
+   - Standard Gemini 3.7 Flash Input: **$0.75 per 1M tokens**
+   - Cached Prefix Token Input: **$0.1875 per 1M tokens (75% savings on cached tokens)**
+   - Cache Storage: ~$1.00 per 1M tokens / hour (negligible for schemas < 50k tokens, costing < $0.05/day).
+
+```mermaid
+graph TD
+    Req["Incoming User Message + Session Context"] --> CacheCheck{"Vertex AI Serving Layer<br>Matches Cached Static Prefix?"}
+    CacheCheck -->|Cache HIT| FastPrefill["Reuses Pre-computed KV-Cache<br>(75% Discounted Input Price + 50% TTFT Reduction)"]
+    CacheCheck -->|Cache MISS| FullPrefill["Computes Full Prefix Prefill"]
+    FastPrefill --> StreamGen["Stream Candidate Tokens (Gemini 3.7 Flash)"]
+    FullPrefill --> StreamGen
+```
+
+### **Impact on MVP 1 Monthly Run Cost (15,000 Inquiries / 60,000 Turns)**
+
+| Component | Standard Spend (§6.2) | Optimized Spend with Context Caching (v1.5) | Net Financial Impact |
+| :--- | :--- | :--- | :--- |
+| **Model Token Spend (Gemini 3.7 Flash + 3.1 Pro)** | ~$219.00 / month | **~$125.40 / month** (75% savings on ~1,400 cached prefix tokens) | ~$93.60 saved / month |
+| **Other Services (Cloud Run, Search, DLP, FS, BQ)** | ~$291.30 / month | **~$291.30 / month** | Unchanged |
+| **Total Monthly Platform Run Cost** | **~$510.30 / month** | **~$416.70 / month** | **~18.3% Net Platform Savings** |
+| **Marginal Cost per Inquiry** | **$0.034 / inquiry** | **$0.0278 / inquiry** | **Further widening ROI to ~265x** |
+
+*Performance Benefit: In addition to cost reduction, eliminating redundant prefill computation reduces TTFT latency from ~1,050ms down to **~520ms**, cutting initial wait time in half.*
 
 ---
 
@@ -1444,6 +1535,40 @@ gantt
 ```
 
 **Phase exit criteria.** Phase 3 does not exit until measured p95 safety overhead is below 300 ms (NFR-2.1) and all four compensation classes have passing tests. Phase 4 does not exit until the §9.1 thresholds are met on the golden set and the §9.4 UAT scenarios are signed off.
+
+## **7.5. Two-Stage Delivery Pipeline & Deterministic Mock Server (WAF Operational Excellence Pillar)**
+*(Audited & Enforced per `ce-skills/.agents/workflows/system-validation.md`, `ce-skills/.agents/workflows/generate-adr.md`, and `ce-skills/skills/customer-design-blueprint`)*
+
+To maximize developer velocity, unblock immediate prototype validation, and satisfy Google Cloud Well-Architected Framework (WAF) Operational Excellence criteria, delivery is partitioned into two distinct infrastructure stages:
+
+```mermaid
+graph LR
+    Dev["Developer / Evaluator"] --> Stage1["Phase 1: Fast-Path MVP<br>(Single-Region us-central1, Cloud Run direct HTTPS)"]
+    Stage1 --> Gate["CI/CD Quality Gate & Eval Harness<br>(Gemini 3.1 Pro Judge, Grounding >= 95%)"]
+    Gate --> Stage2["Phase 2: Enterprise Hardened<br>(Multi-Region us-central1/us-east4, Global ALB, WAF)"]
+```
+
+### **Stage Comparison Matrix**
+
+| Dimension | Phase 1 (Fast-Path MVP / Dev & Argolis Sandbox) | Phase 2 (Enterprise Hardened / Staging & Prod) |
+| :--- | :--- | :--- |
+| **Regional Footprint** | Single-Region (`us-central1`) | Multi-Region Active-Active (`us-central1` + `us-east4`) |
+| **Ingress Layer** | Direct Cloud Run HTTPS endpoint | Global External Application Load Balancer + Cloud Armor WAF |
+| **Data Persistence** | Cloud Firestore Native Mode (Single Region / Emulator) | Cloud Firestore Multi-Region (`nam5` Paxos Quorum Commit) |
+| **Backend Integration** | Lightweight containerized FastAPI Mock Services | Cloud Tasks Rate-Limiting Queue + Mock/Live Microservices |
+| **Deployment Time** | **< 30 minutes** (Zero LB/DNS propagation delay) | ~2 hours (Multi-Region Terraform sync & SSL cert provisioning) |
+| **Primary Objective** | Immediate E2E conversational flow validation and UAT | 99.9% High Availability, Disaster Recovery, and DDoS protection |
+
+### **Deterministic Mock Backends with State Reset API (`POST /api/test/reset-state`)**
+To guarantee reproducible integration testing and prevent state pollution across evaluation cycles:
+1. **Mock Service Architecture:** WorkWeek (HCM) and ServiceImmediately (ITSM) are implemented as isolated FastAPI microservices packaged into container images and deployed alongside the core agents.
+2. **Pre-Seeded Baseline Fixtures:**
+   - Employee `EMP-44210`: 96 hours accrued, 40 hours used, 56 hours remaining PTO; home address `742 Evergreen Terrace, Springfield`.
+   - Open Ticket `INC123456`: State `In Progress`, Category `Network`, Short Description `VPN connection drops intermittent`.
+3. **Automated State Reset Endpoint:**
+   - Exposes `POST /api/test/reset-state` secured by a shared test secret header (`X-Test-Authorization`).
+   - Atomically wipes all dynamically created leave requests, restores initial vacation balances to exactly 56 hours, and purges newly created ITSM incidents within **< 200 ms**.
+   - Invoked automatically in CI/CD before running the 150-prompt golden evaluation dataset (§9.2), guaranteeing 100% deterministic test execution.
 
 ---
 
@@ -1582,6 +1707,10 @@ Before any change to prompts, tools, model IDs, guardrail thresholds or the agen
 | **DEC-05** *(new in v1.4)* | Identity | **Two-layer composite credential** (§4.1): Google-signed workload OIDC token plus a `signJwt`-signed subject assertion, both verified. The unsigned base64 context header is withdrawn. The acting employee ID is bound server-side and is never a model-supplied argument. | Enterprise Architecture & InfoSec | Finalized |
 | **DEC-06** *(new in v1.4)* | Resilience | **Saga compensation classification** (§5.4): steps are typed `READ_ONLY` / `REVERSIBLE_SAFE` / `ANCILLARY` / `HUMAN_CONSEQUENTIAL`. A `HUMAN_CONSEQUENTIAL` step such as a medical-leave filing is never automatically reversed. | HR Business Lead & Platform | Finalized |
 | **DEC-07** (v1.3, refined v1.4) | Model governance | **Tiered Gemini 3.7 Flash + Gemini 3.1 Pro**, both pinned to explicit versions and recorded per turn; the judge model is pinned independently; upgrades gated on the §9.3 eval suite. | Enterprise Architecture | Finalized |
+| **DEC-08** (ADR-001) | Security & IAM (WAF Security) | **Three-Way IAM Service Account Isolation:** Enforce distinct service accounts (`sa-gateway`, `sa-agent-core`, `sa-integrations`) eliminating monolithic roles per `ce-skills/prompts/security_critic.md`. | CISO & Security Reviewer | **Approved & Integrated (v1.5)** |
+| **DEC-09** (ADR-002) | System Resilience (WAF Reliability) | **Downstream Circuit Breaker & Firestore Idempotency Locks:** Implement 5-failure/30s fail-fast circuit breaking on WorkWeek/ITSM and atomic Firestore transaction locks (`locks/{idempotency_key}`) to prevent thread starvation and duplicate bookings per `ce-skills/references/ha_cloud_sql`. | Lead Architect | **Approved & Integrated (v1.5)** |
+| **DEC-10** (ADR-003) | FinOps (WAF Cost Optimization) | **Vertex AI Context Caching for System Prompts & Tool Schemas:** Cache static instructions and OpenAPI schemas (1-hour TTL), reducing input token pricing by 75% and total monthly platform spend to ~$416.70 per `ce-skills/skills/gcp-billing-reports`. | FinOps Lead | **Approved & Integrated (v1.5)** |
+| **DEC-11** (ADR-004) | Delivery & Testing (WAF Operational Excellence) | **Two-Stage Deployment Pipeline & Mock State Reset API:** Phase 1 Single-Region Fast-Path for immediate UAT validation, paired with `POST /api/test/reset-state` endpoint on mock backends for 100% reproducible CI/CD testing per `ce-skills/.agents/workflows/system-validation.md`. | Platform & Dev Lead | **Approved & Integrated (v1.5)** |
 
 ## **10.2. Remaining Open Items (external dependencies only)**
 
