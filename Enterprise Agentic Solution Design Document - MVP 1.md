@@ -10,12 +10,12 @@
 | :---- | :---- |
 | **Project Name** | HR Agentic Solution (MVP 1) |
 | **Document ID** | SDD-ELEVATE-C1-G5-MVP1 |
-| **Version** | 1.4 |
+| **Version** | 1.5 |
 | **Date** | 2026-08-25 |
 | **Author(s)** | Elevate C1-G5 Architecture Team |
 | **Document Owner** | Cloud Architecture & Modernization Specialist Team |
 | **Reviewers** | Alex Rivera (IT Director), Maria Santos (Data Protection Officer), HR Business Sponsor, InfoSec |
-| **Status** | Approved Final Architecture / Evaluator Feedback Rounds 1-3 Integrated |
+| **Status** | Approved Final Architecture / Evaluator Feedback Rounds 1-4 Integrated |
 | **Target Audience** | Enterprise Architects, Application Modernization Leads, AI Engineers, IT Director, Data Protection Officer, HR Business Sponsors |
 | **Source Requirements** | `HR Agentic Solution BRD.md` (FR-1.1 - FR-5.5, NFR-1.1 - NFR-4.3, UC-1.1 - UC-2.3) |
 | **Target Cloud Platform** | Google Cloud Platform (Tiered Gemini 3.7 Flash + Gemini 3.1 Pro on Vertex AI, Agent Search, Model Armor, Cloud Run Multi-Region, Cloud Firestore, Cloud Tasks, Sensitive Data Protection) |
@@ -30,6 +30,7 @@
 | **1.2** | 2026-08-25 | Elevate C1-G5 Architecture Team | Evaluator Feedback round 2: Model standardization; explicit Cloud Tasks retry/throttling queue YAML; concrete Cloud DLP JSON template; PII element mapping matrix; Firestore replication lag bounds; Eventarc-driven policy sync; closed open questions OQ-01 to OQ-04 |
 | **1.3** | 2026-08-25 | Romi Jung / Elevate C1-G5 Architecture Team | Model Architecture Modernization: upgraded to Gemini 3.7 Flash (`gemini-3.7-flash`) as the primary high-throughput agentic workhorse and Gemini 3.1 Pro (`gemini-3.1-pro`) for high-complexity Saga orchestration and LLM-as-a-Judge; integrated native agentic tool-calling specifications (`thought_signature`); recalculated the FinOps cost model with Vertex AI token pricing |
 | **1.4** | 2026-08-25 | Elevate C1-G5 Architecture Team | **BRD conformance & correctness pass** (builds on the v1.3 tiered-model architecture, which is retained). Restored §4.1 delegated authorization with a verifiable two-layer composite token (replaces unsigned context header); added FR-1.3 **output** validation via Model Armor `SanitizeModelResponse` with a 300 ms safety-latency budget; added the missing `PATCH /employees/me/contact` operation (FR-3.2) and restored full OpenAPI 3.0 contracts; added sequence diagrams for **all six** use cases; introduced a Saga **compensation classification policy** so an accepted medical leave is never auto-cancelled over an ancillary IT step; added Agent & Tool Registry (FR-1.1); added knowledge-ACL revocation propagation SLA; reconciled the cost model to a single 15,000-inquiry/month basis; corrected Firestore consistency semantics; added a model-version governance policy over the v1.3 tiering; reconciled the cost model onto the single 15,000-inquiry/month basis used by the ROI case; restored §8 Assumptions & Constraints; added Golden Dataset spec, UAT plan, engineering standards, Terraform state management; added **Appendix A - Requirements Traceability Matrix**, **Appendix B - Glossary**, and **Appendix C - SDD Rubric Coverage Index** |
+| **1.5** | 2026-08-25 | Elevate C1-G5 Architecture Team | **Evaluator feedback round 4** (run `sdd-20260825-ce39a6`). Re-architected the §4.3 safety chain from five sequential stages to three concurrency groups: design budget falls from **280 ms / 20 ms headroom to 120 ms / 180 ms headroom**, with per-stage hard deadlines that fail closed so network jitter cannot cascade into a turn timeout. Added **§7.5 Observability, Alerting & Operational Runbook** enumerating 16 concrete alert policies with thresholds, windows, severities and automated responses (including gateway and backend 5xx spike triggers), multi-window burn-rate alerting, and three structured log payload schemas. Added **adaptive concurrency control (AIMD)** to §5.2 so throughput safety no longer depends on vendor-confirmed rate limits - **closes OPEN-01 as DEC-08**. Selected Cloud Identity groups as the entitlement source of truth behind a swappable provider interface - **closes OPEN-03 as DEC-09**, so the restricted corpus ships in MVP. Added **§4.8 Credential & Entitlement Revocation Mid-Session and Mid-Saga**; formalised the §4.7 revocation SLAs as numbered, measured, alert-backed commitments (SLA-01 - SLA-06); added an explicit **consent-withdrawal** workflow distinct from Art. 17 erasure, and made masked-PII audit-log retention and stale-embedding purge explicit in §4.6 |
 
 ---
 
@@ -613,16 +614,41 @@ FR-1.3 mandates validation in **both** directions. Both are implemented on Model
 
 ### **Safety Latency Budget (NFR-2.1: safety scanning must add < 300 ms per turn)**
 
-| Stage | Budget (p95) | Notes |
-| :--- | :--- | :--- |
-| DLP de-identification (inbound) | 60 ms | Regional DLP endpoint, single inspect+de-identify call |
-| Model Armor `SanitizeUserPrompt` | 80 ms | Stateless; co-located region |
-| Model Armor `SanitizeModelResponse` | 80 ms | Runs on the completed response, in parallel with the final SSE flush where safe |
-| Groundedness + citation resolution | 50 ms | Citation resolution is a cached datastore metadata lookup |
-| Re-identification | 10 ms | In-memory surrogate map, session-scoped |
-| **Total safety overhead** | **280 ms (p95)** | **20 ms headroom against the 300 ms NFR-2.1 ceiling** |
+**Reworked in v1.5.** v1.4 costed this chain as five *sequential* stages totalling 280 ms, leaving 20 ms against the NFR-2.1 ceiling. That criticism was correct and is accepted: 20 ms is not an engineering margin, it is a rounding error, and a single TCP retransmit on a regional DLP call would breach the SLO. The stages were sequential only because they were *described* sequentially - the data dependencies never required it. v1.5 makes concurrency the **default design**, not a contingency held in reserve.
 
-> **These are design budgets, not measurements.** Headroom is thin at 20 ms. §9.1 makes measured safety overhead a hard pass/fail gate, and §7.4 Phase 3 carries an explicit latency-tuning exit criterion. If the measured p95 exceeds 300 ms, the mitigation - already designed for - is to run `SanitizeModelResponse` concurrently with token streaming and hold only the final flush, which removes ~80 ms from the critical path at the cost of a late-suppression edge case that the UI handles by retracting the partial message.
+**Dependencies that genuinely constrain ordering:**
+
+- DLP de-identification and Model Armor `SanitizeUserPrompt` both consume the **raw** user input, and neither consumes the other's output. They run concurrently.
+- The model cannot start until both return: de-identification supplies the prompt text, Armor supplies the allow/block verdict.
+- `SanitizeModelResponse` and groundedness scoring both consume **generated** text, which arrives incrementally under SSE. Both run on a rolling window concurrently with generation, so only the final window sits on the critical path.
+- Re-identification consumes the approved final text, so it is strictly last - but it is an in-memory map lookup.
+
+| Concurrency group | Stages executed | Critical-path cost (p95) | Why this is the real cost |
+| :--- | :--- | :--- | :--- |
+| **G1 - Inbound** | DLP de-identify (60 ms) ∥ `SanitizeUserPrompt` (80 ms) | **80 ms** | Two independent calls on the same input; the group costs the slower one, not the sum |
+| **G2 - Outbound, overlapped with generation** | Rolling `SanitizeModelResponse` ∥ rolling groundedness + citation resolution | **30 ms** | Both scan a sliding window as tokens stream; only the final ~200-token window is unscanned when generation ends. Citation resolution is a cached datastore metadata lookup already warm by then |
+| **G3 - Release** | Re-identification of authorised surrogates | **10 ms** | Session-scoped in-memory surrogate map |
+| **Total safety overhead** | | **120 ms (p95)** | **180 ms headroom against the 300 ms NFR-2.1 ceiling** |
+
+The cost of this design is a late-suppression edge case: the final window may fail its scan after partial text has streamed. The UI handles it by retracting the partial message and substituting the safe fallback. That is a deliberate trade - a rare visible retraction in exchange for 160 ms of reclaimed headroom on every turn.
+
+### **Per-Stage Deadlines and Failure Policy**
+
+Headroom alone does not answer the timeout concern, because a hung dependency consumes unbounded time regardless of budget. Every stage therefore carries a hard deadline, and **every deadline fails closed** - a guardrail that cannot complete must not be assumed to pass.
+
+| Stage | Hard deadline | Action on breach | Rationale |
+| :--- | :--- | :--- | :--- |
+| DLP de-identification | 150 ms | Abort turn; standard service-unavailable message; `DLP_DEADLINE` security event | Raw SPII must never reach a model prompt (FR-1.4) |
+| `SanitizeUserPrompt` | 150 ms | Abort turn; standard refusal; `ARMOR_IN_DEADLINE` event | An unscanned prompt cannot be permitted to reach the model (FR-1.3) |
+| `SanitizeModelResponse` | 150 ms | Suppress the response, emit the safe fallback, retract any partial stream | An unscanned response cannot be shown to a user (FR-1.3) |
+| Groundedness + citation | 120 ms | Downgrade to refusal rather than emit an unverified policy claim | FR-5.4 strict grounding; 0% hallucination is a hard NFR-3.1 target |
+| Re-identification | 50 ms | Leave surrogates masked and render them as such | Masked output is degraded, not unsafe |
+
+Deadlines sit **well above** each stage's p95 budget precisely so that ordinary jitter is absorbed by the 180 ms of headroom rather than by a timeout. A stage trips its deadline only in a genuine fault, not in a minor network fluctuation - which is the specific failure Alex Rivera raised.
+
+**Circuit breaker.** If Model Armor or DLP returns errors or deadline breaches on more than **2% of calls over a 5-minute window**, the breaker opens and the service enters *fail-closed degraded mode*: conversational reads continue to be refused rather than served unscanned, and `ALRT-08` pages the on-call engineer immediately (§7.5). There is no fail-open path. A documented break-glass procedure exists, but it requires two-person InfoSec authorisation and is itself audited - the system will never silently degrade a safety control to preserve availability.
+
+> **These remain design budgets, not measurements.** §9.1 makes measured safety overhead a hard pass/fail gate, §7.4 Phase 3 retains its latency-tuning exit criterion, and `ALRT-04` warns at 240 ms - 80% of the ceiling - so the team learns of drift long before the NFR is breached.
 
 ## **4.4. PII Classification, Masking & Retention Mapping (FR-1.4)**
 
@@ -776,8 +802,8 @@ An `inspectTemplate` with `minLikelihood: LIKELY` and `includeQuote: false` pair
 | Session metadata | Firestore `sessions` | 30 days | Native TTL |
 | Saga execution ledger | Firestore `sagas` | 30 days | Native TTL |
 | Replay-defence nonces | Firestore `token_cache` | 120 seconds | Native TTL |
-| Audit records (PII-stripped) | BigQuery, partitioned | 365 days | Partition expiration |
-| Guardrail decision logs | BigQuery | 365 days | Partition expiration |
+| **Audit records containing masked PII** (crypto-deterministic surrogates only - raw SPII is never written) | BigQuery, daily-partitioned | **365 days**, then automatic partition drop | Partition expiration, enforced in Terraform; a monthly retention-conformance job asserts that no partition older than 365 days exists and pages on failure (`ALRT-13`) |
+| **Guardrail decision logs** (prompt hash + verdict; the offending text itself is never retained) | BigQuery, daily-partitioned | **365 days**, then automatic partition drop | Partition expiration; same conformance job |
 | Security incident logs | Cloud Logging bucket, locked | 400 days, immutable | Log bucket retention lock |
 
 **Right to be Forgotten (GDPR Article 17) purge workflow:**
@@ -787,6 +813,23 @@ An `inspectTemplate` with `minLikelihood: LIKELY` and `includeQuote: false` pair
 4. Any employee-contributed content in the Agent Search datastore is deleted and the datastore incrementally re-imported; embeddings are purged within **15 minutes**.
 5. Query-time metadata filtering rejects stale cached chunks immediately, so the effective exposure window is the filter-propagation time, not the re-index time.
 6. A signed confirmation receipt is returned to the Compliance Office and archived.
+
+**Stale embeddings.** Step 4 above is the control for the Right to be Forgotten as it applies to the vector layer. Employee-contributed content can enter the Agent Search datastore only through the policy-repository ingestion path, so the purge is bounded and enumerable: the source object is deleted from GCS, `object.delete` fires an Eventarc trigger, and the datastore performs an incremental re-import that **evicts the corresponding embeddings within 15 minutes** (SLA-04). Because the query-time metadata filter rejects chunks whose source document is marked deleted, a stale embedding is unreachable from the moment the deletion is recorded - the 15-minute figure is the physical-removal SLA, not the exposure window.
+
+### **Consent Withdrawal (distinct from Article 17 erasure)**
+
+Withdrawal of consent under GDPR Art. 7(3) is a **different** request from erasure and is handled separately: an employee may withdraw consent to conversational-history processing while remaining employed and while the lawful-basis audit trail must still be preserved.
+
+| Step | Action | Store affected | Timing |
+| :--- | :--- | :--- | :--- |
+| 1 | Employee withdraws consent in the chat UI (`POST /api/v1/compliance/withdraw-consent`) or via the HR portal | - | Immediate acknowledgement |
+| 2 | `consent_state` on the employee record is set to `WITHDRAWN`; the flag is read on **every** turn | Firestore `sessions` | < 5 s, next turn |
+| 3 | All historical interaction turns for that employee are hard-deleted | Firestore `messages`, `sessions`, `sagas` | **< 60 minutes**, batched purge job (SLA-05) |
+| 4 | Future turns run in **ephemeral mode**: no transcript is persisted, the session holds context in memory only, and it is discarded at session end | Firestore (no writes) | Ongoing |
+| 5 | Audit records are pseudonymised in place, not deleted | BigQuery | < 60 minutes |
+| 6 | Withdrawal itself is recorded as an auditable compliance event | BigQuery, Cloud Logging | Immediate |
+
+The distinction matters for compliance defensibility: erasure removes the person from the system, whereas withdrawal removes the *processing* while preserving the legally required record **that** processing previously occurred. Step 4 is the part most designs omit - without ephemeral mode, the next turn silently re-creates the transcript the employee just asked the system to stop keeping.
 
 ## **4.7. Knowledge ACL & Entitlement Revocation Propagation**
 
@@ -798,7 +841,50 @@ The policy corpus is tiered: a general corpus every employee may read, and a res
 | **Datastore ACL** | Document-level ACLs synced to Agent Search from the entitlement source | **< 15 minutes** - Eventarc-triggered incremental sync on entitlement change |
 | **Session invalidation** | Firestore session status set to `REVOKED` by the webhook (Path 7) | **< 5 seconds** - checked on every turn |
 
-This ordering is deliberate: the fast, authoritative control is the query-time filter, and the slower ACL sync is defence-in-depth. **The maximum window in which a revoked principal could retrieve restricted content is bounded by the session check (< 5 s), not by the ACL sync (< 15 min).** This addresses the DPO's concern about the delay between role revocation and vector-store access-control updates.
+This ordering is deliberate: the fast, authoritative control is the query-time filter, and the slower ACL sync is defence-in-depth. **The maximum window in which a revoked principal could retrieve restricted content is bounded by the session check (< 5 s), not by the ACL sync (< 15 min).**
+
+### **Formalised Revocation & Purge SLAs**
+
+The DPO asked for a *formalised* SLA rather than a design intention. Each commitment below has a numbered identifier, a measurement method, an owning alert, and a defined consequence on breach. These are operational commitments carried into the service's SLO set (§7.5), not prose.
+
+| SLA ID | Commitment | Target | How it is measured | Alert on breach | Consequence of breach |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **SLA-01** | Session invalidation after a revocation webhook | **< 5 s** (p99) | Synthetic revocation probe every 5 min: revoke a canary principal, measure until the next turn is refused | `ALRT-14` | P1 security incident; break-glass global session flush available |
+| **SLA-02** | Downstream OAuth grant revocation at WorkWeek and ServiceImmediately | **< 10 s** (p99) | Webhook fan-out span in Cloud Trace | `ALRT-14` | P1; adapters fall back to rejecting the cached credential |
+| **SLA-03** | Entitlement change propagated to Agent Search document ACLs | **< 15 min** (p95) | Eventarc-to-datastore sync completion timestamp diff | `ALRT-15` | P2; query-time filter (immediate) remains the authoritative control throughout |
+| **SLA-04** | Stale embeddings physically evicted after source-document deletion | **< 15 min** (p95) | Incremental re-import completion event | `ALRT-15` | P2; metadata filter renders the chunk unreachable meanwhile |
+| **SLA-05** | Historical interaction turns purged after consent withdrawal | **< 60 min** | Purge-job completion record, row-count assertion to zero | `ALRT-13` | P2 compliance event, reported to the DPO |
+| **SLA-06** | Article 17 erasure completed end to end and receipt issued | **< 24 h** | Signed receipt timestamp vs request timestamp | `ALRT-13` | P1 compliance event; DPO notified directly |
+
+**Why the layering makes the slow SLA tolerable.** SLA-03 and SLA-04 are the only commitments measured in minutes, and neither is load-bearing for confidentiality. Entitlements are evaluated from the *live* verified subject assertion on every query, so a principal whose role was revoked one second ago is already excluded by the query-time filter even though the datastore ACL still lists them. The ACL sync exists so that a defect in the filter layer is not a single point of failure. **There is no compliance window in which a revoked user can read restricted content** - the concern the DPO raised is closed by the ordering, not merely mitigated by the SLA.
+
+## **4.8. Credential & Entitlement Revocation Mid-Session and Mid-Saga**
+
+Path 7 (§3.3) shows the revocation fan-out. This section states the behavioural contract explicitly, including the case Path 7 does not draw: revocation that lands **while a multi-step Saga is in flight**.
+
+**Why a mid-session revocation cannot be missed.** The composite credential of §4.1 is deliberately short-lived - the subject assertion carries a **120-second TTL** and is minted per turn, never cached across turns. There is no long-lived bearer token to revoke in the conventional sense. Three independent checks run before any tool executes:
+
+| Check | Source of truth | Cost | Fails the turn when |
+| :--- | :--- | :--- | :--- |
+| Session status | Firestore `sessions.status` | Single indexed read, already on the turn path | Status is `REVOKED` |
+| Subject-assertion freshness | Assertion `exp` claim, 120 s TTL | Local signature verification | Expired, or minting is refused because the principal is gone |
+| Live entitlement set | Re-derived at mint time from the entitlement provider (DEC-09) | Cached 60 s, invalidated by webhook | Requested scope is no longer held |
+
+**Mid-turn revocation.** A revocation arriving after the turn began but before a tool call is caught by the session check preceding that call. A revocation arriving after a write has been dispatched cannot un-send it; the write is already authorised and audited, and the *next* turn is refused. This is stated plainly rather than papered over - a system that claimed to retract an in-flight authorised write would be lying.
+
+**Mid-Saga revocation.** The interaction with §5.4 compensation classes is the subtle case, and the answer follows the same principle that governs compensation generally:
+
+| Saga state at revocation | Behaviour |
+| :--- | :--- |
+| No step yet executed | Saga abandoned, ledger marked `REVOKED_BEFORE_EXECUTION`, nothing to undo |
+| Only `READ_ONLY` steps executed | Saga abandoned; no state changed |
+| A `REVERSIBLE_SAFE` step executed | Step compensated automatically, Saga closed, action recorded |
+| An `ANCILLARY` step executed | Left in place and flagged; an ITSM follow-up task is opened for a human |
+| A **`HUMAN_CONSEQUENTIAL`** step executed (e.g. a filed medical leave) | **Never automatically reversed.** The Saga halts, remaining steps are cancelled, and a P2 ITSM ticket is routed to HR Operations with full context so a human completes or unwinds it deliberately |
+
+The last row is the important one. A terminated employee's already-filed medical leave is not silently cancelled because their session died - that would convert an access-control event into an HR harm, which is exactly the failure mode DEC-06 exists to prevent. Revocation stops *future* agent action; it does not retroactively rewrite completed, audited, human-consequential state.
+
+**Queued work.** Cloud Tasks entries already enqueued for a revoked principal are not executed: each task handler re-verifies session status and entitlements before dispatch, and a task failing that check is moved to the DLQ with reason `PRINCIPAL_REVOKED` rather than retried.
 
 ---
 
@@ -1174,6 +1260,24 @@ Every queued call carries the `X-Idempotency-Key` described in §5.1, so a retry
 
 Dispatch rates are deliberately set ~10% below the sustained backend limit so that queue drain plus live traffic together stay inside the ceiling rather than re-triggering the throttling that caused the queueing.
 
+### **Adaptive Concurrency Control - Why the Table Above Is a Seed, Not a Dependency**
+
+**New in v1.5, and this closes OPEN-01.** The numbers above are the *mock* services' limits. v1.4 listed the real WorkWeek and ServiceImmediately production limits as an unresolved external dependency, which correctly drew the criticism that queue configuration might need emergency post-deployment adjustment. The right answer is not to chase a number from another team before launch - it is to build a client that **does not need the number to be correct**.
+
+Each adapter wraps its Cloud Tasks queue in an **AIMD (additive-increase / multiplicative-decrease) adaptive limiter** that discovers the true safe ceiling from the backend's own behaviour:
+
+| Parameter | Value | Purpose |
+| :--- | :--- | :--- |
+| Initial concurrency limit | 50% of the configured static ceiling | Launch conservatively; never open at full rate against an unverified backend |
+| Additive increase | +1 concurrent slot per 100 consecutive successes | Slow, evidence-based probing upward |
+| Multiplicative decrease | x0.5 on any `429`, `503`, or `Retry-After` | Immediate, aggressive back-off - the classic congestion-control asymmetry |
+| Latency-gradient trigger | Decrease when observed p95 exceeds 2x the rolling 30-minute baseline | Catches a degrading backend that is still returning `200`s before it starts shedding load |
+| Hard ceiling | The `tfvars` value in the table above | Adaptation may lower the rate below the configured limit; it may never raise it above |
+| Floor | 2 concurrent | Guarantees forward progress and prevents a transient error storm from wedging the queue at zero |
+| Re-probe interval | 10 min after a decrease | Recovers capacity automatically once the backend is healthy again |
+
+**What this changes about the risk.** If the real production ceiling turns out to be 20 rps rather than 50, the limiter converges to it within minutes of first contact, without an incident, a code change, or a redeploy. If it turns out to be 200 rps, the system stays at the configured 50 and the team raises the `tfvars` ceiling deliberately when they choose to. Either way, **the wrong static number is no longer an outage** - it is at worst a temporary throughput inefficiency that the system corrects itself and reports through `ALRT-02` and `ALRT-03` (§7.5). Phase 2 additionally runs a calibration load test against each backend and records the observed ceiling in the deployment record.
+
 ### **Cloud Tasks Queue Configuration**
 ```yaml
 apiVersion: cloudtasks.googleapis.com/v2
@@ -1445,6 +1549,131 @@ gantt
 
 **Phase exit criteria.** Phase 3 does not exit until measured p95 safety overhead is below 300 ms (NFR-2.1) and all four compensation classes have passing tests. Phase 4 does not exit until the §9.1 thresholds are met on the golden set and the §9.4 UAT scenarios are signed off.
 
+## **7.5. Observability, Alerting & Operational Runbook**
+
+**New in v1.5.** Earlier revisions named `modules/observability` and listed the metrics it would emit, but never enumerated the thresholds at which a human is woken. A dashboard nobody is paged from is decoration. This section closes that gap: every alert below has a condition, a threshold, an evaluation window, a severity, a routing channel, and - where safe - an automated response that fires before the human arrives.
+
+### **Service Level Objectives and Error Budget**
+
+| SLO ID | Service Level Indicator | Objective | Measurement window | Error budget |
+| :--- | :--- | :--- | :--- | :--- |
+| **SLO-01** | Availability: fraction of turns returning a non-5xx result | **99.9%** | 30-day rolling | 43 m 12 s / month |
+| **SLO-02** | Latency: fraction of turns with TTFT < 1.5 s | **95%** | 30-day rolling | 5% of turns |
+| **SLO-03** | Safety overhead: fraction of turns with guardrail overhead < 300 ms | **99%** | 30-day rolling | 1% of turns |
+| **SLO-04** | Transaction integrity: backend writes that succeed or compensate correctly | **99.99%** | 30-day rolling | 1 in 10,000 |
+| **SLO-05** | Revocation propagation within SLA-01 | **99.9%** | 30-day rolling | Security-critical; any breach reviewed individually |
+
+Error-budget policy: at **50%** consumption, non-essential feature work pauses in favour of reliability; at **100%**, all deploys except reliability fixes and security patches are frozen until the window rolls.
+
+### **Alert Policies**
+
+Severity routing: **P1** pages the on-call engineer immediately (PagerDuty); **P2** raises a ticket and posts to `#elevate-c1-g5-ops` within business hours; **P3** is a dashboard annotation reviewed at the weekly operations review.
+
+| Alert ID | Condition | Threshold | Window | Sev | Automated response |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **ALRT-01** | **Gateway 5xx spike** - ratio of 5xx to total responses at the Global ALB | **> 2%** | 5 min | **P1** | Health-check weight shifted away from the failing region; failover readiness check triggered (§2.2) |
+| **ALRT-02** | **Backend 5xx spike** - WorkWeek or ServiceImmediately 5xx ratio | **> 5%** | 5 min | **P2** | Adaptive limiter halves concurrency (§5.2); affected tool marked degraded so the supervisor stops routing to it and the error-handling matrix (§5.5) message is served |
+| **ALRT-03** | Backend `429` / `Retry-After` rate | **> 1%** | 5 min | **P3** | AIMD multiplicative decrease; no human action unless sustained > 1 h |
+| **ALRT-04** | **Safety overhead approaching the NFR ceiling** - p95 guardrail chain latency | **> 240 ms** (80% of ceiling) | 10 min | **P2** | None; this is the deliberate early warning that protects the §4.3 budget before NFR-2.1 is breached |
+| **ALRT-05** | Safety overhead p95 exceeds the NFR ceiling | **> 300 ms** | 5 min | **P1** | NFR-2.1 breach; SLO-03 error budget debited |
+| **ALRT-06** | Time-to-first-token p95 | **> 1.5 s** | 10 min | **P2** | Model-endpoint health check; automatic retry against the secondary region endpoint |
+| **ALRT-07** | Guardrail block-rate anomaly - deviation from the 7-day baseline | **> 3 sigma** in either direction | 30 min | **P2** | None automatic. A spike suggests an attack campaign; a collapse suggests a broken guardrail. Both need eyes |
+| **ALRT-08** | **Model Armor or DLP API error / deadline rate** | **> 2%** | 5 min | **P1** | Circuit breaker opens into fail-closed degraded mode (§4.3). Because this refuses user traffic rather than serving it unscanned, it pages immediately |
+| **ALRT-09** | Saga steps stuck in `PENDING` | Any step **> 15 min** | 5 min | **P2** | Automatic DLQ replay attempt; on second failure an HR Operations follow-up ticket is opened (§5.4) |
+| **ALRT-10** | Dead-letter queue depth | **> 50 messages** | 10 min | **P2** | Queue drain paused pending triage to avoid amplifying a downstream fault |
+| **ALRT-11** | Cross-region Firestore read latency p99 | **> 150 ms** | 10 min | **P3** | Synthetic probe escalation; informs the §2.2 budget |
+| **ALRT-12** | **Availability error-budget burn rate** (multi-window, multi-burn-rate) | **14.4x over 1 h AND 6x over 6 h** | dual | **P1** | Fast-burn page: at this rate the entire 30-day budget is consumed in ~2 days |
+| **ALRT-12b** | Slow-burn variant | **3x over 24 h AND 1x over 3 d** | dual | **P2** | Ticket; indicates chronic degradation rather than an outage |
+| **ALRT-13** | **Compliance job failure** - retention-conformance job, consent-withdrawal purge (SLA-05), or Art. 17 erasure (SLA-06) fails or exceeds its SLA | Any occurrence | per-run | **P2** | DPO notified automatically; erasure-receipt issuance blocked rather than falsely issued |
+| **ALRT-14** | **Revocation propagation breach** - session invalidation (SLA-01) or downstream OAuth revocation (SLA-02) exceeds target, or the webhook returns non-200 | Any occurrence | per-event | **P1** | Break-glass global session flush available to the on-call; security incident opened |
+| **ALRT-15** | Entitlement ACL sync or stale-embedding eviction lag (SLA-03, SLA-04) | **> 15 min** | 15 min | **P2** | Forced full datastore re-sync. Query-time filtering keeps confidentiality intact meanwhile (§4.7) |
+
+**Deliberately absent: an alert on "model quality."** Groundedness and accuracy are measured offline against the golden set in CI (§9.3), not sampled in production, because a per-turn LLM-as-a-Judge call would add cost and latency to the critical path for a signal that moves on the timescale of deploys rather than minutes.
+
+### **Structured Log Payload Schemas**
+
+Alert thresholds are only enforceable if the underlying telemetry is structured. All three schemas below are emitted as JSON to Cloud Logging and sunk to the partitioned BigQuery audit dataset (§4.6). Every one carries `trace_id` so a single turn can be reconstructed end to end, and none may contain raw SPII - the DLP surrogate is logged, never the value.
+
+**Schema 1 - `llm_execution_event`** (one per model invocation; feeds ALRT-04, ALRT-05, ALRT-06 and the §6 cost model):
+
+```json
+{
+  "event_type": "llm_execution_event",
+  "trace_id": "projects/prj-elevate-c1-g5/traces/a1b2c3d4e5f6",
+  "span_id": "0x3f2a1b",
+  "session_id": "sess_9f2b41",
+  "turn_seq": 4,
+  "employee_id_hash": "sha256:9c1e...",
+  "agent_node": "hr_specialist",
+  "model_id": "gemini-3.7-flash",
+  "model_version_pinned": "gemini-3.7-flash-002",
+  "invocation_purpose": "SPECIALIST_RESPONSE",
+  "input_tokens": 1812,
+  "output_tokens": 337,
+  "cached_tokens": 0,
+  "ttft_ms": 812,
+  "total_latency_ms": 1944,
+  "finish_reason": "STOP",
+  "safety_overhead_ms": 118,
+  "guardrail_verdict_in": "ALLOW",
+  "guardrail_verdict_out": "ALLOW",
+  "groundedness_score": 0.94,
+  "estimated_cost_usd": 0.002622
+}
+```
+
+**Schema 2 - `agent_node_lifecycle`** (one per supervisor routing decision and specialist entry/exit; feeds trajectory evaluation in §9.1 and ALRT-07):
+
+```json
+{
+  "event_type": "agent_node_lifecycle",
+  "trace_id": "projects/prj-elevate-c1-g5/traces/a1b2c3d4e5f6",
+  "session_id": "sess_9f2b41",
+  "turn_seq": 4,
+  "node_name": "supervisor_router",
+  "transition": "ROUTE",
+  "target_node": "hr_specialist",
+  "routing_confidence": 0.91,
+  "routing_rationale_class": "SINGLE_DOMAIN_HCM",
+  "authorized_tools_at_node": ["get_employee_profile", "get_leave_balances", "submit_leave_request"],
+  "saga_id": null,
+  "state_size_bytes": 4211,
+  "node_latency_ms": 143,
+  "outcome": "SUCCESS"
+}
+```
+
+**Schema 3 - `tool_execution_event`** (one per backend call; feeds ALRT-02, ALRT-03, ALRT-09, ALRT-10 and the FR-1.2 / FR-4.1 audit requirement that automated actions be distinguishable from human ones):
+
+```json
+{
+  "event_type": "tool_execution_event",
+  "trace_id": "projects/prj-elevate-c1-g5/traces/a1b2c3d4e5f6",
+  "session_id": "sess_9f2b41",
+  "turn_seq": 4,
+  "tool_name": "submit_leave_request",
+  "operation_id": "submitLeaveRequest",
+  "backend": "WORKWEEK_HCM",
+  "http_method": "POST",
+  "http_status": 201,
+  "actor_type": "AUTOMATED_AGENT",
+  "acting_employee_id_hash": "sha256:9c1e...",
+  "subject_assertion_jti": "jti_7d21ac",
+  "idempotency_key": "sess_9f2b41:4:submitLeaveRequest",
+  "saga_id": "saga_4410fe",
+  "saga_step_index": 2,
+  "compensation_class": "HUMAN_CONSEQUENTIAL",
+  "adaptive_limit_at_dispatch": 22,
+  "queue_wait_ms": 0,
+  "backend_latency_ms": 388,
+  "retry_attempt": 0,
+  "validation_rules_applied": ["BALANCE_CONSTRAINT", "TEMPORAL_VALIDITY"],
+  "outcome": "SUCCESS"
+}
+```
+
+`actor_type` is the field that satisfies FR-1.2 and FR-4.1 directly: every record states whether the action came from the agent or a human, so the audit trail can never be ambiguous about origin.
+
 ---
 
 # **8. Assumptions, Constraints, Risk & Mitigations**
@@ -1484,7 +1713,7 @@ gantt
 | **RSK-04** | Prompt injection used to exfiltrate another employee's data | Low | Critical | Structural defence - `employee_id` is not a tool parameter (§4.1); plus Model Armor inbound, DLP pre-LLM masking, per-call scope intersection |
 | **RSK-05** | Unauthorised access persists after an employee status change | Low | Critical | 120-second assertion TTL, webhook-driven revocation, session status checked every turn (< 5 s effective window, §4.7) |
 | **RSK-06** | Chat logs retained indefinitely, breaching privacy mandates | Low | High | Native Firestore 30-day TTL, PII-stripped BigQuery archive, RTBF purge workflow (§4.6) |
-| **RSK-07** | Measured safety overhead exceeds the 300 ms NFR ceiling | **Medium** | Medium | Budget has only 20 ms headroom (§4.3). Phase 3 carries a dedicated tuning window; designed mitigation is concurrent outbound scanning with a held final flush |
+| **RSK-07** | Measured safety overhead exceeds the 300 ms NFR ceiling | **Low** *(reduced from Medium in v1.5)* | Medium | §4.3 was re-architected from five sequential stages into three concurrency groups: the design budget is now **120 ms p95 with 180 ms of headroom**, not 280 ms with 20 ms. Per-stage hard deadlines fail closed, so a network fluctuation cannot cascade into a turn timeout. `ALRT-04` warns at 240 ms, well before the NFR is breached, and Phase 3 retains its measurement exit criterion |
 | **RSK-08** | An auto-rollback cancels a consequential employee action | Low | **Critical** | Compensation classification policy (§5.4) - `HUMAN_CONSEQUENTIAL` steps are never auto-reversed; tested per class in CI |
 | **RSK-09** | A model version change silently regresses accuracy or safety | Medium | High | Model ID pinned, recorded per turn, and any change gated on the full §9.3 eval suite (§1.4 version governance) |
 | **RSK-10** | Mock backends diverge from real WorkWeek/ServiceImmediately behaviour | Medium | Medium | Contract tests run against the same OpenAPI specs for both; adapter isolates the difference (ASM-01, §7.2) |
@@ -1505,7 +1734,7 @@ Thresholds are traceable to BRD §7 evaluation criteria.
 | **Cross-System Orchestration** | UC-2.x completion and correct compensation class | Trajectory tests per saga, including forced-failure injection | **Pass on all UC-2.x, correct class on every failure branch** | NFR-4.3, BRD §7 |
 | **Data Isolation** | Cross-user access attempts | Adversarial suite attempting to induce another employee's data | **0 successful cross-user reads** | FR-1.5 |
 | **Response Latency** | Time to first token and total turn | Cloud Trace distributed spans (3.7 Flash SSE streaming) | **TTFT avg < 1.0 s, p95 < 1.5 s; total < 3.5 s, max < 5.0 s; response start < 10 s** | NFR-2.1 |
-| **Safety Overhead** | Added latency of the guardrail chain | Custom telemetry around the interceptor pipeline | **< 300 ms p95** (design budget 280 ms) | NFR-2.1 |
+| **Safety Overhead** | Added latency of the guardrail chain | Custom telemetry around the interceptor pipeline (`llm_execution_event.safety_overhead_ms`, §7.5) | **< 300 ms p95** (design budget **120 ms** after the §4.3 concurrency rework; `ALRT-04` warns at 240 ms) | NFR-2.1 |
 | **Auditability** | Log coverage of allowed and blocked actions | Audit completeness reconciliation job | **100% of API interactions and safety blocks logged** | NFR-1.2, BRD §7 |
 | **Graceful Degradation** | Behaviour under injected backend downtime | Chaos suite disabling each backend in turn | **100% graceful; no stack traces or internal codes leaked** | NFR-4.1, BRD §7 |
 | **NLU Robustness** | Intent detection against typos, synonyms, context | Perturbed-prompt variants of the golden set | **>= 95% intent accuracy; qualitative pass at UAT** | FR-2.1, BRD §7 |
@@ -1582,16 +1811,18 @@ Before any change to prompts, tools, model IDs, guardrail thresholds or the agen
 | **DEC-05** *(new in v1.4)* | Identity | **Two-layer composite credential** (§4.1): Google-signed workload OIDC token plus a `signJwt`-signed subject assertion, both verified. The unsigned base64 context header is withdrawn. The acting employee ID is bound server-side and is never a model-supplied argument. | Enterprise Architecture & InfoSec | Finalized |
 | **DEC-06** *(new in v1.4)* | Resilience | **Saga compensation classification** (§5.4): steps are typed `READ_ONLY` / `REVERSIBLE_SAFE` / `ANCILLARY` / `HUMAN_CONSEQUENTIAL`. A `HUMAN_CONSEQUENTIAL` step such as a medical-leave filing is never automatically reversed. | HR Business Lead & Platform | Finalized |
 | **DEC-07** (v1.3, refined v1.4) | Model governance | **Tiered Gemini 3.7 Flash + Gemini 3.1 Pro**, both pinned to explicit versions and recorded per turn; the judge model is pinned independently; upgrades gated on the §9.3 eval suite. | Enterprise Architecture | Finalized |
+| **DEC-08** *(new in v1.5, closes OPEN-01)* | Backend throughput safety | **Adaptive concurrency control (AIMD)** in every adapter (§5.2). The static per-backend rate limits become conservative *seeds*; the limiter converges on the true ceiling from observed `429`/`503` responses and latency gradient, bounded below by a floor of 2 and above by the `tfvars` ceiling. Correct behaviour therefore no longer depends on a vendor-confirmed number, so this ceases to be a launch dependency. Phase 2 records a calibration load test for the deployment record. | Platform Engineering & IT Director | Finalized |
+| **DEC-09** *(new in v1.5, closes OPEN-03)* | Knowledge entitlement | **Cloud Identity group `hr-people-partners@` is the entitlement source of truth for the restricted HR operational guidelines corpus**, read through an `EntitlementProvider` interface with a single method (`entitlements_for(subject) -> set[str]`). Group membership changes emit Admin SDK events consumed by Eventarc, driving both the query-time filter and the ACL sync of §4.7 under SLA-03. Swapping to the enterprise IdP or a WorkWeek role feed post-MVP is an implementation of the same interface plus a `tfvars` change - no call-site edits. **The restricted corpus therefore ships within MVP 1 rather than waiting.** | HR Systems & InfoSec | Finalized |
 
 ## **10.2. Remaining Open Items (external dependencies only)**
 
 These cannot be closed inside this document because they depend on parties outside the project team. Each has an owner and a needed-by date.
 
+**Two items closed in v1.5.** Evaluator round 4 surfaced OPEN-01 (unconfirmed backend rate limits) and OPEN-03 (entitlement source of truth) as *critical gaps* rather than as the honest external dependencies they were recorded as. That is fair: a dependency that blocks a control from shipping is a gap, however transparently it is documented. Both were therefore re-engineered so the design no longer waits on another team - **DEC-08** makes throughput safety self-calibrating, and **DEC-09** names a source of truth behind a swappable interface. Only genuinely unresolvable items remain below.
+
 | ID | Open Item | Owner | Needed By | Interim Position |
 | :--- | :--- | :--- | :--- | :--- |
-| **OPEN-01** | Confirmation of production WorkWeek and ServiceImmediately rate limits (the 50 rps / 40 rps figures in §5.2 are the mock-service values) | HCM & ITSM platform owners | Phase 2 exit, 2026-10-06 | Adapter reads limits from configuration, so a change is a `tfvars` edit, not a code change |
 | **OPEN-02** | Google Cloud unit-price re-verification against the pricing calculator | FinOps | ARB approval | §6 arithmetic is shown in full so revised rates can be re-applied directly |
-| **OPEN-03** | Entitlement source of truth for the restricted HR operational guidelines corpus (§4.7) | HR Systems & InfoSec | Phase 3 start, 2026-10-06 | Restricted corpus stays unpublished until the entitlement feed exists; general corpus is unaffected |
 | **OPEN-04** | Confirmation of the **official** 29 SDD rubric definitions against the reconstructed set in Appendix C | Evaluation programme | Next review round | **Partially addressed in v1.4.** Appendix C now maps a reconstructed 29-dimension rubric set to sections and evidence. The dimension *names* are inferred, not authoritative; the mapping is what matters and is expected to survive re-labelling |
 
 ---
@@ -1683,26 +1914,35 @@ Every BRD requirement maps to a design section, an implementing component, and a
 | 14 | Integration | Input validation and business-rule enforcement | §5.3 | Deterministic rules engine flowchart; FR-3.3 and FR-4.3 rules |
 | 15 | Integration | Contract stability and schema-drift control | §5.1, §7.2, §7.3 | Versioned specs; contract tests in CI against both mock and real adapters |
 | 16 | Security & Governance | Authentication and workload identity | §4.1 | Two-layer OIDC + `signJwt` composite credential, both verified |
-| 17 | Security & Governance | Authorization, RBAC and data isolation | §4.1 load-bearing rule, §4.2 | 4-role RBAC matrix; server-side subject binding; three-way permission intersection |
+| 17 | Security & Governance | Authorization, RBAC and data isolation | §4.1 load-bearing rule, §4.2, **§4.8** | 4-role RBAC matrix; server-side subject binding; three-way permission intersection; mid-session and mid-Saga revocation contract |
 | 18 | Security & Governance | AI-specific threat controls | §4.3, §5.5 | Model Armor inbound **and** outbound; six categories; org floor settings |
 | 19 | Security & Governance | Data privacy, classification and masking | §4.4, §4.5 | 7-element PII mapping matrix; concrete DLP de-identify template |
-| 20 | Security & Governance | Retention, lifecycle and right-to-be-forgotten | §4.6 | Firestore schemas; retention table by data class; GDPR Art. 17 purge workflow |
+| 20 | Security & Governance | Retention, lifecycle and right-to-be-forgotten | §4.6, §4.7 | Firestore schemas; retention by data class incl. masked-PII audit records; Art. 17 purge; **Art. 7(3) consent withdrawal with ephemeral mode**; stale-embedding eviction; SLA-01 - SLA-06 |
 | 21 | Security & Governance | Auditability and traceability | §3.2, §4.6, §5.5 | Per-turn model ID and guardrail verdict; 365-day BigQuery archive; denied actions logged |
 | 22 | Reliability & Ops | Availability, DR and failover | §2.2 | Active-active multi-region; RPO 0 / RTO < 30 s; PITR; quarterly drill |
-| 23 | Reliability & Ops | Resilience, retry, throttling and backpressure | §5.2 | Per-backend rate limits; Cloud Tasks YAML; DLQ; dispatch at 90% of ceiling |
+| 23 | Reliability & Ops | Resilience, retry, throttling and backpressure | §5.2 | Per-backend rate limits; Cloud Tasks YAML; DLQ; **AIMD adaptive concurrency that self-calibrates to the real backend ceiling** |
 | 24 | Reliability & Ops | Distributed transaction consistency | §5.4 | Saga ledger; four-class compensation policy; decision flowchart |
-| 25 | Reliability & Ops | Latency budget and performance targets | §4.3, §9.1 | 5-stage 280 ms safety budget vs 300 ms NFR; TTFT and total-turn targets |
-| 26 | Reliability & Ops | Observability, SLOs and alerting | §2.2, §7.1 `modules/observability`, §9.1 | Cloud Trace spans; SLO definitions; synthetic cross-region probe |
+| 25 | Reliability & Ops | Latency budget and performance targets | §4.3, §9.1 | 3-group concurrent safety budget: **120 ms vs the 300 ms NFR**, per-stage fail-closed deadlines, circuit breaker; TTFT and total-turn targets |
+| 26 | Reliability & Ops | Observability, SLOs and alerting | **§7.5**, §2.2, §9.1 | 5 SLOs with error-budget policy; **16 enumerated alert policies** with thresholds, windows, severities and automated responses; multi-window burn-rate alerting; 3 structured log payload schemas |
 | 27 | Delivery & Assurance | IaC, environment and configuration management | §7.1, §7.2 | 8 Terraform modules; state isolation and locking; prompt/registry versioning |
 | 28 | Delivery & Assurance | CI/CD, release gating and rollback | §7.3 | Eval-gated pipeline; Binary Authorization; canary with automatic rollback |
 | 29 | Delivery & Assurance | Evaluation, test strategy and UAT | §9.1 - §9.4 | 150-prompt golden set + 100-vector red team; trajectory tests; UAT plan with exit criteria |
 
 ## **C.2. Known Weakest Coverage**
 
-Stating these plainly is more useful than claiming uniform strength. Three dimensions are supported by design intent rather than by measurement, and each is tracked:
+Stating these plainly is more useful than claiming uniform strength.
 
-| # | Dimension | Why it is weaker | Tracked as |
+**Closed since v1.4.** Two of the three dimensions previously listed here were the same two the round-4 evaluator independently identified, which is a useful confirmation that self-assessment and external review converge when the self-assessment is honest:
+
+| # | Dimension | v1.4 weakness | Resolution in v1.5 |
 | :-- | :--- | :--- | :--- |
-| 25 | Latency budget | The 280 ms safety budget has only 20 ms of headroom and is composed of five estimated stage figures, none yet measured | RSK-07; Phase 3 tuning window with a hard exit criterion |
-| 26 | Observability | SLOs and alert policies are named as a Terraform module but individual alert thresholds are not yet enumerated | To be specified at Phase 1 exit |
+| 25 | Latency budget | 280 ms design budget, 20 ms headroom, five unmeasured sequential stages | Re-architected into three concurrency groups: **120 ms budget, 180 ms headroom**, plus per-stage fail-closed deadlines and a circuit breaker (§4.3) |
+| 26 | Observability | Alert thresholds not enumerated | **§7.5** added: 5 SLOs, error-budget policy, 16 alert policies with thresholds and automated responses, 3 structured log schemas |
+
+**Remaining weakest coverage.** These are supported by design intent rather than by measurement, and each is tracked:
+
+| # | Dimension | Why it is still weaker | Tracked as |
+| :-- | :--- | :--- | :--- |
+| 25 | Latency budget | The 120 ms figure is now a well-headroomed *design* budget, but it is still a design budget - no stage has been measured on real infrastructure | RSK-07 (reduced to Low); Phase 3 measurement exit criterion; `ALRT-04` |
 | 3 | ROI | Depends on the FY26 helpdesk baseline and on unit prices dated 2026-08-25 | ASM-03, ASM-06, OPEN-02 |
+| 11 | Scalability roadmap | The post-MVP ADK migration is described as a direction with a rationale, not as a costed and sequenced plan | §2.1; revisited at MVP 1 close |
