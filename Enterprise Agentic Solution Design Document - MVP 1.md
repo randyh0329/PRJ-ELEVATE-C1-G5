@@ -10,15 +10,15 @@
 | :---- | :---- |
 | **Project Name** | HR Agentic Solution (MVP 1) |
 | **Document ID** | SDD-ELEVATE-C1-G5-MVP1 |
-| **Version** | 1.5 |
+| **Version** | 1.6 |
 | **Date** | 2026-08-25 |
 | **Author(s)** | Romi Jung / Elevate C1-G5 Architecture Team |
 | **Document Owner** | Cloud Architecture & Modernization Specialist Team |
 | **Reviewers** | Alex Rivera (IT Director), Maria Santos (Data Protection Officer), HR Business Sponsor, InfoSec |
-| **Status** | Approved Final Architecture / WAF & CE-Skills Audit Improvements Integrated |
+| **Status** | Approved Final Architecture / Google Cloud Next '26 Branding & CE Alignment Integrated |
 | **Target Audience** | Enterprise Architects, Application Modernization Leads, AI Engineers, IT Director, Data Protection Officer, HR Business Sponsors |
 | **Source Requirements** | `HR Agentic Solution BRD.md` (FR-1.1 - FR-5.5, NFR-1.1 - NFR-4.3, UC-1.1 - UC-2.3) |
-| **Target Cloud Platform** | Google Cloud Platform (Tiered Gemini 3.7 Flash + Gemini 3.1 Pro on Vertex AI, Agent Search, Model Armor, Cloud Run Multi-Region, Cloud Firestore, Cloud Tasks, Sensitive Data Protection) |
+| **Target Cloud Platform** | Google Cloud Platform (Tiered Gemini 3.7 Flash + Gemini 3.1 Pro on Gemini Enterprise Agent Platform / Vertex AI, Agent Search [formerly Vertex AI Search], Google ADK & Agent Platform Runtime [formerly Reasoning Engine], Model Armor, Cloud Run Multi-Region, Cloud Firestore, Cloud Tasks, Sensitive Data Protection) |
 
 ## **Revision History**
 
@@ -31,6 +31,7 @@
 | **1.3** | 2026-08-25 | Romi Jung / Elevate C1-G5 Architecture Team | Model Architecture Modernization: upgraded to Gemini 3.7 Flash (`gemini-3.7-flash`) as the primary high-throughput agentic workhorse and Gemini 3.1 Pro (`gemini-3.1-pro`) for high-complexity Saga orchestration and LLM-as-a-Judge; integrated native agentic tool-calling specifications (`thought_signature`); recalculated the FinOps cost model with Vertex AI token pricing |
 | **1.4** | 2026-08-25 | Elevate C1-G5 Architecture Team | **BRD conformance & correctness pass** (builds on the v1.3 tiered-model architecture, which is retained). Restored §4.1 delegated authorization with a verifiable two-layer composite token (replaces unsigned context header); added FR-1.3 **output** validation via Model Armor `SanitizeModelResponse` with a 300 ms safety-latency budget; added the missing `PATCH /employees/me/contact` operation (FR-3.2) and restored full OpenAPI 3.0 contracts; added sequence diagrams for **all six** use cases; introduced a Saga **compensation classification policy** so an accepted medical leave is never auto-cancelled over an ancillary IT step; added Agent & Tool Registry (FR-1.1); added knowledge-ACL revocation propagation SLA; reconciled the cost model to a single 15,000-inquiry/month basis; corrected Firestore consistency semantics; added a model-version governance policy over the v1.3 tiering; reconciled the cost model onto the single 15,000-inquiry/month basis used by the ROI case; restored §8 Assumptions & Constraints; added Golden Dataset spec, UAT plan, engineering standards, Terraform state management; added **Appendix A - Requirements Traceability Matrix**, **Appendix B - Glossary**, and **Appendix C - SDD Rubric Coverage Index** |
 | **1.5** | 2026-08-25 | Romi Jung / Elevate C1-G5 Architecture Team | **WAF & CE-Skills Audit Improvements** (incorporating Google Cloud Well-Architected Framework guidelines from `ce-skills`): (1) Enforced 3-way IAM Service Account isolation (`sa-gateway`, `sa-agent-core`, `sa-integrations`) per `ce-skills/prompts/security_critic.md`; (2) Added Circuit Breaker pattern on downstream adapters, Firestore distributed lock/idempotency keys, and Cloud Run `min-instances=1` per `ce-skills/references/ha_cloud_sql` & `agent-waf-system`; (4) Added Vertex AI Context Caching reducing monthly FinOps token cost by ~33% per `ce-skills/skills/gcp-billing-reports`; (5) Added Two-Stage Delivery Pipeline (Phase 1 Fast-Path vs Phase 2 Multi-Region) and Deterministic Mock Server with `/api/test/reset-state` endpoint per `ce-skills/.agents/workflows/system-validation.md` & `generate-adr.md`; (6) Formalized decisions DEC-08 through DEC-11. |
+| **1.6** | 2026-08-25 | Romi Jung / Elevate C1-G5 Architecture Team | **Google Cloud Next '26 Enterprise AI Branding Alignment:** Aligned product naming to official Gemini Enterprise Agent Platform (GEAP) taxonomy while retaining customer-familiar legacy names in parentheses: (1) Unified platform: **Gemini Enterprise Agent Platform (formerly Vertex AI Agent Builder)**; (2) Grounding engine: **Agent Search (formerly Vertex AI Search)**; (3) Agent development & runtime: **Google ADK & Agent Platform Runtime (formerly Vertex AI Reasoning Engine)**; (4) Visual authoring: **Agent Designer / Agent Studio**; (5) Governance: **Agent Registry & Agent Garden**; (6) Enterprise API integration option: **Apigee API Hub / Application Integration**. |
 
 ---
 
@@ -152,11 +153,26 @@ flowchart TB
     Reident --> ChatUI
 ```
 
+### **1.3.1. Google Cloud Platform Branding & Taxonomy Alignment (Google Cloud Next '26)**
+
+To ensure technical currency, cross-organization consistency, and seamless translation for enterprise customer stakeholders, this architecture aligns directly with Google Cloud's official enterprise AI branding established at **Google Cloud Next '26**. The following matrix maps current official product names to legacy terminology familiar to existing Google Cloud customers:
+
+| Architectural Component | Official 2026 Branding | Familiar Legacy Name | Enterprise Function in Solution |
+| :--- | :--- | :--- | :--- |
+| **Comprehensive Agent Ecosystem** | **Gemini Enterprise Agent Platform (GEAP)** | Vertex AI Agent Builder / Gen App Builder | Unified platform for building, deploying, governing, and optimizing enterprise-grade AI agents |
+| **Grounded Knowledge Retrieval (RAG)** | **Agent Search** | Vertex AI Search / Enterprise Search | Managed semantic chunking, embedding generation, reranking, and citation metadata attribution over GCS policy stores |
+| **Agent Core & Code Runtime** | **Google ADK & Agent Platform Runtime** | Vertex AI Reasoning Engine (`reasoningEngines`) | Code-first agent execution runtime executing structured tool calling and Saga state coordination |
+| **Visual / Low-Code Agent Flow** | **Agent Designer / Agent Studio** | Agent Builder Flow / Dialogflow CX | Visual orchestration studio for declarative intents, human handoffs, and conversational routing |
+| **Long-Term Memory & Context** | **Memory Bank & Managed Sessions** | Custom Firestore Session Persistence | Automated persistence of conversational context, user preferences, and cross-session entity memory |
+| **Agent Catalog & Governance** | **Agent Registry & Agent Garden** | Model Garden / Vertex AI Model Registry | Enterprise marketplace, version control, and multi-agent access control (A2A interoperability) |
+| **Security & Safety Guardrails** | **Model Armor & Agent Gateway** | Cloud DLP + Vertex AI Safety Settings | Non-bypassable ingress/egress proxy intercepting prompt injections, jailbreaks, PII leakage, and toxic outputs |
+| **Enterprise API Management** | **Apigee API Hub / Application Integration** | Direct Cloud Run VPC Egress Connectors | Enterprise API governance, rate limiting, mTLS validation, and credential security fronting legacy HCM/ITSM |
+
 ## **1.4. Alternatives Considered**
 
 | Architectural Decision | Chosen Selection | Alternatives Considered | Trade-offs & Rationale | Business Value |
 | :--- | :--- | :--- | :--- | :--- |
-| **Agent Orchestration Framework** | **LangGraph / Python StateGraph on Cloud Run** | 1. **ADK on Gemini Enterprise Agent Platform** (managed Sessions, Memory Bank, Example Store, observability)<br>2. Vertex AI Agent Builder (declarative / low-code)<br>3. Semantic Kernel / CrewAI | ADK on the managed Agent Platform is the strongest genuine competitor and removes session/memory infrastructure work; it is the recommended **post-MVP** target (§2.1). For MVP 1 we chose LangGraph on Cloud Run because the Saga pattern requires an explicit, inspectable state machine with hand-written compensating transitions and a persisted step ledger we control (§5.4), and because the eval harness needs deterministic replay of a fixed graph. Declarative builders were rejected: guardrails and compensation cannot be strictly bounded in them. | Auditable, replayable execution graph - a precondition for the 100%-transaction-correctness criterion in BRD §7 |
+| **Agent Orchestration Framework** | **LangGraph / Python StateGraph on Cloud Run** *(with Google ADK compatibility)* | 1. **Google ADK on Gemini Enterprise Agent Platform** (managed Sessions, Memory Bank, Agent Studio observability)<br>2. Agent Designer (declarative / low-code Agent Builder)<br>3. Semantic Kernel / CrewAI | Google ADK on the managed Gemini Enterprise Agent Platform is the strongest genuine competitor and removes session/memory infrastructure work; it is the recommended **post-MVP** target (§2.1). For MVP 1 we chose LangGraph on Cloud Run because the Saga pattern requires an explicit, inspectable state machine with hand-written compensating transitions and a persisted step ledger we control (§5.4), and because the eval harness needs deterministic replay of a fixed graph. Declarative builders (Agent Designer) were rejected for MVP 1: guardrails and compensation cannot be strictly bounded in them. | Auditable, replayable execution graph - a precondition for the 100%-transaction-correctness criterion in BRD §7 |
 | **LLM Architecture & Model Selection** | **Tiered: Gemini 3.7 Flash + Gemini 3.1 Pro on Vertex AI** | 1. Legacy Gemini 1.5 / 2.x series<br>2. Intermediate Gemini 3.5 Flash / Flash-Lite<br>3. Monolithic Gemini 3.1 Pro across all layers<br>4. Open-source models self-hosted on GKE (Gemma / Llama) | **Gemini 3.7 Flash (`gemini-3.7-flash`)** is the primary agentic workhorse - supervisor intent routing, all three single-domain specialists, and streamed user responses - chosen for high-throughput structured tool calling and low TTFT.<br><br>**Gemini 3.1 Pro (`gemini-3.1-pro`)** is invoked selectively for two workloads where reasoning depth outweighs latency: multi-system Saga state arbitration (UC-2.x, ~7% of turns) and offline CI/CD LLM-as-a-Judge evaluation (§9.3), which is not on the user's critical path at all.<br><br>*Against the alternatives:* legacy 1.5/2.x lack modern agentic tool-calling optimisation; 3.5-series is superseded; monolithic Pro roughly triples token cost (§6) and risks the p95 latency target for the 93% of turns that do not need it; self-hosted OSS forfeits managed grounding deep links, Model Armor integration and the SLA.<br><br>**Both model IDs are pinned and any change is gated on the §9.3 eval suite** - see the version-governance rule below. | Reasoning depth spent only where it changes the outcome; ~$219/month total model spend at MVP volume |
 | **Knowledge Retrieval (RAG)** | **Agent Search** (formerly Vertex AI Search) over a GCS datastore | 1. Custom RAG with pgvector on Cloud SQL / Spanner<br>2. Vertex AI Vector Search | Agent Search provides managed semantic chunking, automated re-ranking, and native grounding/citation attribution out of the box, directly fulfilling FR-5.2 and FR-5.3 with zero custom chunking code, plus document-level ACL enforcement needed for tiered policy corpora (§4.7). | Fastest path to citation-backed answers; no bespoke retrieval stack to maintain |
 | **Session & Distributed State** | **Cloud Firestore Multi-Region (`nam5`)** | 1. Memorystore (Redis)<br>2. Cloud Spanner | Firestore offers serverless multi-region transactional persistence with **native TTL** for automatic 30-day session deletion, and durable Saga step logs. Redis is not durable enough for a compliance ledger; Spanner is over-provisioned for MVP volumes and is retained as the production upgrade path. | Retention compliance (NFR-1.3) enforced by the platform rather than by application code |
@@ -255,8 +271,9 @@ graph TD
 ```
 
 ## **3.2. Agent & Tool Registry (FR-1.1 Capability & Lifecycle Governance)**
+*(Aligned with Gemini Enterprise Agent Platform's **Agent Registry** & **Agent Garden** specifications)*
 
-Every agent and every tool is declared in a version-controlled registry (`config/registry.yaml`) that is the *only* source of tool bindings at runtime. A tool absent from the registry cannot be invoked, and an invocation attempt outside an agent's declared allowlist is rejected before any network call and logged as a governance violation (FR-1.1, NFR-1.2).
+Every agent and every tool is declared in a version-controlled registry (`config/registry.yaml`, matching Gemini Enterprise Agent Platform's schema) that is the *only* source of tool bindings at runtime. A tool absent from the registry cannot be invoked, and an invocation attempt outside an agent's declared allowlist is rejected before any network call and logged as a governance violation (FR-1.1, NFR-1.2).
 
 | Agent | Owner | Version | Model | Authorised Tools (allowlist) | Prohibited |
 | :--- | :--- | :--- | :--- | :--- | :--- |
