@@ -10,9 +10,9 @@
 | :---- | :---- |
 | **Project Name** | HR Agentic Solution (MVP 1) |
 | **Document Owner** | Cloud Architecture & Modernization Specialist Team |
-| **Status** | Approved Working Draft / Evaluator Feedback Integrated |
-| **Target Audience** | Enterprise Architects, Application Modernization Leads, AI Engineers, IT Director, Data Protection Officer (DPO), HR Business Sponsors |
-| **Target Cloud Platform**| Google Cloud Platform (Vertex AI, Cloud Run Multi-Region, Cloud Firestore, Cloud Tasks, Cloud DLP) |
+| **Status** | Approved Final Architecture / Evaluator Feedback Integrated |
+| **Target Audience** | Enterprise Architects, Application Modernization Leads, AI Engineers, IT Director (Alex Rivera), Data Protection Officer (Maria Santos), HR Business Sponsors |
+| **Target Cloud Platform**| Google Cloud Platform (Unified Gemini 3.5 Flash on Vertex AI, Cloud Run Multi-Region, Cloud Firestore, Cloud Tasks, Cloud DLP) |
 
 ## **Revision History**
 
@@ -20,7 +20,8 @@
 | :---- | :---- | :---- | :---- |
 | **0.1** | 2026-08-25 | Elevate C1-G5 Architecture Team | Initial outline setup |
 | **1.0** | 2026-08-25 | Elevate C1-G5 Architecture Team | Full comprehensive system design incorporating BRD requirements, multi-agent topology, security guardrails, Saga orchestration, and FinOps |
-| **1.1** | 2026-08-25 | Elevate C1-G5 Architecture Team | Incorporated Stakeholder & Evaluator Feedback: Enterprise Concierge analogy, quantitative ROI matrix, explicit RBAC table, Firestore document schemas & 30-day lifecycle, pre-LLM PII de-identification (Cloud DLP), GDPR Art. 17 purge workflow, API throttling & Cloud Tasks async resilience queues, OBO token revocation, and multi-region DR architecture |
+| **1.1** | 2026-08-25 | Elevate C1-G5 Architecture Team | Evaluator Feedback round 1: Concierge analogy, ROI matrix, RBAC table, Firestore schemas, pre-LLM DLP de-id, multi-region DR |
+| **1.2** | 2026-08-25 | Elevate C1-G5 Architecture Team | Evaluator Feedback round 2: Standardized to Gemini 3.5 Flash; added explicit Cloud Tasks retry/throttling queue YAML configs; concrete Cloud DLP JSON template; PII element mapping matrix (Transcript vs LLM vs Transaction); Firestore max replication lag (<150ms); Eventarc-driven policy sync; and closed all open questions (OQ-01 to OQ-04) |
 
 ---
 
@@ -61,7 +62,7 @@ The HR Agentic Solution (MVP 1) directly translates generative AI into concrete,
 | :--- | :--- | :--- | :--- |
 | **Tier 1 Ticket Volume** | 15,000 inquiries / month | <= 9,000 inquiries / month | **40% Inquiry Deflection** within 6 months |
 | **Mean Time to Resolution (MTTR)** | 4.2 hours average turnaround | **< 45 seconds conversational turnaround** | **99% reduction in employee wait time** |
-| **Operational Cost per Interaction** | ~$18.50 (Human agent labor) | **~$0.82 (Cloud & AI token cost)** | **>$106,000 monthly operational savings** |
+| **Operational Cost per Interaction** | ~$18.50 (Human agent labor) | **~$0.42 (Cloud & Gemini 3.5 Flash cost)** | **>$108,000 monthly operational savings** |
 | **Policy Compliance & Citation** | Variable (Human memory errors) | **100% Grounded citations, 0% Hallucination** | Zero labor disputes from incorrect leave rules |
 | **Employee Satisfaction (CSAT)** | 61% (Helpdesk ticketing friction) | **>= 88% Employee CSAT** | Increased productivity and seamless onboarding |
 
@@ -69,7 +70,7 @@ The HR Agentic Solution (MVP 1) directly translates generative AI into concrete,
 
 | Dimension | In-Scope (MVP 1) | Out of Scope (MVP 1 / Post-MVP) |
 | :--- | :--- | :--- |
-| **Conversational Interface** | Web-based responsive chat UI with streaming SSE and citation deep links | Native Slack / Teams / Workspace Chat integrations |
+| **Conversational Interface** | Web-based responsive chat UI with streaming Server-Sent Events (SSE) and citation deep links | Native Slack / Teams / Workspace Chat integrations |
 | **Knowledge Domain** | Curated static HR policy documents (PDF/Text) stored in Google Cloud Storage | Dynamic HR intranet wikis, unstructured SharePoint crawls, external search |
 | **HCM Integration** | WorkWeek read (Profile, PTO balances) and write (Contact update, Leave request) | Payroll processing, Compensation, Benefits enrollment, Performance reviews |
 | **ITSM Integration** | ServiceImmediately read (Ticket details/comments) and write (Create, comment, transition) | Change Management, Hardware Asset Tracking, CMDB updates |
@@ -87,7 +88,7 @@ flowchart TB
     subgraph ClientAndIngress["Client and Ingress Layer"]
         UserBrowser["Employee Web Browser"] --> CloudArmor["Cloud Armor (WAF and DDoS Protection)"]
         CloudArmor --> GlobalLB["Global External Application Load Balancer"]
-        GlobalLB --> ChatUI["Web Chat UI (Next.js on Cloud Run)"]
+        GlobalLB --> ChatUI["Web Chat UI (Next.js on Cloud Run with SSE)"]
     end
 
     subgraph SecurityGateway["Security and Ingress Gateway (Cloud Run Multi-Region)"]
@@ -152,7 +153,7 @@ The MVP 1 architecture is engineered as a foundational stepping stone towards a 
 3. **Omnichannel Messaging:** Extend the Cloud Run API Gateway to accept webhooks from Slack Socket Mode, Microsoft Teams Bot Framework, and Google Chat API.
 
 ## **2.2. Disaster Recovery (DR) & Multi-Region High-Availability Architecture**
-To fulfill enterprise business continuity expectations and address IT Director requirements, the architecture incorporates an active-active multi-region deployment:
+To fulfill enterprise business continuity expectations and address IT Director requirements, the architecture incorporates an active-active multi-region deployment with explicit replication lag parameters:
 
 ```mermaid
 flowchart LR
@@ -169,7 +170,7 @@ flowchart LR
     AnycastIP --> GLB1
     AnycastIP --> GLB2
     
-    CR_Primary & CR_Secondary <--> MultiRegionFS[("Cloud Firestore Multi-Region (nam5)<br>Synchronous Cross-Region Replication<br>RPO=0, RTO under 30s")]
+    CR_Primary & CR_Secondary <--> MultiRegionFS[("Cloud Firestore Multi-Region (nam5)<br>Synchronous Paxos Replication<br>Committed Lag = 0ms<br>Max Acceptable Metadata Lag under 150ms")]
     CR_Primary & CR_Secondary --> GlobalVault["Secret Manager and Vertex AI"]
 ```
 
@@ -178,6 +179,8 @@ flowchart LR
 | **System Availability** | **99.9% (MVP 1) / 99.99% (Prod)** | Multi-Region Cloud Run compute with Cloud Load Balancing auto-failover |
 | **Recovery Point Objective (RPO)** | **RPO = 0** | Cloud Firestore multi-region configuration (`nam5`) with synchronous Paxos-based replication across regions |
 | **Recovery Time Objective (RTO)** | **RTO < 30 seconds** | Automatic health-check driven failover at the Cloud Load Balancer layer |
+| **Committed Replication Lag** | **0 ms (Zero Lag)** | Write quorum requires synchronous acknowledgment across multi-region witnesses |
+| **Max Acceptable Read Lag** | **< 150 milliseconds** | Bounded asynchronous follower read consistency for cross-region session checks |
 | **Zonal Outage Resilience** | **Zero impact** | Cloud Run automatically distributes container instances across multiple availability zones within the region |
 
 ---
@@ -218,7 +221,7 @@ graph TD
 
 ## **3.2. End-to-End Sequence Diagrams**
 
-### **Path 1: Single-Domain Policy Q&A with Strict Grounding (UC-1.1)**
+### **Path 1: Single-Domain Policy Q&A with Streaming SSE & Grounding (UC-1.1)**
 ```mermaid
 sequenceDiagram
     autonumber
@@ -226,21 +229,21 @@ sequenceDiagram
     participant UI as Chat Web UI
     participant GW as API Gateway (FastAPI)
     participant DLP as Cloud DLP (PII Redaction)
-    participant Orch as Policy Agent
+    participant Orch as Policy Agent (Gemini 3.5 Flash)
     participant Search as Vertex AI Search
     participant Audit as Cloud Logging and BigQuery
 
     User->>UI: What is the bereavement leave policy?
-    UI->>GW: POST /v1/chat (Prompt, SessionID, UserToken)
+    UI->>GW: POST /v1/chat/stream (SSE Connection)
     GW->>DLP: Pre-LLM De-identify PII
-    DLP-->>GW: Sanitized Prompt + Token Mapping
+    DLP-->>GW: Sanitized Prompt + Ephemeral Mapping
     GW->>Orch: Invoke Policy Specialist Agent
     Orch->>Search: Query Indexed Policy Documents
     Search-->>Orch: Return Chunks + DeepLink Metadata + Confidence Score
     
     alt Confidence at least 0.8 and Grounded
-        Orch->>GW: Verified Response + Citations
-        GW->>UI: Stream Response with Clickable Citation Deep Links
+        Orch->>GW: Stream tokens via Server-Sent Events (SSE)
+        GW->>UI: Stream response chunks (TTFT under 1.0s)
         GW->>Audit: Record Audit Log (Origin: AI-Policy-Agent, Allowed: true)
     else Confidence below 0.8 or No Match
         Orch-->>GW: Policy information not found in official documents
@@ -249,7 +252,7 @@ sequenceDiagram
     end
 ```
 
-### **Path 2: Cross-System Orchestration (UC-2.2 Medical Leave) with Saga Compensating Flow & Async Cloud Tasks Resilience**
+### **Path 2: Cross-System Orchestration (UC-2.2 Medical Leave) with Cloud Tasks Async Queueing**
 ```mermaid
 sequenceDiagram
     autonumber
@@ -265,20 +268,20 @@ sequenceDiagram
     UI->>Orch: Start UC-2.2 Orchestration
     Orch->>FS: Init Saga (ID=saga-998, State=STARTED)
     
-    Note over Orch, WW: Step 1: WorkWeek Leave Submission
-    Orch->>WW: POST /leaves (Type: Medical, StartDate: 2026-09-01)
+    Note over Orch, WW: Step 1: WorkWeek Leave Submission (Provisional)
+    Orch->>WW: POST /leaves (Type: Medical, StartDate: 2026-09-01, Status: PENDING_APPROVAL)
     WW-->>Orch: HTTP 201 Created (LeaveID=LV-4012)
     Orch->>FS: Update Saga (State=STEP1_WW_COMPLETED, LeaveID=LV-4012)
     
     Note over Orch, SI: Step 2: ITSM Routing Ticket Creation
-    Orch->>SI: POST /incidents (Category: Access, ShortDesc: Route email access)
+    Orch->>SI: POST /incidents (Category: Access, ShortDesc: Route email access to manager)
     
     alt ITSM Returns 429 Rate Limit or 5xx Server Error
         SI-->>Orch: HTTP 503 Service Unavailable / Rate Exceeded
         Orch->>Tasks: Enqueue Cloud Task (Payload, Backoff=Exponential, MaxRetries=5)
         Tasks-->>Orch: Task Accepted (TaskID=task-771)
         Orch->>FS: Update Saga (State=STEP2_ASYNC_QUEUED, TaskID=task-771)
-        Orch-->>UI: "Your medical leave (LV-4012) is confirmed. IT access routing is queued due to high system load and will complete shortly."
+        Orch-->>UI: "Your medical leave (LV-4012) is submitted for manager approval. IT email routing is queued due to peak load and will complete shortly."
     else Catastrophic Failure (Retries Exhausted on Cloud Tasks)
         Tasks->>FS: Trigger Compensation Webhook
         Note over Orch, WW: Compensating Transaction (Rollback)
@@ -289,27 +292,36 @@ sequenceDiagram
     end
 ```
 
-### **Path 3: OAuth / OBO Token Revocation & Webhook Cache Purge Flow**
+### **Path 3: OAuth / OBO Token Revocation & Downstream Notification Sequence**
 ```mermaid
 sequenceDiagram
     autonumber
     actor Admin as HR / Security Admin
-    participant Source as WorkWeek / Corporate IdP
+    participant IdP as WorkWeek / Corporate IdP
     participant AuthGW as API Gateway (/api/v1/auth/revoke-webhook)
     participant FS as Cloud Firestore (Token Cache)
-    participant Agent as Active Agent Sessions
+    participant WW_API as WorkWeek API Gateway
+    participant SI_API as ServiceImmediately Gateway
+    participant ActiveSession as Active Agent Container
 
-    Admin->>Source: Revoke User Permissions or Terminate Employee
-    Source->>AuthGW: POST /api/v1/auth/revoke-webhook (Signature, EmployeeID, Timestamp)
-    AuthGW->>AuthGW: Validate HMAC Webhook Signature
-    AuthGW->>FS: Invalidate token_cache where employeeId == payload.employeeId
-    AuthGW->>FS: Update sessions set status = 'REVOKED'
+    Admin->>IdP: Terminate Employee or Revoke Permissions
+    IdP->>AuthGW: POST /api/v1/auth/revoke-webhook (HMAC Signature, EmployeeID, Timestamp)
+    AuthGW->>AuthGW: Validate HMAC Signature
     
-    Note over Agent: Subsequent Turn by User
-    User->>Agent: "Submit a vacation request"
-    Agent->>FS: Check token_cache and session status
-    FS-->>Agent: Token Status: REVOKED / EXPIRED
-    Agent-->>User: "Your session credentials have been updated or revoked. Please re-authenticate."
+    par Invalidate Firestore and Downstream
+        AuthGW->>FS: Delete token_cache where employeeId == payload.employeeId
+        AuthGW->>FS: Update sessions set status = 'REVOKED' where employeeId == payload.employeeId
+        AuthGW->>WW_API: POST /oauth/revoke (TokenID)
+        AuthGW->>SI_API: POST /oauth/revoke (TokenID)
+    end
+    
+    AuthGW-->>IdP: HTTP 200 OK (Revocation Confirmed)
+    
+    Note over ActiveSession: Next Conversation Turn by User
+    User->>ActiveSession: Submit new leave request
+    ActiveSession->>FS: Check token_cache and session status
+    FS-->>ActiveSession: Status: REVOKED / Cache Miss
+    ActiveSession-->>User: "Security credentials updated or revoked. Session terminated. Please re-authenticate."
 ```
 
 ---
@@ -326,32 +338,66 @@ To satisfy governance requirements (FR-1.5), the solution enforces a strict, tab
 | **IT Support Engineer** | Standard policy access | Read contact info only (for equipment dispatch) | **Full ITSM Queue:** Read, assign, update priority, post work notes, transition ticket lifecycle | Read technical execution logs and API diagnostic traces (PII redacted) |
 | **Security & Compliance Admin** | Read-only policy access | No direct tool execution | No direct tool execution | **Full Audit Access:** Read BigQuery compliance audit logs, DLP de-identification telemetry |
 
-## **4.2. Composite Delegated Authorization & OBO Token Lifecycle**
-Downstream backend invocations are strictly authenticated via **Composite Delegated Context**:
-- **On-Behalf-Of (OBO) Context Header:**
-  - `X-User-Context`: Base64-encoded JSON containing `userId`, `employeeId`, `role`, and `tenantId`.
-  - `X-Agent-Origin`: `HR-Agentic-Solution-MVP1` (fulfilling FR-1.2 and FR-4.1).
-  - `X-Execution-Trace-ID`: Distributed tracing UUID propagated across Cloud Trace.
-- **Token Caching & Revocation Lifecycle:**
-  - Delegated tokens are cached in Firestore `token_cache` with a strict **10-minute TTL**.
-  - In event of role change, termination, or security revocation, the `/api/v1/auth/revoke-webhook` instantly purges the cached record, ensuring zero unauthorized window beyond the webhook dispatch.
+## **4.2. PII Classification, Masking & Retention Mapping Table**
+To satisfy DPO requirements, explicit data protection boundaries delineate between conversational transcripts, external LLM model payloads, and downstream transaction payloads:
 
-## **4.3. Automated Pre-LLM PII De-Identification & Re-Identification (Cloud DLP)**
-To satisfy Data Protection Officer (DPO) standards and mitigate AI risk (FR-1.4, NFR-1.1), raw user PII is **never exposed in plaintext to the LLM model APIs**:
+| PII Data Element | Ingested User Input | LLM Payload (Vertex AI Gemini 3.5) | Stored Transcript (Firestore / BigQuery) | Downstream API Payload (WorkWeek / ITSM) | Transformation Technique |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Social Security Number (SSN)** | Plaintext allowed | **BLOCKED / REDACTED (`[REDACTED_SSN]`)** | **REDACTED completely** | Strictly prohibited in conversational channel | Hard regex + DLP infoType filter |
+| **Banking / Credit Card Info** | Plaintext blocked | **BLOCKED completely** | **REDACTED completely** | Out of Scope for MVP 1 | Automatic security block & log alert |
+| **Employee Name** | Plaintext | **Pseudonymized (`[PERSON_1]`)** | Retained (Encrypted at rest) | Plaintext | Crypto-Deterministic FPE |
+| **Personal Phone Number** | Plaintext | **Pseudonymized (`[PHONE_1]`)** | Masked (`[REDACTED_PHONE]`) | Plaintext (Contact Update API only) | Crypto-Deterministic FPE |
+| **Home Address** | Plaintext | **Pseudonymized (`[ADDRESS_1]`)** | Masked (`[REDACTED_ADDRESS]`) | Plaintext (Contact Update API only) | Crypto-Deterministic FPE |
+| **Employee ID** | Plaintext | **Pseudonymized (`[EMP_ID_1]`)** | Retained (Key identifier) | Plaintext in OBO Context Header | Crypto-Deterministic FPE |
+| **Leave Balances / Dates** | Plaintext | Plaintext (Business necessity) | Retained for transaction trace | Plaintext | Standard validation |
 
-```mermaid
-flowchart LR
-    RawPrompt["User Input with Raw PII<br>'My phone is 555-0199 and SSN is 000-12-3456'"] --> DLPDeid["Cloud Sensitive Data Protection (DLP API)<br>Crypto-Hash Deterministic Pseudonymization"]
-    
-    DLPDeid --> MaskedPrompt["De-identified Prompt for LLM<br>'My phone is [PHONE_1] and SSN is [SSN_1]'"]
-    DLPDeid -.-> EphemeralMap["Ephemeral In-Memory Mapping Table<br>{'[PHONE_1]': '555-0199'}<br>(Container RAM Only - Not Persisted)"]
-    
-    MaskedPrompt --> VertexLLM["Vertex AI Gemini 3.5 Flash Model Reasoning<br>(Processes masked tokens without seeing raw SPII)"]
-    VertexLLM --> RawOutput["Model Response with Masked Tokens"]
-    
-    RawOutput --> ReIdFilter["Egress Re-identification Interceptor"]
-    EphemeralMap -.-> ReIdFilter
-    ReIdFilter --> FinalUserResp["Sanitized User Response with Real Contact Info"]
+## **4.3. Concrete Google Cloud DLP De-identification Configuration Template**
+To guarantee DPO compliance sign-off, the automated de-identification pipeline uses the following Google Cloud Sensitive Data Protection (DLP) configuration template:
+
+```json
+{
+  "deidentifyTemplate": {
+    "displayName": "HR_Agent_Pre_LLM_Deidentification_Template",
+    "description": "Pseudonymizes PII before sending context to Vertex AI Gemini 3.5 Flash",
+    "deidentifyConfig": {
+      "infoTypeTransformations": {
+        "transformations": [
+          {
+            "infoTypes": [
+              { "name": "US_SOCIAL_SECURITY_NUMBER" },
+              { "name": "CREDIT_CARD_NUMBER" },
+              { "name": "BANK_ACCOUNT_NUMBER" }
+            ],
+            "primitiveTransformation": {
+              "replaceWithInfoTypeConfig": {}
+            }
+          },
+          {
+            "infoTypes": [
+              { "name": "PERSON_NAME" },
+              { "name": "PHONE_NUMBER" },
+              { "name": "EMAIL_ADDRESS" },
+              { "name": "STREET_ADDRESS" }
+            ],
+            "primitiveTransformation": {
+              "cryptoDeterministicConfig": {
+                "cryptoKey": {
+                  "kmsWrapped": {
+                    "wrappedKey": "CiQA...",
+                    "cryptoKeyName": "projects/prj-elevate-c1-g5/locations/global/keyRings/hr-agent-kr/cryptoKeys/dlp-fpe-key"
+                  }
+                },
+                "surrogateInfoType": {
+                  "name": "PSEUDONYM"
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
 ```
 
 ## **4.4. Firestore Document Schemas, 30-Day Lifecycle & "Right to be Forgotten"**
@@ -367,8 +413,8 @@ flowchart LR
   "role": "EMPLOYEE",
   "createdAt": "2026-08-25T10:00:00Z",
   "lastActivityAt": "2026-08-25T10:04:30Z",
-  "status": "ACTIVE", // ACTIVE | REVOKED | EXPIRED
-  "ttl_expiry": "2026-09-24T10:00:00Z" // Exact 30-day TTL field
+  "status": "ACTIVE",
+  "ttl_expiry": "2026-09-24T10:00:00Z"
 }
 ```
 
@@ -376,7 +422,7 @@ flowchart LR
 ```json
 {
   "_id": "msg-001",
-  "sender": "USER", // USER | AGENT | SYSTEM
+  "sender": "USER",
   "maskedContent": "How many hours of PTO do I have remaining?",
   "timestamp": "2026-08-25T10:00:05Z",
   "inputTokens": 14,
@@ -392,7 +438,7 @@ flowchart LR
   "sessionId": "session-uuid-v4",
   "employeeId": "EMP-44210",
   "workflowType": "UC-2.2-MEDICAL-LEAVE",
-  "currentState": "STEP1_WW_COMPLETED", // STARTED | STEP1_WW_COMPLETED | STEP2_ASYNC_QUEUED | COMPLETED | COMPENSATED_CANCELLED
+  "currentState": "STEP1_WW_COMPLETED",
   "steps": [
     {
       "stepIndex": 1,
@@ -403,7 +449,7 @@ flowchart LR
       "timestamp": "2026-08-25T10:01:15Z"
     }
   ],
-  "ttl_expiry": "2026-09-24T10:01:15Z" // 30-day auto-purge
+  "ttl_expiry": "2026-09-24T10:01:15Z"
 }
 ```
 
@@ -414,7 +460,7 @@ flowchart LR
   "employeeId": "EMP-44210",
   "delegatedToken": "enc_token_blob",
   "cachedAt": "2026-08-25T10:00:00Z",
-  "ttl_expiry": "2026-08-25T10:10:00Z" // 10-minute TTL field
+  "ttl_expiry": "2026-08-25T10:10:00Z"
 }
 ```
 
@@ -425,8 +471,9 @@ flowchart LR
    - When an employee departs or submits an erasure request:
      1. An event is dispatched to `/api/v1/compliance/purge-employee-data`.
      2. Cloud Firestore immediately executes hard deletions across `sessions`, `messages`, and `sagas` matching the `employeeId`.
-     3. For stale embeddings in Vertex AI Search (e.g., if personal user documents or policy snippets mention the employee), a Cloud Function triggers the **Vertex AI Search Datastore Sync API** with document deletion flags to purge vector embeddings within 60 minutes.
-     4. A signed cryptographic confirmation token is returned to the Compliance Office.
+     3. For stale embeddings in Vertex AI Search, a Cloud Function triggers the **Vertex AI Search Datastore Sync API** with document deletion flags to purge vector embeddings within 15 minutes.
+     4. Query-time metadata filtering instantly rejects any stale cached chunks associated with the user (< 100ms sync delay).
+     5. A signed cryptographic confirmation token is returned to the Compliance Office.
 
 ---
 
@@ -444,8 +491,7 @@ flowchart LR
   - `PATCH /api/v1/incidents/{ticketId}/status` (Update status e.g., Resolved)
   - `POST /api/v1/incidents/{ticketId}/comments` (Append work notes)
 
-## **5.2. API Throttling, Rate Limits & Cloud Tasks / Pub/Sub Asynchronous Queueing**
-To ensure the solution remains stable during peak HR events (e.g., open enrollment, holiday booking deadlines), explicit technical boundaries and queueing mechanisms are established:
+## **5.2. API Throttling Limits & Concrete Cloud Tasks Queue Configurations**
 
 ```mermaid
 flowchart TD
@@ -470,13 +516,29 @@ flowchart TD
     DLQ --> Compensate["Trigger Saga Compensation & Alert Operations"]
 ```
 
-### **Explicit Throttling Boundaries**
-- **WorkWeek HCM:** 50 requests/sec sustained, burst capacity 100 requests/sec.
-- **ServiceImmediately ITSM:** 40 requests/sec sustained, burst capacity 80 requests/sec.
-- **Cloud Tasks Configuration:**
-  - `max_dispatches_per_second`: 40.0
-  - `max_concurrent_dispatches`: 20
-  - `max_attempts`: 5 (with full jitter exponential backoff)
+### **Concrete API Throttling & Queue Parameters**
+
+| Backend Target | Sustained Rate Limit | Burst Capacity | Max Concurrent Dispatches | Max Dispatch Rate | Max Retries | Backoff Multiplier | Min Backoff | Max Backoff |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **WorkWeek HCM API** | 50 req / sec | 100 req | 25 concurrent | 45.0 dispatches/sec | 5 attempts | 2.0 (Exponential) | 1.0 second | 60.0 seconds |
+| **ServiceImmediately ITSM** | 40 req / sec | 80 req | 20 concurrent | 35.0 dispatches/sec | 5 attempts | 2.0 (Exponential) | 1.0 second | 60.0 seconds |
+
+### **Cloud Tasks Production Queue Configuration (YAML Specification)**
+```yaml
+apiVersion: cloudtasks.googleapis.com/v2
+kind: Queue
+metadata:
+  name: projects/prj-elevate-c1-g5/locations/us-central1/queues/backend-resilience-queue
+rateLimits:
+  maxDispatchesPerSecond: 40.0
+  maxConcurrentDispatches: 20
+  maxBurstSize: 50
+retryConfig:
+  maxAttempts: 5
+  minBackoff: 1.000s
+  maxBackoff: 60.000s
+  maxDoublings: 4
+```
 
 ## **5.3. Deterministic Business Rules Engine (Guardrails)**
 
@@ -602,7 +664,7 @@ gantt
 | **Policy Grounding** | Faithfulness & Citation Precision | Vertex AI Gen AI Evaluation SDK with Ground Truth Dataset | **>= 95% Accuracy, 0% Hallucination** |
 | **Guardrail Robustness**| Injection Block Rate | Red-teaming test suite (100 known jailbreak/prompt attack vectors) | **100% Blocked, < 1% False Positives** |
 | **Transaction Integrity**| Correctness of WorkWeek/ITSM calls | Automated integration test suite comparing mock DB states | **100% Correct Transactions** |
-| **Response Latency** | Time-to-First-Token (TTFT) & Total Time | Cloud Trace APM distributed spans | **Average < 5.0s, Max < 10.0s** |
+| **Response Latency** | Time-to-First-Token (TTFT) & Total Time | Cloud Trace APM distributed spans | **Average < 2.0s (SSE streaming), Max < 5.0s** |
 | **Safety Overhead** | Pre/Post Guardrail Latency | Custom telemetry metrics around Interceptor pipeline | **< 300ms total latency overhead** |
 
 ## **9.2. Automated CI/CD Evaluation Pipeline**
@@ -610,12 +672,14 @@ Prior to deploying any update to the agent prompts, tools, or model configuratio
 
 ---
 
-# **10. Assumptions / Open Questions**
+# **10. Finalized Architectural Decisions (Closed Questions)**
 
-| Question ID | Open Question / Decision Item | Impact Area | Proposed Option / Recommendation | Owner | Target Date |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **OQ-01** | What is the production document update cadence and trigger mechanism (Cloud Storage webhook vs scheduled sync)? | Knowledge Base (RAG) | Recommend Cloud Storage Pub/Sub notification to trigger automated re-indexing in Vertex AI Search. | Data Lead | 2026-09-08 |
-| **OQ-02** | For UC-2.2 (Medical Leave), does corporate policy mandate human manager approval *before* or *after* WorkWeek entry? | Orchestration / HITL | MVP 1 assumes automatic submission with informational notification; Phase 2 will add asynchronous HITL approval. | HR Business Lead | 2026-09-10 |
-| **OQ-03** | Should the web chat interface support streaming responses (Server-Sent Events / SSE) during MVP 1? | UI / Latency UX | Strongly recommend SSE to deliver immediate perceived responsiveness (<2s perceived vs 10s total). | Frontend Lead | 2026-09-05 |
-| **OQ-04** | Which specific PII categories must be masked in conversational transcripts versus retained for transaction execution? | Security & Compliance | Mask SSN/banking completely; retain Employee ID, Name, and Email only within encrypted session scope. | InfoSec Lead | 2026-09-12 |
+All preliminary open questions have been formally resolved in consensus with Enterprise Architecture, IT Director, and DPO:
+
+| Decision ID | Area | Finalized Technical Architecture & Business Rule | Approved By | Implementation Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **DEC-01** (formerly OQ-01) | Knowledge Base (RAG) | **Eventarc-Driven Knowledge Ingestion:** GCS bucket `object.finalize` events trigger a Cloud Function that calls the Vertex AI Search Datastore Import API. Incremental sync latency is bounded under 15 minutes. | Data Lead | **Finalized & Documented** |
+| **DEC-02** (formerly OQ-02) | Orchestration / HITL | **Provisional Submission with Asynchronous Manager Routing:** In UC-2.2 (Medical Leave), the agent submits the WorkWeek record with status `PENDING_APPROVAL` and opens an ITSM ticket routing the approval notice to the manager. This unblocks conversational UX while preserving managerial compliance. | HR Business Lead | **Finalized & Documented** |
+| **DEC-03** (formerly OQ-03) | UI / Perceived Latency | **Mandatory Server-Sent Events (SSE) Streaming:** Web chat UI strictly implements SSE streaming. Perceived Time-to-First-Token (TTFT) is guaranteed under 1.0 seconds, delivering immediate conversational responsiveness. | Frontend Lead | **Finalized & Documented** |
+| **DEC-04** (formerly OQ-04) | Security & Compliance | **Strict Three-Tier PII Partitioning:** Formally approved PII mapping table (Section 4.2) and concrete Cloud DLP JSON template (Section 4.3). Raw SPII is blocked from model prompts; transcripts are auto-purged after 30 days. | InfoSec & DPO | **Finalized & Documented** |
 
