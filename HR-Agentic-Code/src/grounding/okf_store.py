@@ -115,6 +115,7 @@ class OKFPolicyStore:
         q_lower = query.lower()
         matches: List[Tuple[int, PolicyDocument]] = []
 
+        STOPWORDS = {"policy", "corporate", "company", "regarding", "what", "is", "the", "into", "office", "about", "with", "from", "for"}
         for doc in self._policies.values():
             score = 0
             # Tag match (weight 3)
@@ -122,14 +123,18 @@ class OKFPolicyStore:
                 if tag in q_lower:
                     score += 3
             # Title match (weight 2)
-            if any(word in doc.title.lower() for word in q_lower.split()):
+            title_words = [w for w in doc.title.lower().split() if w not in STOPWORDS]
+            if any(word in title_words for word in q_lower.split() if word not in STOPWORDS):
                 score += 2
             # Body match (weight 1)
-            if any(word in doc.details.lower() for word in q_lower.split() if len(word) > 3):
+            body_words = [w for w in doc.details.lower().split() if len(w) > 4 and w not in STOPWORDS]
+            if any(word in body_words for word in q_lower.split() if word not in STOPWORDS and len(word) > 4):
                 score += 1
 
-            if score > 0:
+            if score >= 3:
                 matches.append((score, doc))
+
+
 
         # Sort by score descending
         matches.sort(key=lambda x: x[0], reverse=True)

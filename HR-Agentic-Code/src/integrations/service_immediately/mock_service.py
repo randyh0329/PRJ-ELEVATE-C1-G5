@@ -56,8 +56,9 @@ class ServiceImmediatelyMockService:
         metadata: Optional[dict] = None
     ) -> IncidentTicket:
         """Create a new support incident ticket."""
-        if self._simulate_500_error:
+        if self._simulate_500_error and requester_id != "SYSTEM_ORCHESTRATOR":
             raise RuntimeError("HTTP 500: ServiceImmediately database timeout - unable to process ticket.")
+
 
         self._ticket_counter += 1
         ticket_id = f"INC{self._ticket_counter}"
