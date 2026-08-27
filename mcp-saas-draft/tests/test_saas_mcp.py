@@ -1,6 +1,6 @@
 import pytest
-from src.tools.saas_mcp_client import SaaSMCPClient
-from src.tools.adk_tools import (
+from src.saas_mcp_client import SaaSMCPClient
+from src.adk_tools import (
     get_current_employee_id,
     get_employee_balances,
     get_personal_info,
@@ -19,7 +19,6 @@ def test_mcp_client_headers_custom_x_token():
     )
     headers = client._get_headers()
     assert headers["X-MCP-Token"] == "mcp_HiIwlFkRL-DrjYgdQvO-fMHg8Q8A_YskI5J00qrP8SA"
-    # Ensure Authorization is NOT in headers to bypass IAP at GFE layer
     assert "Authorization" not in headers
     assert "application/json" in headers["Accept"]
 
