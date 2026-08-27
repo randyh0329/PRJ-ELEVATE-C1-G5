@@ -264,10 +264,11 @@ resource "google_cloud_run_v2_service" "hr_agentic_service" {
 }
 
 # Allow public invocations for Phase 1 Fast-Path MVP validation
-resource "google_cloud_run_service_iam_member" "public_invoker" {
+resource "google_cloud_run_v2_service_iam_member" "public_invoker" {
   project  = var.project_id
   location = var.region
-  service  = google_cloud_run_v2_service.hr_agentic_service.name
+  name     = google_cloud_run_v2_service.hr_agentic_service.name
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
+
