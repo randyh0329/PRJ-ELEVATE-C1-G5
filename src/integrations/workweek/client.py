@@ -309,7 +309,27 @@ class WorkWeekClient:
         )
         return res
 
+    def get_leave_requests(self, caller_employee_id: str, target_employee_id: str) -> list:
+        """Fetch leave request history enforcing caller isolation."""
+        if caller_employee_id != target_employee_id:
+            raise PermissionError("Cannot view leave requests of another employee.")
+        requests = []
+        if self._should_use_live_mcp(target_employee_id):
+            try:
+                requests = self._mcp_client.get_leave_requests(target_employee_id)
+            except Exception as e:
+                logger.warning(f"Live WorkWeek FastMCP get_leave_requests failed: {e}")
+                requests = []
+        self._logger.log_event(
+            caller_employee_id=caller_employee_id,
+            action_type="WORKWEEK_GET_LEAVE_REQUESTS",
+            status="SUCCESS",
+            details={"count": len(requests)}
+        )
+        return requests
+
     def cancel_leave_request(self, caller_employee_id: str, request_id: str) -> bool:
+
         """Compensating action: Cancel a previously submitted leave request."""
         success = False
         if self._use_live_mcp and self._mcp_client and request_id.isdigit():
