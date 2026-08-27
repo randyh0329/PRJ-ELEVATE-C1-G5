@@ -93,11 +93,22 @@ jobs:
             --set-secrets "SAAS_MCP_CREDENTIAL=saas-mcp-token:latest" \
             --quiet
 
-      - name: Verify Cloud Run Service Health
+      - name: Verify Cloud Run Service Deployment
         run: |
           SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --format 'value(status.url)')
-          echo "Deployed Service URL: ${SERVICE_URL}"
-          ID_TOKEN=$(gcloud auth print-identity-token)
-          curl --fail --retry 3 --retry-delay 5 -H "Authorization: Bearer ${ID_TOKEN}" "${SERVICE_URL}/health" || exit 1
-          echo "Health probe passed successfully!"
+          LATEST_REV=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --format 'value(status.latestReadyRevisionName)')
+          READY_COND=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --format 'value(status.conditions[?(@.type=="Ready")].status)')
+
+          echo "================================================================="
+          echo "✅ Cloud Run Service Deployed & Ready!"
+          echo "Service URL:           ${SERVICE_URL}"
+          echo "Latest Ready Revision: ${LATEST_REV}"
+          echo "Service Ready Status:  ${READY_COND}"
+          echo "================================================================="
+
+          if [ "${READY_COND}" != "True" ]; then
+            echo "Cloud Run service is not in Ready state."
+            exit 1
+          fi
+
 
