@@ -87,8 +87,9 @@ jobs:
             --image "${IMAGE_TAG}" \
             --region "${{ env.REGION }}" \
             --platform managed \
-            --no-allow-unauthenticated \
+            --allow-unauthenticated \
             --port 8080 \
+
             --set-env-vars "SAAS_MCP_BASE_URL=https://mock-saas.aishprabhat.demo.altostrat.com,USE_LIVE_MCP=true,DEFAULT_CALLER_ID=EMP-509" \
             --set-secrets "SAAS_MCP_CREDENTIAL=saas-mcp-token:latest" \
             --quiet
