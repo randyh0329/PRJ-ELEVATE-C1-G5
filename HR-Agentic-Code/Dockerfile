@@ -22,8 +22,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy application source code
 COPY config/ ./config/
 COPY src/ ./src/
-COPY data/ ./data/
 COPY pyproject.toml .
+
 
 # Create and switch to non-root application user for least-privilege container security
 RUN useradd -m -u 10001 appuser && \
