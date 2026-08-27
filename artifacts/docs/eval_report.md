@@ -1,7 +1,7 @@
 # **Agent Evaluation Execution Report: Google ADK Golden Evalset**
 
 **Evaluation Set:** `hr_mas_eval_set_1` (hr_agent_mas_eval)  
-**Execution Timestamp:** `2026-08-27 11:55:38 UTC`  
+**Execution Timestamp:** `2026-08-27 12:26:12 UTC`  
 **Evaluation Engine:** Google ADK Agents CLI / `eval-adk-skill` Trajectory Harness  
 **Target Architecture:** Multi-Region Cloud Run `agent-core` (Gemini 3.7 Flash + Gemini 3.1 Pro)  
 
