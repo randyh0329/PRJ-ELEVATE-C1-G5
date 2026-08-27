@@ -98,9 +98,8 @@ class WorkWeekClient:
 
 
             except Exception as e:
-                logger.warning(f"Live WorkWeek FastMCP profile lookup failed: {e}. Falling back to mock service.")
-                profile = self._service.get_profile(target_employee_id)
-
+                logger.error(f"Live WorkWeek FastMCP profile lookup failed: {e}")
+                raise RuntimeError(f"WorkWeek SaaS FastMCP communication error: {e}")
         else:
             profile = self._service.get_profile(target_employee_id)
 
@@ -140,8 +139,8 @@ class WorkWeekClient:
                     sick_remaining=sick_rem,
                 )
             except Exception as e:
-                logger.warning(f"Live WorkWeek FastMCP balance lookup failed: {e}. Falling back to mock service.")
-                balances = self._service.get_balances(target_employee_id)
+                logger.error(f"Live WorkWeek FastMCP balance lookup failed: {e}")
+                raise RuntimeError(f"WorkWeek SaaS FastMCP communication error: {e}")
         else:
             balances = self._service.get_balances(target_employee_id)
 
@@ -198,14 +197,8 @@ class WorkWeekClient:
                     updated_fields={"home_address": home_address, "phone_number": phone_number}
                 )
             except Exception as e:
-                logger.warning(f"Live WorkWeek FastMCP contact update failed: {e}. Falling back to mock service.")
-                res = self._service.update_contact(
-                    employee_id=target_employee_id,
-                    home_address=home_address,
-                    phone_number=phone_number,
-                    current_office=current_office,
-                    country=country
-                )
+                logger.error(f"Live WorkWeek FastMCP contact update failed: {e}")
+                raise RuntimeError(f"WorkWeek SaaS FastMCP communication error: {e}")
         else:
             res = self._service.update_contact(
                 employee_id=target_employee_id,
@@ -284,15 +277,8 @@ class WorkWeekClient:
                 )
 
             except Exception as e:
-                logger.warning(f"Live WorkWeek FastMCP leave submission failed: {e}. Falling back to mock service.")
-                res = self._service.submit_leave(
-                    employee_id=target_employee_id,
-                    leave_type=leave_type,
-                    start_date=start_date.isoformat(),
-                    end_date=end_date.isoformat(),
-                    days=days,
-                    origin=self._origin
-                )
+                logger.error(f"Live WorkWeek FastMCP leave submission failed: {e}")
+                raise RuntimeError(f"WorkWeek SaaS FastMCP communication error: {e}")
         else:
             res = self._service.submit_leave(
                 employee_id=target_employee_id,

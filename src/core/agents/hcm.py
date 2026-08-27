@@ -106,108 +106,112 @@ class WorkWeekAutonomousSpecialist:
         ref_date = reference_date or datetime.date.today()
         logger.info(f"[WorkWeekAutonomous] Executing tool '{tool_name}' for caller '{caller_id}' with args: {arguments}")
 
-        # 1. get_employee_balances
-        if tool_name == "get_employee_balances":
-            balances = self.client.get_leave_balances(caller_employee_id=caller_id, target_employee_id=caller_id)
-            if not balances:
-                return {"status": "ERROR", "message": "Could not fetch leave balances from WorkWeek."}
-            return {
-                "status": "SUCCESS",
-                "vacation_remaining": balances.vacation_remaining,
-                "vacation_accrued": balances.vacation_accrued,
-                "vacation_used": balances.vacation_used,
-                "sick_remaining": balances.sick_remaining,
-                "sick_accrued": balances.sick_accrued,
-                "sick_used": balances.sick_used,
-            }
+        try:
+            # 1. get_employee_balances
+            if tool_name == "get_employee_balances":
+                balances = self.client.get_leave_balances(caller_employee_id=caller_id, target_employee_id=caller_id)
+                if not balances:
+                    return {"status": "ERROR", "message": "Could not fetch leave balances from WorkWeek."}
+                return {
+                    "status": "SUCCESS",
+                    "vacation_remaining": balances.vacation_remaining,
+                    "vacation_accrued": balances.vacation_accrued,
+                    "vacation_used": balances.vacation_used,
+                    "sick_remaining": balances.sick_remaining,
+                    "sick_accrued": balances.sick_accrued,
+                    "sick_used": balances.sick_used,
+                }
 
-        # 2. get_leave_requests
-        elif tool_name == "get_leave_requests":
-            requests = self.client.get_leave_requests(caller_employee_id=caller_id, target_employee_id=caller_id)
-            return {"status": "SUCCESS", "requests": requests, "count": len(requests)}
+            # 2. get_leave_requests
+            elif tool_name == "get_leave_requests":
+                requests = self.client.get_leave_requests(caller_employee_id=caller_id, target_employee_id=caller_id)
+                return {"status": "SUCCESS", "requests": requests, "count": len(requests)}
 
-        # 3. request_time_off
-        elif tool_name == "request_time_off":
-            start_str = arguments.get("start_date")
-            end_str = arguments.get("end_date")
-            leave_type = arguments.get("leave_type", "Vacation")
-            days = float(arguments.get("days", 1.0))
+            # 3. request_time_off
+            elif tool_name == "request_time_off":
+                start_str = arguments.get("start_date")
+                end_str = arguments.get("end_date")
+                leave_type = arguments.get("leave_type", "Vacation")
+                days = float(arguments.get("days", 1.0))
 
-            try:
-                start_date = datetime.date.fromisoformat(start_str) if start_str else ref_date + datetime.timedelta(days=7)
-                end_date = datetime.date.fromisoformat(end_str) if end_str else start_date + datetime.timedelta(days=int(days)-1)
-            except Exception:
-                start_date = ref_date + datetime.timedelta(days=7)
-                end_date = start_date + datetime.timedelta(days=int(days)-1)
+                try:
+                    start_date = datetime.date.fromisoformat(start_str) if start_str else ref_date + datetime.timedelta(days=7)
+                    end_date = datetime.date.fromisoformat(end_str) if end_str else start_date + datetime.timedelta(days=int(days)-1)
+                except Exception:
+                    start_date = ref_date + datetime.timedelta(days=7)
+                    end_date = start_date + datetime.timedelta(days=int(days)-1)
 
-            resp = self.client.submit_leave_request(
-                caller_employee_id=caller_id,
-                target_employee_id=caller_id,
-                leave_type=leave_type,
-                start_date=start_date,
-                end_date=end_date,
-                days=days,
-                reference_date=ref_date
-            )
-            return {
-                "status": "SUCCESS" if resp.success else "FAILED",
-                "request_id": resp.request_id,
-                "message": resp.message,
-                "remaining_balance": resp.remaining_balance,
-                "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat(),
-                "days": days,
-                "leave_type": leave_type
-            }
+                resp = self.client.submit_leave_request(
+                    caller_employee_id=caller_id,
+                    target_employee_id=caller_id,
+                    leave_type=leave_type,
+                    start_date=start_date,
+                    end_date=end_date,
+                    days=days,
+                    reference_date=ref_date
+                )
+                return {
+                    "status": "SUCCESS" if resp.success else "FAILED",
+                    "request_id": resp.request_id,
+                    "message": resp.message,
+                    "remaining_balance": resp.remaining_balance,
+                    "start_date": start_date.isoformat(),
+                    "end_date": end_date.isoformat(),
+                    "days": days,
+                    "leave_type": leave_type
+                }
 
-        # 4. cancel_leave_request
-        elif tool_name == "cancel_leave_request":
-            req_id = str(arguments.get("request_id", "")).strip()
-            if not req_id:
-                return {"status": "ERROR", "message": "Missing request_id for leave cancellation."}
-            success = self.client.cancel_leave_request(caller_employee_id=caller_id, request_id=req_id)
-            return {
-                "status": "SUCCESS" if success else "FAILED",
-                "request_id": req_id,
-                "message": f"Leave request {req_id} cancelled and days refunded." if success else f"Failed to cancel leave request {req_id}."
-            }
+            # 4. cancel_leave_request
+            elif tool_name == "cancel_leave_request":
+                req_id = str(arguments.get("request_id", "")).strip()
+                if not req_id:
+                    return {"status": "ERROR", "message": "Missing request_id for leave cancellation."}
+                success = self.client.cancel_leave_request(caller_employee_id=caller_id, request_id=req_id)
+                return {
+                    "status": "SUCCESS" if success else "FAILED",
+                    "request_id": req_id,
+                    "message": f"Leave request {req_id} cancelled and days refunded." if success else f"Failed to cancel leave request {req_id}."
+                }
 
-        # 5. update_personal_info
-        elif tool_name == "update_personal_info":
-            addr = arguments.get("home_address")
-            phone = arguments.get("phone_number")
-            resp = self.client.update_contact_info(
-                caller_employee_id=caller_id,
-                target_employee_id=caller_id,
-                home_address=addr,
-                phone_number=phone
-            )
-            return {
-                "status": "SUCCESS" if resp.success else "FAILED",
-                "updated_fields": resp.updated_fields,
-                "message": resp.message
-            }
+            # 5. update_personal_info
+            elif tool_name == "update_personal_info":
+                addr = arguments.get("home_address")
+                phone = arguments.get("phone_number")
+                resp = self.client.update_contact_info(
+                    caller_employee_id=caller_id,
+                    target_employee_id=caller_id,
+                    home_address=addr,
+                    phone_number=phone
+                )
+                return {
+                    "status": "SUCCESS" if resp.success else "FAILED",
+                    "updated_fields": resp.updated_fields,
+                    "message": resp.message
+                }
 
-        # 6. get_employee_profile
-        elif tool_name == "get_employee_profile":
-            profile = self.client.get_employee_profile(caller_employee_id=caller_id, target_employee_id=caller_id)
-            if not profile:
-                return {"status": "ERROR", "message": "Profile not found."}
-            return {
-                "status": "SUCCESS",
-                "employee_id": profile.employee_id,
-                "full_name": profile.full_name,
-                "job_title": profile.job_title,
-                "department": profile.current_office,
-                "manager_id": profile.manager_id,
-                "work_location_status": profile.work_location_status,
-                "home_address": profile.home_address,
-                "phone_number": profile.phone_number,
-                "email": profile.email,
-            }
+            # 6. get_employee_profile
+            elif tool_name == "get_employee_profile":
+                profile = self.client.get_employee_profile(caller_employee_id=caller_id, target_employee_id=caller_id)
+                if not profile:
+                    return {"status": "ERROR", "message": "Profile not found."}
+                return {
+                    "status": "SUCCESS",
+                    "employee_id": profile.employee_id,
+                    "full_name": profile.full_name,
+                    "job_title": profile.job_title,
+                    "department": profile.current_office,
+                    "manager_id": profile.manager_id,
+                    "work_location_status": profile.work_location_status,
+                    "home_address": profile.home_address,
+                    "phone_number": profile.phone_number,
+                    "email": profile.email,
+                }
 
-        else:
-            return {"status": "ERROR", "message": f"Unknown tool '{tool_name}'."}
+            else:
+                return {"status": "ERROR", "message": f"Unknown tool '{tool_name}'."}
+        except Exception as e:
+            logger.error(f"[WorkWeekAutonomous] Tool execution '{tool_name}' failed: {e}")
+            return {"status": "ERROR", "message": str(e)}
 
     def plan_and_execute(
         self,
@@ -274,7 +278,16 @@ class WorkWeekAutonomousSpecialist:
         # ---------------------------------------------------------------------
         if any(k in p for k in ["목록", "내역", "이력", "history", "requests", "list leaves", "show leaves", "신청한 휴가"]):
             tool_res = self.execute_tool("get_leave_requests", {}, caller_id, ref_date)
+            if tool_res.get("status") == "ERROR":
+                return {
+                    "response_text": f"❌ WorkWeek FastMCP 서비스에 연결할 수 없습니다: {tool_res.get('message')}. 개인 FastMCP 토큰을 확인해 주세요.",
+                    "action_performed": "ERROR",
+                    "tool_called": "get_leave_requests",
+                    "tool_result": tool_res,
+                    "transaction_reference": None
+                }
             requests = tool_res.get("requests", [])
+
             if not requests:
                 text = "현재 WorkWeek에 등록된 휴가 신청 내역이 없습니다."
             else:
@@ -328,6 +341,14 @@ class WorkWeekAutonomousSpecialist:
         # ---------------------------------------------------------------------
         if "manager" in p or "매니저" in p or "관리자" in p:
             tool_res = self.execute_tool("get_employee_profile", {"field": "manager"}, caller_id, ref_date)
+            if tool_res.get("status") == "ERROR":
+                return {
+                    "response_text": f"❌ WorkWeek FastMCP 서비스 연결 오류: {tool_res.get('message')}. 개인 FastMCP 토큰을 확인해 주세요.",
+                    "action_performed": "ERROR",
+                    "tool_called": "get_employee_profile",
+                    "tool_result": tool_res,
+                    "transaction_reference": None
+                }
             mgr = tool_res.get("manager_id") or "N/A"
             return {
                 "response_text": f"Your manager in WorkWeek is {mgr}.",
@@ -339,6 +360,14 @@ class WorkWeekAutonomousSpecialist:
 
         if "department" in p or "부서" in p or "팀" in p:
             tool_res = self.execute_tool("get_employee_profile", {"field": "department"}, caller_id, ref_date)
+            if tool_res.get("status") == "ERROR":
+                return {
+                    "response_text": f"❌ WorkWeek FastMCP 서비스 연결 오류: {tool_res.get('message')}. 개인 FastMCP 토큰을 확인해 주세요.",
+                    "action_performed": "ERROR",
+                    "tool_called": "get_employee_profile",
+                    "tool_result": tool_res,
+                    "transaction_reference": None
+                }
             dept = tool_res.get("department") or "N/A"
             return {
                 "response_text": f"Your department in WorkWeek is {dept}.",
@@ -350,6 +379,14 @@ class WorkWeekAutonomousSpecialist:
 
         if "phone" in p or "전화번호" in p or "연락처" in p:
             tool_res = self.execute_tool("get_employee_profile", {"field": "phone"}, caller_id, ref_date)
+            if tool_res.get("status") == "ERROR":
+                return {
+                    "response_text": f"❌ WorkWeek FastMCP 서비스 연결 오류: {tool_res.get('message')}. 개인 FastMCP 토큰을 확인해 주세요.",
+                    "action_performed": "ERROR",
+                    "tool_called": "get_employee_profile",
+                    "tool_result": tool_res,
+                    "transaction_reference": None
+                }
             phone = tool_res.get("phone_number") or "N/A"
             return {
                 "response_text": f"Your contact phone number in WorkWeek is {phone}.",
@@ -361,6 +398,14 @@ class WorkWeekAutonomousSpecialist:
 
         if ("address" in p or "주소" in p) and not ("profile" in p or "job" in p or "프로필" in p):
             tool_res = self.execute_tool("get_employee_profile", {"field": "address"}, caller_id, ref_date)
+            if tool_res.get("status") == "ERROR":
+                return {
+                    "response_text": f"❌ WorkWeek FastMCP 서비스 연결 오류: {tool_res.get('message')}. 개인 FastMCP 토큰을 확인해 주세요.",
+                    "action_performed": "ERROR",
+                    "tool_called": "get_employee_profile",
+                    "tool_result": tool_res,
+                    "transaction_reference": None
+                }
             addr = tool_res.get("home_address") or "N/A"
             return {
                 "response_text": f"Your registered address in WorkWeek is {addr}.",
@@ -372,6 +417,14 @@ class WorkWeekAutonomousSpecialist:
 
         if any(k in p for k in ["profile", "job", "who am i", "프로필", "직무"]):
             tool_res = self.execute_tool("get_employee_profile", {"field": "all"}, caller_id, ref_date)
+            if tool_res.get("status") == "ERROR":
+                return {
+                    "response_text": f"❌ WorkWeek FastMCP 서비스 연결 오류: {tool_res.get('message')}. 개인 FastMCP 토큰을 확인해 주세요.",
+                    "action_performed": "ERROR",
+                    "tool_called": "get_employee_profile",
+                    "tool_result": tool_res,
+                    "transaction_reference": None
+                }
             text = (
                 f"WorkWeek Profile for {tool_res.get('full_name')} ({tool_res.get('employee_id')}):\n"
                 f"- Job Title: {tool_res.get('job_title')}\n"
@@ -395,12 +448,21 @@ class WorkWeekAutonomousSpecialist:
         # ---------------------------------------------------------------------
         if any(k in p for k in ["balance", "잔여", "남았", "얼마나", "remaining", "check", "how many", "pto"]):
             tool_res = self.execute_tool("get_employee_balances", {}, caller_id, ref_date)
+            if tool_res.get("status") == "ERROR":
+                return {
+                    "response_text": f"❌ WorkWeek FastMCP 서비스 연결 오류: {tool_res.get('message')}. 개인 FastMCP 토큰을 확인해 주세요.",
+                    "action_performed": "ERROR",
+                    "tool_called": "get_employee_balances",
+                    "tool_result": tool_res,
+                    "transaction_reference": None
+                }
             vac = tool_res.get("vacation_remaining", 0.0)
             vac_acc = tool_res.get("vacation_accrued", 0.0)
             vac_used = tool_res.get("vacation_used", 0.0)
             sick = tool_res.get("sick_remaining", 0.0)
             sick_acc = tool_res.get("sick_accrued", 0.0)
             sick_used = tool_res.get("sick_used", 0.0)
+
 
             text = (
                 f"Your current WorkWeek leave balances are:\n"

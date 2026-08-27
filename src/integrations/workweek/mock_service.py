@@ -49,19 +49,6 @@ class WorkWeekMockService:
                 manager_id="MGR-2002",
                 is_active=True
             ),
-            "EMP-509": EmployeeProfile(
-                employee_id="EMP-509",
-                full_name="Romij Employee",
-                email="romij@google.com",
-                phone_number="+65-6521-0000",
-                home_address="80 Pasir Panjang Rd, #03-01 Mapletree Business City, Singapore 117372",
-                work_location_status="REMOTE_FULL_TIME",
-                current_office="Google Forge (Customer Engineering)",
-                country="SG",
-                job_title="Solutions Acceleration Architect",
-                manager_id="EMP-1",
-                is_active=True
-            ),
         }
 
         self._balances = {
@@ -83,16 +70,8 @@ class WorkWeekMockService:
                 sick_used=0.0,
                 sick_remaining=14.0
             ),
-            "EMP-509": LeaveBalances(
-                employee_id="EMP-509",
-                vacation_accrued=20.0,
-                vacation_used=4.0,
-                vacation_remaining=16.0,
-                sick_accrued=10.0,
-                sick_used=0.0,
-                sick_remaining=10.0
-            ),
         }
+
 
         self._leave_requests.clear()
 
