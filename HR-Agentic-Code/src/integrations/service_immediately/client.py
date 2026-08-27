@@ -127,15 +127,27 @@ class ServiceImmediatelyClient:
                 )
                 tid = "INC0009999"
                 if isinstance(res, dict):
-                    tid = res.get("structuredContent", {}).get("result") or res.get("ticket_id") or "INC0009999"
-                    if "content" in res and isinstance(res["content"], list) and len(res["content"]) > 0:
+                    if "structuredContent" in res and isinstance(res["structuredContent"], dict) and "result" in res["structuredContent"]:
+                        tid = res["structuredContent"]["result"]
+                    elif "content" in res and isinstance(res["content"], list) and len(res["content"]) > 0:
                         text = res["content"][0].get("text", "")
-                        if "INC" in text:
-                            for word in text.split():
-                                if word.startswith("INC"):
-                                    tid = word
-                                    break
+                        try:
+                            parsed = json.loads(text)
+                            if isinstance(parsed, dict) and "ticket_id" in parsed:
+                                tid = parsed["ticket_id"]
+                        except Exception:
+                            if "INC" in text:
+                                for word in text.split():
+                                    if word.startswith("INC"):
+                                        tid = word.strip('"').strip("'").strip(",")
+                                        break
+                if isinstance(tid, str) and tid.strip().startswith("{"):
+                    try:
+                        tid = json.loads(tid).get("ticket_id", tid)
+                    except Exception:
+                        pass
                 ticket = IncidentTicket(
+
                     ticket_id=str(tid),
                     requester_id=caller_employee_id,
                     category=category,
@@ -143,6 +155,7 @@ class ServiceImmediatelyClient:
                     short_description=short_description,
                     status="New"
                 )
+
             except Exception as e:
                 logger.warning(f"Live ServiceImmediately FastMCP create_ticket failed: {e}. Falling back to mock service.")
                 ticket = self._service.create_incident(
