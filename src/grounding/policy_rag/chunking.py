@@ -118,14 +118,15 @@ def _split_oversized(text: str, cfg: ChunkingConfig) -> list[str]:
     # has to be cut; do it on line boundaries rather than mid-row.
     final: list[str] = []
     for piece in pieces:
-        while len(piece) > cfg.max_chars:
-            cut = piece.rfind("\n", 0, cfg.max_chars)
+        remainder = piece
+        while len(remainder) > cfg.max_chars:
+            cut = remainder.rfind("\n", 0, cfg.max_chars)
             if cut <= 0:
                 cut = cfg.max_chars
-            final.append(piece[:cut].strip())
-            piece = piece[max(0, cut - cfg.overlap_chars) :].strip()
-        if piece:
-            final.append(piece)
+            final.append(remainder[:cut].strip())
+            remainder = remainder[max(0, cut - cfg.overlap_chars) :].strip()
+        if remainder:
+            final.append(remainder)
     return final
 
 

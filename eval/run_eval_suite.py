@@ -9,9 +9,8 @@ from __future__ import annotations
 import asyncio
 import datetime
 import json
-import os
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from src.core.graph import AgentOrchestrationGraph
 from src.core.state import AgentState
@@ -20,18 +19,17 @@ from src.core.state import AgentState
 async def run_full_evaluation():
     base_dir = Path(__file__).resolve().parent
     evalset_path = base_dir / "golden" / "golden_mas_eval.evalset.json"
-    config_path = base_dir / "eval_config.json"
     output_report_path = base_dir.parent / "artifacts" / "docs" / "eval_report.md"
 
     output_report_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(evalset_path, "r", encoding="utf-8") as f:
+    with open(evalset_path, encoding="utf-8") as f:
         data = json.load(f)
 
     cases = data.get("eval_cases", [])
     graph = AgentOrchestrationGraph()
 
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
     tier_stats = {
         "Happy Path / Direct Lookups": {"total": 0, "passed": 0},
         "MAS Gotchas & Routing Traps": {"total": 0, "passed": 0},
@@ -46,11 +44,6 @@ async def run_full_evaluation():
         prompt = case.get("prompt", "")
         if not prompt and case.get("conversation"):
             prompt = case["conversation"][0]["user_content"]["parts"][0]["text"]
-
-        expected_tools = []
-        if case.get("conversation"):
-            tool_uses = case["conversation"][0].get("intermediate_data", {}).get("tool_uses", [])
-            expected_tools = [t["name"] for t in tool_uses]
 
         state: AgentState = {
             "session_id": f"sess-eval-{eval_id}",
@@ -127,10 +120,10 @@ async def run_full_evaluation():
     timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     report_md = f"""# **Agent Evaluation Execution Report: Google ADK Golden Evalset**
 
-**Evaluation Set:** `{data.get('eval_set_id')}` ({data.get('name')})  
-**Execution Timestamp:** `{timestamp}`  
-**Evaluation Engine:** Google ADK Agents CLI / `eval-adk-skill` Trajectory Harness  
-**Target Architecture:** Multi-Region Cloud Run `agent-core` (Gemini 3.7 Flash + Gemini 3.1 Pro)  
+- **Evaluation Set:** `{data.get('eval_set_id')}` ({data.get('name')})
+- **Execution Timestamp:** `{timestamp}`
+- **Evaluation Engine:** Google ADK Agents CLI / `eval-adk-skill` Trajectory Harness
+- **Target Architecture:** Multi-Region Cloud Run `agent-core` (Gemini 3.7 Flash + Gemini 3.1 Pro)
 
 ---
 

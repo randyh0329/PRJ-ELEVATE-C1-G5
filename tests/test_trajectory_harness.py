@@ -4,11 +4,10 @@ Simulates synthetic fault injection at every step of UC-2.1, UC-2.2, and UC-2.3 
 compensation correctness, transactional integrity (SM-03, SM-07), and consequence-aware rollback logic.
 """
 
-import asyncio
 import unittest
 
 from app.graph import AgentOrchestrationGraph
-from app.state import AgentState, SagaCompensationClass, SagaStepStatus, SagaWorkflowState
+from app.state import SagaCompensationClass, SagaStepStatus, SagaWorkflowState
 from eval.trajectory_runner import TrajectoryRunner
 
 

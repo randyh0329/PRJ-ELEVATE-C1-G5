@@ -10,16 +10,16 @@ from src.grounding.policy_rag.documents import Document, SourceRef
 
 
 def _doc(body: str, doc_type: str = "policy", **overrides) -> Document:
-    base = dict(
-        doc_id="doc-1",
-        corpus_id="okf-handbook",
-        path="okf/altostrat-sg-handbook/leave/vacation.md",
-        title="Vacation Leave",
-        doc_type=doc_type,
-        authority="governing",
-        entitlement="general",
-        body=body,
-    )
+    base = {
+        "doc_id": "doc-1",
+        "corpus_id": "okf-handbook",
+        "path": "okf/altostrat-sg-handbook/leave/vacation.md",
+        "title": "Vacation Leave",
+        "doc_type": doc_type,
+        "authority": "governing",
+        "entitlement": "general",
+        "body": body,
+    }
     base.update(overrides)
     return Document(**base)
 

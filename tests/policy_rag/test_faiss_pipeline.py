@@ -113,8 +113,8 @@ async def test_index_documents_rejects_an_undeclared_corpus(pipeline):
 
 def test_the_package_exports_the_pipeline_lazily():
     """`from src.grounding import FaissPolicyRAG` works without eager faiss import."""
-    import src.grounding as grounding
+    from src import grounding
 
     assert grounding.FaissPolicyRAG is FaissPolicyRAG
     with pytest.raises(AttributeError):
-        grounding.NoSuchPipeline
+        _ = grounding.NoSuchPipeline

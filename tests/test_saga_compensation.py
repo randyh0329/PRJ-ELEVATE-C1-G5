@@ -1,16 +1,16 @@
 """Unit and integration tests for Saga pattern cross-system compensation (UC-2.2)."""
 import datetime
-import pytest
+
 from src.core.agent import HREnterpriseAgent
-from src.integrations.workweek.mock_service import workweek_mock_service
 from src.integrations.service_immediately.mock_service import service_immediately_mock_service
+from src.integrations.workweek.mock_service import workweek_mock_service
 
 
 def test_uc_2_2_medical_leave_saga_success(agent: HREnterpriseAgent):
     """UC-2.2: Verify end-to-end happy path for medical leave + email routing ticket."""
     today = datetime.date(2026, 8, 27)
     prompt = "I need to take short-term medical leave starting next Monday. What is the process, and can you set it up for me?"
-    
+
     response = agent.process_message(
         user_prompt=prompt,
         caller_employee_id="EMP-1001",

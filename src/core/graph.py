@@ -6,18 +6,17 @@ Compliant with Enterprise Agentic Solution Design Document (MVP 1) §3.1, §3.2,
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
 
 from src.core.agents.hcm import HCMSpecialistNode
 from src.core.agents.itsm import ITSMSpecialistNode
 from src.core.agents.policy import PolicySpecialistNode
 from src.core.agents.saga import SagaCoordinatorNode
 from src.core.agents.supervisor import SupervisorAgentNode
+from src.core.state import AgentState
 from src.saga.ledger import SagaLedgerManager
 from src.security.dlp import CloudDLPInterceptor
 from src.security.model_armor import ModelArmorSanitizer
 from src.security.token_minter import CompositeTokenMinter
-from src.core.state import AgentState
 
 logger = logging.getLogger("agent.graph")
 
@@ -31,10 +30,10 @@ class AgentOrchestrationGraph:
 
     def __init__(
         self,
-        ledger: Optional[SagaLedgerManager] = None,
-        dlp: Optional[CloudDLPInterceptor] = None,
-        model_armor: Optional[ModelArmorSanitizer] = None,
-        token_minter: Optional[CompositeTokenMinter] = None,
+        ledger: SagaLedgerManager | None = None,
+        dlp: CloudDLPInterceptor | None = None,
+        model_armor: ModelArmorSanitizer | None = None,
+        token_minter: CompositeTokenMinter | None = None,
     ):
         self.ledger = ledger or SagaLedgerManager()
         self.dlp = dlp or CloudDLPInterceptor()

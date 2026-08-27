@@ -141,7 +141,7 @@ class Chunk:
         }
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "Chunk":
+    def from_dict(cls, raw: dict[str, Any]) -> Chunk:
         return cls(
             chunk_id=raw["chunk_id"],
             doc_id=raw["doc_id"],

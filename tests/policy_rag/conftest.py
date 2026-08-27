@@ -72,23 +72,23 @@ def make_chunk(**overrides) -> Chunk:
 
     A plain helper, not a fixture: `from tests.policy_rag.conftest import make_chunk`.
     """
-    base = dict(
-        chunk_id="0" * 16,
-        doc_id="doc",
-        corpus_id="okf-handbook",
-        path="okf/altostrat-sg-handbook/leave/vacation.md",
-        doc_title="Vacation Leave",
-        doc_type="policy",
-        authority="governing",
-        entitlement="general",
-        heading_path=["Accrual"],
-        anchor="accrual",
-        text="Employees accrue 14 days of paid vacation leave per year.",
-        ordinal=0,
-        tags=["leave"],
-        status="stable",
-        stale_after=None,
-        sources=[SourceRef(id="hb-20", title="Handbook Section 20", resource="https://example/hb#20")],
-    )
+    base = {
+        "chunk_id": "0" * 16,
+        "doc_id": "doc",
+        "corpus_id": "okf-handbook",
+        "path": "okf/altostrat-sg-handbook/leave/vacation.md",
+        "doc_title": "Vacation Leave",
+        "doc_type": "policy",
+        "authority": "governing",
+        "entitlement": "general",
+        "heading_path": ["Accrual"],
+        "anchor": "accrual",
+        "text": "Employees accrue 14 days of paid vacation leave per year.",
+        "ordinal": 0,
+        "tags": ["leave"],
+        "status": "stable",
+        "stale_after": None,
+        "sources": [SourceRef(id="hb-20", title="Handbook Section 20", resource="https://example/hb#20")],
+    }
     base.update(overrides)
     return Chunk(**base)

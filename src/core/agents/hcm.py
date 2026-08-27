@@ -6,17 +6,15 @@ Model: Gemini 3.7 Flash (Pinned).
 
 from __future__ import annotations
 
-import logging
 import datetime
-import json
-import re
+import logging
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from src.security.token_minter import CompositeTokenMinter
+from src.core.clock import business_today
 from src.core.state import AgentState
 from src.integrations.workweek.client import WorkWeekClient, workweek_client
-from src.models.routing import WorkWeekToolSelection
+from src.security.token_minter import CompositeTokenMinter
 
 logger = logging.getLogger("agents.hcm")
 
@@ -24,7 +22,7 @@ logger = logging.getLogger("agents.hcm")
 # ==============================================================================
 # WorkWeek FastMCP Tool Declarations (OpenAPI 3.0 / JSON-RPC 2.0 Schemas)
 # ==============================================================================
-WORKWEEK_TOOL_SCHEMAS: List[Dict[str, Any]] = [
+WORKWEEK_TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "get_employee_balances",
         "description": "Fetch current remaining, accrued, and used vacation and sick leave balances for the authenticated employee.",
@@ -93,8 +91,8 @@ class WorkWeekAutonomousSpecialist:
 
     def __init__(
         self,
-        client: Optional[WorkWeekClient] = None,
-        llm_client: Optional[Any] = None
+        client: WorkWeekClient | None = None,
+        llm_client: Any | None = None
     ):
         self.client = client or workweek_client
         if llm_client is None:
@@ -105,15 +103,15 @@ class WorkWeekAutonomousSpecialist:
     def execute_tool(
         self,
         tool_name: str,
-        arguments: Dict[str, Any],
+        arguments: dict[str, Any],
         caller_id: str,
-        reference_date: Optional[datetime.date] = None
-    ) -> Dict[str, Any]:
+        reference_date: datetime.date | None = None
+    ) -> dict[str, Any]:
         """
         Executes a registered WorkWeek tool with strict Subject Isolation.
         """
-        ref_date = reference_date or datetime.date.today()
-        logger.info(f"[WorkWeekAutonomous] Executing tool '{tool_name}' for caller '{caller_id}' with args: {arguments}")
+        ref_date = reference_date or business_today()
+        logger.info("[WorkWeekAutonomous] Executing tool '%s' for caller '%s' with args: %s", tool_name, caller_id, arguments)
 
         try:
             # 1. get_employee_balances
@@ -139,20 +137,24 @@ class WorkWeekAutonomousSpecialist:
             # 3. request_time_off
             elif tool_name == "request_time_off":
                 start_str = arguments.get("start_date")
+                end_str = arguments.get("end_date")
                 raw_type = str(arguments.get("leave_type", "Vacation")).lower()
                 leave_type = "Sick" if any(k in raw_type for k in ["sick", "병가", "medical"]) else "Vacation"
                 days = float(arguments.get("days", 1.0))
 
-                try:
-                    start_date = datetime.date.fromisoformat(start_str) if start_str else ref_date + datetime.timedelta(days=1)
-                    end_date = datetime.date.fromisoformat(end_str) if end_str else start_date + datetime.timedelta(days=int(days)-1)
-                except Exception:
-                    start_date = ref_date + datetime.timedelta(days=1)
-                    end_date = start_date + datetime.timedelta(days=int(days)-1)
+                # Parsed independently so that an unusable end date does not also
+                # discard a perfectly good start date. `except Exception` here
+                # previously hid a NameError on `end_str`, which meant every
+                # caller-supplied start date was silently replaced by "tomorrow";
+                # the narrow catch is what keeps that class of bug visible.
+                start_date = self._parse_date(start_str) or ref_date + datetime.timedelta(days=1)
+                end_date = self._parse_date(end_str) or start_date + datetime.timedelta(days=int(days) - 1)
+                if end_date < start_date:
+                    end_date = start_date + datetime.timedelta(days=int(days) - 1)
 
                 # Guard against past date calculation
                 if start_date < ref_date:
-                    logger.warning(f"Calculated start_date {start_date} is before ref_date {ref_date}. Adjusting to {ref_date}.")
+                    logger.warning("Calculated start_date %s is before ref_date %s. Adjusting to %s.", start_date, ref_date, ref_date)
                     start_date = ref_date
                     end_date = start_date + datetime.timedelta(days=int(days)-1)
 
@@ -225,21 +227,37 @@ class WorkWeekAutonomousSpecialist:
             else:
                 return {"status": "ERROR", "message": f"Unknown tool '{tool_name}'."}
         except Exception as e:
-            logger.error(f"[WorkWeekAutonomous] Tool execution '{tool_name}' failed: {e}")
+            logger.error("[WorkWeekAutonomous] Tool execution '%s' failed: %s", tool_name, e)
             return {"status": "ERROR", "message": str(e)}
+
+    @staticmethod
+    def _parse_date(value: Any) -> datetime.date | None:
+        """An ISO date, or `None` when the model supplied something unusable.
+
+        The model populates these arguments, so a malformed value is an expected
+        input rather than an exceptional one - hence a `None` return instead of a
+        raise the caller would have to wrap.
+        """
+        if not value:
+            return None
+        try:
+            return datetime.date.fromisoformat(str(value))
+        except (TypeError, ValueError):
+            logger.warning("[WorkWeekAutonomous] Unparseable date %r; falling back to a derived one", value)
+            return None
 
     def plan_and_execute(
         self,
         prompt: str,
         caller_id: str,
-        reference_date: Optional[datetime.date] = None
-    ) -> Dict[str, Any]:
+        reference_date: datetime.date | None = None
+    ) -> dict[str, Any]:
         """
         Autonomous Agentic Plan & Execute loop for WorkWeek HCM.
         Uses Gemini 3.7 Flash Function Calling to select the FastMCP tool and extract arguments,
         executes the tool against WorkWeek FastMCP, and returns the response.
         """
-        ref_date = reference_date or datetime.date.today()
+        ref_date = reference_date or business_today()
 
         # Step 1: Gemini Function Calling for FastMCP Tool Selection & Argument Extraction
         selection = self._llm.select_workweek_tool(prompt, reference_date=ref_date)
@@ -260,12 +278,12 @@ class WorkWeekAutonomousSpecialist:
     def execute_fast_path(
         self,
         tool_name: str,
-        arguments: Dict[str, Any],
+        arguments: dict[str, Any],
         caller_id: str,
-        reference_date: Optional[datetime.date] = None
-    ) -> Dict[str, Any]:
+        reference_date: datetime.date | None = None
+    ) -> dict[str, Any]:
         """Directly executes WorkWeek tool without a redundant 2nd LLM round-trip."""
-        ref_date = reference_date or datetime.date.today()
+        ref_date = reference_date or business_today()
         tool_res = self.execute_tool(tool_name, arguments, caller_id, ref_date)
         if tool_res.get("status") == "ERROR":
             return {
@@ -280,9 +298,9 @@ class WorkWeekAutonomousSpecialist:
     def _format_tool_response(
         self,
         tool_name: str,
-        args: Dict[str, Any],
-        tool_res: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        args: dict[str, Any],
+        tool_res: dict[str, Any]
+    ) -> dict[str, Any]:
         """Format domain response based on executed tool."""
         if tool_name == "cancel_leave_request":
             req_id = args.get("request_id") or tool_res.get("request_id", "")
@@ -438,10 +456,10 @@ class HCMSpecialistNode:
     MODEL_ID = "gemini-3.7-flash@2026-08"
     ADAPTER_URL = "https://workweek-adapter-prod-uc.a.run.app"
 
-    def __init__(self, token_minter: Optional[CompositeTokenMinter] = None):
+    def __init__(self, token_minter: CompositeTokenMinter | None = None):
         self.token_minter = token_minter or CompositeTokenMinter()
         # Mock WorkWeek Database (per employee)
-        self._profiles: Dict[str, Dict[str, Any]] = {
+        self._profiles: dict[str, dict[str, Any]] = {
             "EMP-44210": {
                 "employeeId": "EMP-44210",
                 "name": "Sarah Chen",
@@ -467,13 +485,13 @@ class HCMSpecialistNode:
                 "hireDate": "2023-01-10",
             }
         }
-        self._balances: Dict[str, Dict[str, Any]] = {
+        self._balances: dict[str, dict[str, Any]] = {
             "EMP-44210": {"vacation": {"remainingHours": 120.0}, "sick": {"remainingHours": 80.0}},
             "EMP-10022": {"vacation": {"remainingHours": 40.0}, "sick": {"remainingHours": 40.0}},
         }
-        self._leaves: Dict[str, Dict[str, Any]] = {}
+        self._leaves: dict[str, dict[str, Any]] = {}
 
-    def get_profile(self, employee_id: str) -> Dict[str, Any]:
+    def get_profile(self, employee_id: str) -> dict[str, Any]:
         """ww.get_profile (FR-3.2)"""
         return self._profiles.get(
             employee_id,
@@ -487,15 +505,15 @@ class HCMSpecialistNode:
             },
         )
 
-    def get_balances(self, employee_id: str) -> Dict[str, Any]:
+    def get_balances(self, employee_id: str) -> dict[str, Any]:
         """ww.get_balances (FR-3.2, FR-3.4) - Live fetch"""
         return self._balances.get(
             employee_id, {"vacation": {"remainingHours": 80.0}, "sick": {"remainingHours": 80.0}}
         )
 
     def update_contact(
-        self, employee_id: str, new_address: Optional[str] = None, new_phone: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, employee_id: str, new_address: str | None = None, new_phone: str | None = None
+    ) -> dict[str, Any]:
         """
         ww.update_contact (FR-3.2)
         Captures previous values to enable REVERSIBLE_SAFE compensation (§5.4).
@@ -523,7 +541,7 @@ class HCMSpecialistNode:
 
     def submit_leave(
         self, employee_id: str, leave_type: str, start_date: str, end_date: str, work_days: float
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """ww.submit_leave (FR-3.2) - Class: HUMAN_CONSEQUENTIAL"""
         leave_id = f"LV-{uuid.uuid4().hex[:4].upper()}"
         leave_doc = {
@@ -538,7 +556,7 @@ class HCMSpecialistNode:
         self._leaves[leave_id] = leave_doc
         return {"status": "SUCCESS", "leaveId": leave_id, "leaveStatus": "PENDING_APPROVAL"}
 
-    def cancel_leave(self, employee_id: str, leave_id: str) -> Dict[str, Any]:
+    def cancel_leave(self, employee_id: str, leave_id: str) -> dict[str, Any]:
         """ww.cancel_leave - REVERSIBLE_SAFE compensation only"""
         if leave_id in self._leaves:
             self._leaves[leave_id]["status"] = "CANCELLED"
@@ -552,7 +570,7 @@ class HCMSpecialistNode:
         employee_id = state.get("employee_id", "EMP-44210")
         query = state.get("masked_input", state.get("user_input", "")).lower()
 
-        logger.info(f"[{self.AGENT_ID}] Executing HCM request for subject {employee_id}")
+        logger.info("[%s] Executing HCM request for subject %s", self.AGENT_ID, employee_id)
 
         if "balance" in query or "pto" in query:
             balances = self.get_balances(employee_id)

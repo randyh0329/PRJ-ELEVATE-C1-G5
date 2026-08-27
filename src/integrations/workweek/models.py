@@ -1,6 +1,6 @@
 """Data models for WorkWeek HCM operations."""
-from typing import Optional
-from pydantic import BaseModel, Field
+
+from pydantic import BaseModel
 
 
 class EmployeeProfile(BaseModel):
@@ -45,9 +45,9 @@ class LeaveRequest(BaseModel):
 class LeaveSubmissionResponse(BaseModel):
     """Result of leave submission."""
     success: bool
-    request_id: Optional[str] = None
+    request_id: str | None = None
     message: str
-    remaining_balance: Optional[float] = None
+    remaining_balance: float | None = None
 
 
 class ContactUpdateResponse(BaseModel):

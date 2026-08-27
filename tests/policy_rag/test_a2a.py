@@ -6,9 +6,8 @@ real JSON-RPC round trips with no port bound and no network.
 
 from __future__ import annotations
 
-import json
-
 import copy
+import json
 
 import httpx
 import pytest

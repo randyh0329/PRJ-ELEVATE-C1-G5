@@ -168,7 +168,7 @@ class HashEmbeddingProvider(EmbeddingProvider):
         tokens = self._TOKEN_RE.findall(text.lower())
         features = list(tokens)
         joined = " ".join(tokens)
-        features.extend(joined[i : i + 3] for i in range(0, max(0, len(joined) - 2)))
+        features.extend(joined[i : i + 3] for i in range(max(0, len(joined) - 2)))
         return features
 
     def encode(self, texts: list[str]) -> np.ndarray:

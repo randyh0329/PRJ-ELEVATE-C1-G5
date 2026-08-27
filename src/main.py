@@ -2,27 +2,27 @@
 import argparse
 import logging
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-logger = logging.getLogger("api.main")
-
-
-from src.core.agent import HREnterpriseAgent, hr_enterprise_agent
-from src.telemetry.audit_logger import audit_logger
-from src.integrations.workweek.mock_service import workweek_mock_service
+from config.settings import get_settings
+from src.core.agent import hr_enterprise_agent
+from src.integrations.mcp.client import current_mcp_token, saas_fast_mcp_client
 from src.integrations.service_immediately.mock_service import service_immediately_mock_service
+from src.integrations.workweek.mock_service import workweek_mock_service
 from src.security.auth import (
     AuthenticatedUser,
+    mint_session_token,
     resolve_employee_id,
     verify_google_id_token,
-    mint_session_token,
     verify_session_token,
 )
-from src.integrations.mcp.client import current_mcp_token, saas_fast_mcp_client
-from config.settings import get_settings
+from src.telemetry.audit_logger import audit_logger
+
+logger = logging.getLogger("api.main")
 
 settings = get_settings()
 
@@ -36,15 +36,15 @@ app = FastAPI(
 class GoogleAuthRequest(BaseModel):
     """Google OIDC credential token payload."""
     credential: str
-    client_id: Optional[str] = None
-    mcp_token: Optional[str] = None
+    client_id: str | None = None
+    mcp_token: str | None = None
 
 
 class QuickAuthRequest(BaseModel):
     """Corporate email login payload requiring tester's personal FastMCP token."""
     email: str
-    name: Optional[str] = None
-    mcp_token: Optional[str] = None
+    name: str | None = None
+    mcp_token: str | None = None
 
 
 
@@ -53,7 +53,7 @@ class ChatRequest(BaseModel):
     """Inbound chat message request."""
     employee_id: str = "EMP-1001"
     message: str
-    session_id: Optional[str] = None
+    session_id: str | None = None
 
 
 
@@ -61,10 +61,10 @@ class ChatResponse(BaseModel):
     """Outbound chat response."""
     response: str
     intent: str
-    citations: List[str] = []
-    action_performed: Optional[str] = None
-    transaction_reference: Optional[str] = None
-    processing_metadata: Dict[str, Any] = {}
+    citations: list[str] = []
+    action_performed: str | None = None
+    transaction_reference: str | None = None
+    processing_metadata: dict[str, Any] = {}
 
 
 @app.get("/health")
@@ -381,7 +381,7 @@ def serve_web_chat_ui():
     function appendMessage(text, isUser, meta = null, citations = []) {
       const msgDiv = document.createElement('div');
       msgDiv.className = 'msg ' + (isUser ? 'user' : 'agent');
-      
+
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
       bubble.textContent = text;
@@ -488,13 +488,13 @@ def google_login(req: GoogleAuthRequest):
         token = mint_session_token(user)
         return {"success": True, "token": token, "user": user.model_dump()}
     except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Google authentication failed: {str(e)}")
+        logger.warning("Google authentication failed: %s", e)
+        raise HTTPException(status_code=401, detail="Google authentication failed.") from e
 
 
 @app.post("/auth/quick-login")
 def quick_login(req: QuickAuthRequest):
     """Direct Google/corporate email login with tester's personal FastMCP token."""
-    import sys
     token_to_use = req.mcp_token
     if not token_to_use and "pytest" in sys.modules:
         token_to_use = settings.SAAS_MCP_CREDENTIAL
@@ -512,11 +512,11 @@ def quick_login(req: QuickAuthRequest):
         if "pytest" in sys.modules and (not req.mcp_token or req.mcp_token.startswith("test_") or req.mcp_token == settings.SAAS_MCP_CREDENTIAL):
             discovered_id = "EMP-509"
         else:
-            logger.error(f"Failed to probe FastMCP with provided token: {e}")
+            logger.error("Failed to probe FastMCP with provided token: %s", e)
             error_msg = str(e)
             if "401" in error_msg:
                 error_msg = "Invalid, expired, or revoked FastMCP token."
-            raise HTTPException(status_code=401, detail=f"WorkWeek Authentication Failed: {error_msg}")
+            raise HTTPException(status_code=401, detail=f"WorkWeek Authentication Failed: {error_msg}") from e
 
 
     emp_info = resolve_employee_id(req.email, default_name=req.name)
@@ -541,8 +541,8 @@ def quick_login(req: QuickAuthRequest):
 
 @app.get("/auth/me")
 def get_current_user(
-    authorization: Optional[str] = Header(default=None),
-    x_goog_authenticated_user_email: Optional[str] = Header(default=None)
+    authorization: str | None = Header(default=None),
+    x_goog_authenticated_user_email: str | None = Header(default=None)
 ):
     """Return authenticated user profile from session token or Cloud Run IAP header."""
     # 1. Bearer session token
@@ -571,11 +571,11 @@ def get_current_user(
 @app.post("/chat", response_model=ChatResponse)
 def handle_chat(
     payload: ChatRequest,
-    authorization: Optional[str] = Header(default=None),
-    x_automation_origin: Optional[str] = Header(default="HR_AGENT_ORCHESTRATOR_V1"),
-    x_caller_employee_id: Optional[str] = Header(default=None),
-    x_goog_authenticated_user_email: Optional[str] = Header(default=None),
-    x_mcp_token: Optional[str] = Header(default=None)
+    authorization: str | None = Header(default=None),
+    x_automation_origin: str | None = Header(default="HR_AGENT_ORCHESTRATOR_V1"),
+    x_caller_employee_id: str | None = Header(default=None),
+    x_goog_authenticated_user_email: str | None = Header(default=None),
+    x_mcp_token: str | None = Header(default=None)
 ):
     """Process user prompt through the agentic reasoning and safety loop."""
     caller_id = None
@@ -619,9 +619,10 @@ def handle_chat(
             processing_metadata=response.processing_metadata
         )
     except Exception as e:
-        logger.error(f"Error processing chat message: {e}", exc_info=True)
+        logger.exception("Error processing chat message")
         return ChatResponse(
-            response=f"⚠️ Error processing request: {str(e)}",
+            response="⚠️ Something went wrong handling that request. Please try again, "
+                     "or contact the service desk if it keeps happening.",
             intent="SYSTEM_ERROR",
             citations=[],
             action_performed="ERROR",
@@ -632,7 +633,7 @@ def handle_chat(
 
 
 @app.get("/audit-logs")
-def get_audit_logs(caller_employee_id: Optional[str] = None):
+def get_audit_logs(caller_employee_id: str | None = None):
     """Query immutable audit events."""
     return audit_logger.get_records(caller_employee_id=caller_employee_id)
 
@@ -654,7 +655,7 @@ def get_balances(employee_id: str):
     return balances
 
 
-def run_interactive_cli(default_employee_id: Optional[str] = None) -> None:
+def run_interactive_cli(default_employee_id: str | None = None) -> None:
     """Run interactive terminal chat with the HR Agent."""
     from src.integrations.mcp.client import saas_fast_mcp_client
 

@@ -41,10 +41,15 @@ from a2a.server.tasks import TaskUpdater
 from a2a.types import Part, TaskState
 from google.protobuf import json_format, struct_pb2
 
+from src.grounding.policy_rag.a2a_app.card import (
+    SKILL_CORPUS_STATUS,
+    SKILL_IDS,
+    SKILL_POLICY_ANSWER,
+    SKILL_POLICY_SEARCH,
+)
 from src.grounding.policy_rag.config import GENERAL_ENTITLEMENT
 from src.grounding.policy_rag.ingest import detect_drift
 from src.grounding.policy_rag.service import PolicyRagService
-from src.grounding.policy_rag.a2a_app.card import SKILL_CORPUS_STATUS, SKILL_POLICY_ANSWER, SKILL_POLICY_SEARCH, SKILL_IDS
 
 logger = logging.getLogger(__name__)
 

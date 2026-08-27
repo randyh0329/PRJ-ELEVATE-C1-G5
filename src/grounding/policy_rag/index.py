@@ -23,9 +23,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 import faiss
 import numpy as np
@@ -56,7 +56,7 @@ class IndexManifest:
         return self.__dict__.copy()
 
     @classmethod
-    def from_dict(cls, raw: dict) -> "IndexManifest":
+    def from_dict(cls, raw: dict) -> IndexManifest:
         return cls(**raw)
 
 
@@ -92,7 +92,7 @@ class PolicyIndex:
         vectors: np.ndarray,
         cfg: IndexConfig,
         manifest: IndexManifest,
-    ) -> "PolicyIndex":
+    ) -> PolicyIndex:
         if len(chunks) != vectors.shape[0]:
             raise ValueError(f"chunk/vector count mismatch: {len(chunks)} vs {vectors.shape[0]}")
         if not chunks:
@@ -120,7 +120,7 @@ class PolicyIndex:
         logger.info("wrote index of %d chunks to %s", len(self._chunks), directory)
 
     @classmethod
-    def load(cls, directory: Path) -> "PolicyIndex":
+    def load(cls, directory: Path) -> PolicyIndex:
         index_file = directory / INDEX_FILENAME
         if not index_file.exists():
             raise FileNotFoundError(

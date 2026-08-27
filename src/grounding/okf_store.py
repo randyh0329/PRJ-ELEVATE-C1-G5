@@ -1,5 +1,5 @@
 """Open Knowledge Format (OKF) curated policy catalog."""
-from typing import Dict, List, Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -10,22 +10,22 @@ class PolicyDocument(BaseModel):
     category: str
     summary: str
     details: str
-    entitlement_limits: Dict[str, str] = Field(default_factory=dict)
+    entitlement_limits: dict[str, str] = Field(default_factory=dict)
     citation_title: str
     citation_url: str
-    tags: List[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
 
 
 class OKFPolicyStore:
     """In-memory store of curated enterprise HR and IT policies aligned with OKF standards."""
 
     def __init__(self) -> None:
-        self._policies: Dict[str, PolicyDocument] = {}
+        self._policies: dict[str, PolicyDocument] = {}
         self._load_baseline_policies()
 
     def _load_baseline_policies(self) -> None:
         """Initialize curated baseline policies from SDD."""
-        
+
         # 1. Section 04.2: Bereavement Leave Policy (UC-1.1)
         self.add_policy(
             PolicyDocument(
@@ -106,14 +106,14 @@ class OKFPolicyStore:
         """Add or update a policy document."""
         self._policies[doc.section_id] = doc
 
-    def get_policy_by_section(self, section_id: str) -> Optional[PolicyDocument]:
+    def get_policy_by_section(self, section_id: str) -> PolicyDocument | None:
         """Fetch policy document by exact section ID."""
         return self._policies.get(section_id)
 
-    def search_policies(self, query: str) -> List[PolicyDocument]:
+    def search_policies(self, query: str) -> list[PolicyDocument]:
         """Search policy repository by keyword relevance."""
         q_lower = query.lower()
-        matches: List[Tuple[int, PolicyDocument]] = []
+        matches: list[tuple[int, PolicyDocument]] = []
 
         STOPWORDS = {"policy", "corporate", "company", "regarding", "what", "is", "the", "into", "office", "about", "with", "from", "for"}
         for doc in self._policies.values():

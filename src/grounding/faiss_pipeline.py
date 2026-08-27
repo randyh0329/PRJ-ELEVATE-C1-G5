@@ -22,7 +22,7 @@ artefact and the embedding-model load is the expensive part.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from src.grounding.policy_rag.config import GENERAL_ENTITLEMENT, Config
 from src.grounding.policy_rag.service import PolicyRagService
@@ -36,8 +36,8 @@ class FaissPolicyRAG(BaseRAGPipeline):
 
     def __init__(
         self,
-        config: Optional[Config] = None,
-        service: Optional[PolicyRagService] = None,
+        config: Config | None = None,
+        service: PolicyRagService | None = None,
     ) -> None:
         self._config = config
         self._service = service
@@ -63,7 +63,7 @@ class FaissPolicyRAG(BaseRAGPipeline):
             logger.warning("policy RAG index unavailable; run `python -m src.grounding.policy_rag.cli ingest`")
             return False
 
-    async def index_documents(self, gcs_uris: List[str]) -> bool:
+    async def index_documents(self, gcs_uris: list[str]) -> bool:
         """Rebuild the FAISS index from the corpora declared in config/corpus.yaml.
 
         The parameter keeps the `BaseRAGPipeline` signature, but this pipeline
@@ -97,8 +97,8 @@ class FaissPolicyRAG(BaseRAGPipeline):
         self,
         query: str,
         top_k: int = 5,
-        entitlements: Optional[List[str]] = None,
-    ) -> List[RAGDocumentChunk]:
+        entitlements: list[str] | None = None,
+    ) -> list[RAGDocumentChunk]:
         """Dense + lexical retrieval, ACL-filtered, above the relevance gate.
 
         Returns only hits that cleared `retrieval.relevance_gate`, so an empty
@@ -122,7 +122,7 @@ class FaissPolicyRAG(BaseRAGPipeline):
         ]
 
     @staticmethod
-    def _metadata(hit) -> Dict[str, Any]:
+    def _metadata(hit) -> dict[str, Any]:
         """Provenance a citation-rendering caller needs, without the Hit type."""
         return {
             "doc_title": hit.chunk.doc_title,

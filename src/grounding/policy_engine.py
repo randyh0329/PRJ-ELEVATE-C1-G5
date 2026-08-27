@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -15,8 +15,8 @@ class PolicyQueryResult(BaseModel):
     """Result of policy retrieval and grounding."""
     is_grounded: bool
     answer_text: str
-    citations: List[str] = Field(default_factory=list)
-    referenced_section_ids: List[str] = Field(default_factory=list)
+    citations: list[str] = Field(default_factory=list)
+    referenced_section_ids: list[str] = Field(default_factory=list)
     confidence_score: float
     #: Which backend answered: `faiss` (the indexed handbook corpus) or
     #: `curated` (the four baseline documents in `okf_store`). Recorded because
@@ -48,7 +48,7 @@ class DualGroundingEngine:
     event can tell a grounded answer from a degraded one.
     """
 
-    def __init__(self, store: Optional[object] = None, rag: Optional[Any] = None) -> None:
+    def __init__(self, store: object | None = None, rag: Any | None = None) -> None:
         self._store = store or okf_store
         self._rag = rag
         #: Resolve the backend once. Without this a missing index means a failed
@@ -58,7 +58,7 @@ class DualGroundingEngine:
 
     # --- backend selection --------------------------------------------------
 
-    def _rag_service(self) -> Optional[Any]:
+    def _rag_service(self) -> Any | None:
         """The FAISS service, or `None` when the index has not been built."""
         if not self._rag_resolved:
             self._rag_resolved = True
@@ -83,7 +83,7 @@ class DualGroundingEngine:
         self,
         user_query: str,
         *,
-        entitlements: Optional[List[str]] = None,
+        entitlements: list[str] | None = None,
         curated_only: bool = False,
     ) -> PolicyQueryResult:
         """Search policy knowledge and formulate a grounded response with clickable citations.
@@ -106,7 +106,7 @@ class DualGroundingEngine:
 
     # --- backends -----------------------------------------------------------
 
-    def _from_corpus(self, service: Any, user_query: str, entitlements: Optional[List[str]]) -> PolicyQueryResult:
+    def _from_corpus(self, service: Any, user_query: str, entitlements: list[str] | None) -> PolicyQueryResult:
         """Retrieve → guard → compose against the indexed handbook."""
         answer = service.answer(user_query, entitlements=entitlements)
 

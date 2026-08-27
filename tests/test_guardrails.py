@@ -1,6 +1,6 @@
 """Unit tests for operational guardrails."""
 import datetime
-import pytest
+
 from src.guardrails.operation_guardrails import OperationGuardrailEngine
 
 
@@ -62,7 +62,7 @@ def test_ticket_deduplication_guardrail():
 def test_ticket_status_state_machine():
     """Verify valid and invalid ticket status transitions."""
     engine = OperationGuardrailEngine()
-    
+
     # Valid transition
     res_valid = engine.validate_ticket_transition("New", "Work in Progress")
     assert res_valid.is_valid

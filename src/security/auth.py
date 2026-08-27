@@ -17,9 +17,10 @@ import hmac
 import json
 import logging
 import time
-from typing import Any, Dict, Optional
-from pydantic import BaseModel
+from typing import Any
+
 import httpx
+from pydantic import BaseModel
 
 logger = logging.getLogger("security.auth")
 
@@ -29,17 +30,17 @@ class AuthenticatedUser(BaseModel):
     email: str
     employee_id: str
     name: str
-    picture: Optional[str] = None
+    picture: str | None = None
     auth_provider: str = "google_oidc"
     role: str = "End User"
-    mcp_token: Optional[str] = None
+    mcp_token: str | None = None
 
 
 
 SESSION_SECRET_KEY = "elevate-enterprise-agentic-session-secret"
 
 
-def resolve_employee_id(email: str, default_name: Optional[str] = None) -> Dict[str, str]:
+def resolve_employee_id(email: str, default_name: str | None = None) -> dict[str, str]:
     """
     Derives user display metadata from corporate email.
     Primary employee_id is dynamically resolved from the user's FastMCP token (X-MCP-Token).
@@ -55,7 +56,7 @@ def resolve_employee_id(email: str, default_name: Optional[str] = None) -> Dict[
 
 
 
-def verify_google_id_token(id_token: str) -> Dict[str, Any]:
+def verify_google_id_token(id_token: str) -> dict[str, Any]:
     """
     Verifies a Google OIDC ID token.
     First attempts verification via Google OAuth2 TokenInfo endpoint.
@@ -71,10 +72,10 @@ def verify_google_id_token(id_token: str) -> Dict[str, Any]:
             resp = client.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={clean_token}")
             if resp.status_code == 200:
                 payload = resp.json()
-                logger.info(f"Google OIDC token successfully verified for email: {payload.get('email')}")
+                logger.info("Google OIDC token successfully verified for email: %s", payload.get('email'))
                 return payload
     except Exception as e:
-        logger.debug(f"Online Google token verification bypassed ({e}), decoding JWT claims.")
+        logger.debug("Online Google token verification bypassed (%s), decoding JWT claims.", e)
 
     # 2. Offline / Local JWT payload decoding
     parts = clean_token.split(".")
@@ -88,7 +89,7 @@ def verify_google_id_token(id_token: str) -> Dict[str, Any]:
         payload = json.loads(payload_bytes.decode("utf-8"))
         return payload
     except Exception as e:
-        raise ValueError(f"Failed to decode Google ID token claims: {e}")
+        raise ValueError(f"Failed to decode Google ID token claims: {e}") from e
 
 
 def mint_session_token(user: AuthenticatedUser, ttl_seconds: int = 86400) -> str:
@@ -109,13 +110,13 @@ def mint_session_token(user: AuthenticatedUser, ttl_seconds: int = 86400) -> str
 
     header_b64 = base64.urlsafe_b64encode(json.dumps(header).encode("utf-8")).decode("utf-8").rstrip("=")
     payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode("utf-8")).decode("utf-8").rstrip("=")
-    sig_raw = hmac.new(SESSION_SECRET_KEY.encode("utf-8"), f"{header_b64}.{payload_b64}".encode("utf-8"), hashlib.sha256).digest()
+    sig_raw = hmac.new(SESSION_SECRET_KEY.encode("utf-8"), f"{header_b64}.{payload_b64}".encode(), hashlib.sha256).digest()
     sig_b64 = base64.urlsafe_b64encode(sig_raw).decode("utf-8").rstrip("=")
 
     return f"{header_b64}.{payload_b64}.{sig_b64}"
 
 
-def verify_session_token(token: str) -> Optional[AuthenticatedUser]:
+def verify_session_token(token: str) -> AuthenticatedUser | None:
     """Verifies a session token and returns the AuthenticatedUser."""
     if not token or not isinstance(token, str):
         return None
@@ -125,7 +126,7 @@ def verify_session_token(token: str) -> Optional[AuthenticatedUser]:
         return None
 
     header_b64, payload_b64, sig_b64 = parts
-    expected_sig = hmac.new(SESSION_SECRET_KEY.encode("utf-8"), f"{header_b64}.{payload_b64}".encode("utf-8"), hashlib.sha256).digest()
+    expected_sig = hmac.new(SESSION_SECRET_KEY.encode("utf-8"), f"{header_b64}.{payload_b64}".encode(), hashlib.sha256).digest()
     expected_b64 = base64.urlsafe_b64encode(expected_sig).decode("utf-8").rstrip("=")
 
     if not hmac.compare_digest(sig_b64, expected_b64):
@@ -149,6 +150,6 @@ def verify_session_token(token: str) -> Optional[AuthenticatedUser]:
             mcp_token=payload.get("mcp_token"),
         )
     except Exception as e:
-        logger.error(f"Error parsing session token: {e}")
+        logger.error("Error parsing session token: %s", e)
         return None
 

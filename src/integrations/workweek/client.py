@@ -1,17 +1,17 @@
 """WorkWeek HCM client adapter with security checks, operational guardrails, and FastMCP integration."""
 import datetime
 import logging
-from typing import Optional
+
 from config.settings import get_settings
+from src.guardrails.operation_guardrails import OperationGuardrailEngine, guardrail_engine
+from src.integrations.mcp.client import SaaSFastMCPClient, saas_fast_mcp_client
+from src.integrations.workweek.mock_service import WorkWeekMockService, workweek_mock_service
 from src.integrations.workweek.models import (
+    ContactUpdateResponse,
     EmployeeProfile,
     LeaveBalances,
     LeaveSubmissionResponse,
-    ContactUpdateResponse,
 )
-from src.integrations.workweek.mock_service import WorkWeekMockService, workweek_mock_service
-from src.integrations.mcp.client import SaaSFastMCPClient, saas_fast_mcp_client
-from src.guardrails.operation_guardrails import OperationGuardrailEngine, guardrail_engine
 from src.telemetry.audit_logger import AuditLogger, audit_logger
 
 logger = logging.getLogger("integrations.workweek")
@@ -22,10 +22,10 @@ class WorkWeekClient:
 
     def __init__(
         self,
-        service: Optional[WorkWeekMockService] = None,
-        mcp_client: Optional[SaaSFastMCPClient] = None,
-        guardrails: Optional[OperationGuardrailEngine] = None,
-        logger: Optional[AuditLogger] = None,
+        service: WorkWeekMockService | None = None,
+        mcp_client: SaaSFastMCPClient | None = None,
+        guardrails: OperationGuardrailEngine | None = None,
+        logger: AuditLogger | None = None,
         origin: str = "HR_AGENT_ORCHESTRATOR_V1"
     ) -> None:
         self._service = service or workweek_mock_service
@@ -48,7 +48,7 @@ class WorkWeekClient:
 
 
 
-    def get_employee_profile(self, caller_employee_id: str, target_employee_id: str) -> Optional[EmployeeProfile]:
+    def get_employee_profile(self, caller_employee_id: str, target_employee_id: str) -> EmployeeProfile | None:
         """Fetch employee profile enforcing caller isolation."""
         if caller_employee_id != target_employee_id:
             self._logger.log_event(
@@ -98,8 +98,8 @@ class WorkWeekClient:
 
 
             except Exception as e:
-                logger.error(f"Live WorkWeek FastMCP profile lookup failed: {e}")
-                raise RuntimeError(f"WorkWeek SaaS FastMCP communication error: {e}")
+                logger.error("Live WorkWeek FastMCP profile lookup failed: %s", e)
+                raise RuntimeError(f"WorkWeek SaaS FastMCP communication error: {e}") from e
         else:
             profile = self._service.get_profile(target_employee_id)
 
@@ -112,7 +112,7 @@ class WorkWeekClient:
         )
         return profile
 
-    def get_leave_balances(self, caller_employee_id: str, target_employee_id: str) -> Optional[LeaveBalances]:
+    def get_leave_balances(self, caller_employee_id: str, target_employee_id: str) -> LeaveBalances | None:
         """Fetch real-time leave balances enforcing caller isolation."""
         if caller_employee_id != target_employee_id:
             self._logger.log_event(
@@ -139,8 +139,8 @@ class WorkWeekClient:
                     sick_remaining=sick_rem,
                 )
             except Exception as e:
-                logger.error(f"Live WorkWeek FastMCP balance lookup failed: {e}")
-                raise RuntimeError(f"WorkWeek SaaS FastMCP communication error: {e}")
+                logger.error("Live WorkWeek FastMCP balance lookup failed: %s", e)
+                raise RuntimeError(f"WorkWeek SaaS FastMCP communication error: {e}") from e
         else:
             balances = self._service.get_balances(target_employee_id)
 
@@ -158,10 +158,10 @@ class WorkWeekClient:
         self,
         caller_employee_id: str,
         target_employee_id: str,
-        home_address: Optional[str] = None,
-        phone_number: Optional[str] = None,
-        current_office: Optional[str] = None,
-        country: Optional[str] = None
+        home_address: str | None = None,
+        phone_number: str | None = None,
+        current_office: str | None = None,
+        country: str | None = None
     ) -> ContactUpdateResponse:
         """Update contact details after passing syntax and security guardrails."""
         if caller_employee_id != target_employee_id:
@@ -197,8 +197,8 @@ class WorkWeekClient:
                     updated_fields={"home_address": home_address, "phone_number": phone_number}
                 )
             except Exception as e:
-                logger.error(f"Live WorkWeek FastMCP contact update failed: {e}")
-                raise RuntimeError(f"WorkWeek SaaS FastMCP communication error: {e}")
+                logger.error("Live WorkWeek FastMCP contact update failed: %s", e)
+                raise RuntimeError(f"WorkWeek SaaS FastMCP communication error: {e}") from e
         else:
             res = self._service.update_contact(
                 employee_id=target_employee_id,
@@ -224,7 +224,7 @@ class WorkWeekClient:
         start_date: datetime.date,
         end_date: datetime.date,
         days: float,
-        reference_date: Optional[datetime.date] = None
+        reference_date: datetime.date | None = None
     ) -> LeaveSubmissionResponse:
         """Submit a leave request after validating balance and temporal guardrails."""
         if caller_employee_id != target_employee_id:
@@ -277,8 +277,8 @@ class WorkWeekClient:
                 )
 
             except Exception as e:
-                logger.error(f"Live WorkWeek FastMCP leave submission failed: {e}")
-                raise RuntimeError(f"WorkWeek SaaS FastMCP communication error: {e}")
+                logger.error("Live WorkWeek FastMCP leave submission failed: %s", e)
+                raise RuntimeError(f"WorkWeek SaaS FastMCP communication error: {e}") from e
         else:
             res = self._service.submit_leave(
                 employee_id=target_employee_id,
@@ -306,7 +306,7 @@ class WorkWeekClient:
             try:
                 requests = self._mcp_client.get_leave_requests(target_employee_id)
             except Exception as e:
-                logger.warning(f"Live WorkWeek FastMCP get_leave_requests failed: {e}")
+                logger.warning("Live WorkWeek FastMCP get_leave_requests failed: %s", e)
                 requests = []
         self._logger.log_event(
             caller_employee_id=caller_employee_id,
@@ -325,7 +325,7 @@ class WorkWeekClient:
                 self._mcp_client.cancel_leave_request(caller_employee_id, int(request_id))
                 success = True
             except Exception as e:
-                logger.warning(f"Live WorkWeek FastMCP leave cancellation failed: {e}. Falling back to mock service.")
+                logger.warning("Live WorkWeek FastMCP leave cancellation failed: %s. Falling back to mock service.", e)
                 success = self._service.cancel_leave(request_id)
         else:
             success = self._service.cancel_leave(request_id)

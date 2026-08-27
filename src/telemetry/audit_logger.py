@@ -1,7 +1,8 @@
 """Immutable audit logging and telemetry emitter."""
 import datetime
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -12,15 +13,15 @@ class AuditRecord(BaseModel):
     origin: str = "HR_AGENT_ORCHESTRATOR_V1"
     action_type: str
     status: str  # SUCCESS, FAILED, COMPENSATED, REFUSED
-    details: Dict[str, Any] = Field(default_factory=dict)
-    metadata: Optional[Dict[str, Any]] = None
+    details: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] | None = None
 
 
 class AuditLogger:
     """Manages audit logging for agent actions and system events."""
 
     def __init__(self) -> None:
-        self._records: List[AuditRecord] = []
+        self._records: list[AuditRecord] = []
         self._logger = logging.getLogger("hr_agent_audit")
         self._logger.setLevel(logging.INFO)
         if not self._logger.handlers:
@@ -34,9 +35,9 @@ class AuditLogger:
         caller_employee_id: str,
         action_type: str,
         status: str,
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
         origin: str = "HR_AGENT_ORCHESTRATOR_V1",
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: dict[str, Any] | None = None
     ) -> AuditRecord:
         """Create and store an audit record."""
         record = AuditRecord(
@@ -53,9 +54,9 @@ class AuditLogger:
 
     def get_records(
         self,
-        caller_employee_id: Optional[str] = None,
-        action_type: Optional[str] = None
-    ) -> List[AuditRecord]:
+        caller_employee_id: str | None = None,
+        action_type: str | None = None
+    ) -> list[AuditRecord]:
         """Retrieve filtered audit records."""
         results = self._records
         if caller_employee_id:

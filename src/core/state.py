@@ -5,9 +5,10 @@ Compliant with Enterprise Agentic Solution Design Document (MVP 1) §3.1, §4.6,
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
+
 from typing_extensions import TypedDict
 
 
@@ -50,13 +51,13 @@ class SagaStepRecord:
     action: str                                # e.g. "SUBMIT_LEAVE", "CREATE_ROUTING_TICKET", "UPDATE_CONTACT"
     compensation_class: SagaCompensationClass
     status: SagaStepStatus = SagaStepStatus.PENDING
-    external_ref_id: Optional[str] = None      # e.g. "LV-4012", "INC-5510", "REQ-8830"
-    compensation_payload: Optional[Dict[str, Any]] = None  # Captured prior state for REVERSIBLE_SAFE
-    follow_up_ref: Optional[str] = None        # e.g. "OPS-2214" for ANCILLARY / HUMAN_CONSEQUENTIAL follow-up
-    error_message: Optional[str] = None
-    timestamp: Optional[str] = None
+    external_ref_id: str | None = None      # e.g. "LV-4012", "INC-5510", "REQ-8830"
+    compensation_payload: dict[str, Any] | None = None  # Captured prior state for REVERSIBLE_SAFE
+    follow_up_ref: str | None = None        # e.g. "OPS-2214" for ANCILLARY / HUMAN_CONSEQUENTIAL follow-up
+    error_message: str | None = None
+    timestamp: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "stepIndex": self.step_index,
             "targetSystem": self.target_system,
@@ -79,37 +80,37 @@ class AgentState(TypedDict):
     session_id: str
     turn_id: str
     employee_id: str                          # Bound server-side from gateway session
-    user_roles: List[str]
-    scopes: List[str]
+    user_roles: list[str]
+    scopes: list[str]
 
     # 2. Conversation & Routing State
     user_input: str
     masked_input: str                         # Pre-LLM DLP de-identified input (§4.3)
-    messages: List[Dict[str, Any]]
+    messages: list[dict[str, Any]]
     route: Literal["supervisor", "policy", "hcm", "itsm", "saga", "escalate", "end"]
-    next_node: Optional[str]
+    next_node: str | None
 
     # 3. Cross-System Saga Ledger State (§4.6, §5.4)
-    saga_id: Optional[str]
-    saga_type: Optional[str]                  # "UC-2.1-EQUIPMENT", "UC-2.2-MEDICAL-LEAVE", "UC-2.3-RELOCATION"
-    saga_state: Optional[str]                 # SagaWorkflowState
-    saga_ledger: List[SagaStepRecord]
+    saga_id: str | None
+    saga_type: str | None                  # "UC-2.1-EQUIPMENT", "UC-2.2-MEDICAL-LEAVE", "UC-2.3-RELOCATION"
+    saga_state: str | None                 # SagaWorkflowState
+    saga_ledger: list[SagaStepRecord]
     current_step_index: int
 
     # 4. Agent Outputs, Guardrails & Grounding (§4.3, §5.4, §9.1)
     guardrail_verdict: Literal["ALLOW", "BLOCK"]
     grounding_score: float
-    citations: List[Dict[str, str]]
+    citations: list[dict[str, str]]
     # Which corpus answered - "faiss" (indexed handbook) or "curated" (the mock
     # datastore used when no index has been built) - and how the guards disposed
     # of the query. Recorded so an auditor can tell a grounded answer from a
     # degraded one, and an escalation from a refusal.
     grounding_source: str
     policy_decision: Literal["answer", "escalate", "refuse"]
-    final_response: Optional[str]
+    final_response: str | None
 
     # 5. Fault Injection (For §9.1 Trajectory Testing Harness)
-    injected_faults: Dict[str, Any]           # e.g. {"step_2_status": 503, "max_retries_fail": True}
+    injected_faults: dict[str, Any]           # e.g. {"step_2_status": 503, "max_retries_fail": True}
 
     # 6. Escalation Package (§5.7)
-    context_package: Optional[Dict[str, Any]]
+    context_package: dict[str, Any] | None

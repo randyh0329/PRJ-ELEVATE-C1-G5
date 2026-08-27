@@ -7,14 +7,10 @@ Model: Gemini 3.1 Pro (Pinned).
 from __future__ import annotations
 
 import logging
-import uuid
-from typing import Any, Dict, List, Optional
 
 from src.core.agents.hcm import HCMSpecialistNode
 from src.core.agents.itsm import ITSMSpecialistNode
 from src.core.agents.policy import PolicySpecialistNode
-from src.saga.compensation import SagaCompensationDecisionMatrix
-from src.saga.ledger import SagaLedgerManager
 from src.core.state import (
     AgentState,
     SagaCompensationClass,
@@ -22,6 +18,8 @@ from src.core.state import (
     SagaStepStatus,
     SagaWorkflowState,
 )
+from src.saga.compensation import SagaCompensationDecisionMatrix
+from src.saga.ledger import SagaLedgerManager
 
 logger = logging.getLogger("agents.saga")
 
@@ -38,10 +36,10 @@ class SagaCoordinatorNode:
 
     def __init__(
         self,
-        ledger: Optional[SagaLedgerManager] = None,
-        policy_agent: Optional[PolicySpecialistNode] = None,
-        hcm_agent: Optional[HCMSpecialistNode] = None,
-        itsm_agent: Optional[ITSMSpecialistNode] = None,
+        ledger: SagaLedgerManager | None = None,
+        policy_agent: PolicySpecialistNode | None = None,
+        hcm_agent: HCMSpecialistNode | None = None,
+        itsm_agent: ITSMSpecialistNode | None = None,
     ):
         self.ledger = ledger or SagaLedgerManager()
         self.policy_agent = policy_agent or PolicySpecialistNode()
@@ -61,7 +59,7 @@ class SagaCoordinatorNode:
         prev_address = prev_payload.get("previousAddress")
         prev_phone = prev_payload.get("previousPhone")
         employee_id = state.get("employee_id", "EMP-44210")
-        logger.info(f"Executing rollback for UPDATE_CONTACT on {employee_id} -> restoring {prev_address}")
+        logger.info("Executing rollback for UPDATE_CONTACT on %s -> restoring %s", employee_id, prev_address)
         self.hcm_agent.update_contact(
             employee_id=employee_id,
             new_address=prev_address,
@@ -110,7 +108,7 @@ class SagaCoordinatorNode:
         )
         state["saga_id"] = saga_id
 
-        logger.info(f"[{self.AGENT_ID}] Initiated {saga_type} under Saga {saga_id}")
+        logger.info("[%s] Initiated %s under Saga %s", self.AGENT_ID, saga_type, saga_id)
 
         if saga_type == "UC-2.1-EQUIPMENT":
             return await self._execute_uc21_equipment(state, saga_id, employee_id)

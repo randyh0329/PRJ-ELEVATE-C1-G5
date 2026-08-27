@@ -19,9 +19,9 @@ from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from src.grounding.policy_rag.service import PolicyRagService
 from src.grounding.policy_rag.a2a_app.card import build_agent_card
 from src.grounding.policy_rag.a2a_app.executor import PolicyRagExecutor
+from src.grounding.policy_rag.service import PolicyRagService
 
 logger = logging.getLogger(__name__)
 

@@ -5,6 +5,6 @@ from src.security.token_minter import CompositeTokenMinter
 
 __all__ = [
     "CloudDLPInterceptor",
-    "ModelArmorSanitizer",
     "CompositeTokenMinter",
+    "ModelArmorSanitizer",
 ]

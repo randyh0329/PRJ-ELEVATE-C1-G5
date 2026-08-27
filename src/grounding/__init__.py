@@ -15,16 +15,16 @@ from src.grounding.policy_engine import DualGroundingEngine, PolicyQueryResult, 
 from src.grounding.rag_boilerplate import BaseRAGPipeline, RAGDocumentChunk, VertexAISearchRAGBoilerplate
 
 __all__ = [
-    "OKFPolicyStore",
-    "okf_store",
-    "DualGroundingEngine",
-    "PolicyQueryResult",
-    "dual_grounding_engine",
     "BaseRAGPipeline",
+    "DualGroundingEngine",
+    "FaissPolicyRAG",
+    "OKFPolicyStore",
+    "PolicyQueryResult",
     "RAGDocumentChunk",
     "VertexAISearchRAGBoilerplate",
-    "FaissPolicyRAG",
+    "dual_grounding_engine",
     "faiss_policy_rag",
+    "okf_store",
 ]
 
 _LAZY = {"FaissPolicyRAG", "faiss_policy_rag"}

@@ -17,7 +17,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 os.pardir, "computations"))
 
-from vacation_entitlement import annual_vacation_days  # noqa: E402
+from vacation_entitlement import annual_vacation_days
 
 COMPUTATION_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),

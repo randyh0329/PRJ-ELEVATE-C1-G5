@@ -1,20 +1,22 @@
 """ServiceImmediately ITSM client adapter with guardrails, audit logging, and FastMCP integration."""
+import contextlib
 import datetime
+import json
 import logging
-from typing import Dict, List, Optional
+
 from config.settings import get_settings
-from src.integrations.service_immediately.models import (
-    IncidentTicket,
-    TicketComment,
-    HardwareRequest,
-    FacilitiesTicket,
-)
+from src.guardrails.operation_guardrails import OperationGuardrailEngine, guardrail_engine
+from src.integrations.mcp.client import SaaSFastMCPClient, saas_fast_mcp_client
 from src.integrations.service_immediately.mock_service import (
     ServiceImmediatelyMockService,
     service_immediately_mock_service,
 )
-from src.integrations.mcp.client import SaaSFastMCPClient, saas_fast_mcp_client
-from src.guardrails.operation_guardrails import OperationGuardrailEngine, guardrail_engine
+from src.integrations.service_immediately.models import (
+    FacilitiesTicket,
+    HardwareRequest,
+    IncidentTicket,
+    TicketComment,
+)
 from src.telemetry.audit_logger import AuditLogger, audit_logger
 
 logger = logging.getLogger("integrations.service_immediately")
@@ -25,10 +27,10 @@ class ServiceImmediatelyClient:
 
     def __init__(
         self,
-        service: Optional[ServiceImmediatelyMockService] = None,
-        mcp_client: Optional[SaaSFastMCPClient] = None,
-        guardrails: Optional[OperationGuardrailEngine] = None,
-        logger: Optional[AuditLogger] = None,
+        service: ServiceImmediatelyMockService | None = None,
+        mcp_client: SaaSFastMCPClient | None = None,
+        guardrails: OperationGuardrailEngine | None = None,
+        logger: AuditLogger | None = None,
         origin: str = "HR_AGENT_ORCHESTRATOR_V1"
     ) -> None:
         self._service = service or service_immediately_mock_service
@@ -50,7 +52,7 @@ class ServiceImmediatelyClient:
         return True
 
 
-    def list_tickets_for_user(self, caller_employee_id: str) -> List[IncidentTicket]:
+    def list_tickets_for_user(self, caller_employee_id: str) -> list[IncidentTicket]:
         """List tickets created by or assigned to the caller."""
         if self._should_use_live_mcp(caller_employee_id):
             try:
@@ -69,10 +71,10 @@ class ServiceImmediatelyClient:
                     ))
                 return tickets
             except Exception as e:
-                logger.warning(f"Live ServiceImmediately FastMCP list_tickets failed: {e}. Falling back to mock service.")
+                logger.warning("Live ServiceImmediately FastMCP list_tickets failed: %s. Falling back to mock service.", e)
         return self._service.list_tickets_for_user(caller_employee_id)
 
-    def get_ticket_details(self, caller_employee_id: str, ticket_id: str) -> Optional[IncidentTicket]:
+    def get_ticket_details(self, caller_employee_id: str, ticket_id: str) -> IncidentTicket | None:
         """Fetch incident ticket details."""
         ticket = self._service.get_ticket(ticket_id)
         self._logger.log_event(
@@ -89,7 +91,7 @@ class ServiceImmediatelyClient:
         category: str,
         requested_priority: str,
         short_description: str,
-        now: Optional[datetime.datetime] = None
+        now: datetime.datetime | None = None
     ) -> IncidentTicket:
         """Create a new support incident ticket after validating deduplication and priority rules."""
         # 1. Check deduplication guardrail
@@ -143,10 +145,8 @@ class ServiceImmediatelyClient:
                                         tid = word.strip('"').strip("'").strip(",")
                                         break
                 if isinstance(tid, str) and tid.strip().startswith("{"):
-                    try:
+                    with contextlib.suppress(Exception):
                         tid = json.loads(tid).get("ticket_id", tid)
-                    except Exception:
-                        pass
                 ticket = IncidentTicket(
 
                     ticket_id=str(tid),
@@ -158,7 +158,7 @@ class ServiceImmediatelyClient:
                 )
 
             except Exception as e:
-                logger.warning(f"Live ServiceImmediately FastMCP create_ticket failed: {e}. Falling back to mock service.")
+                logger.warning("Live ServiceImmediately FastMCP create_ticket failed: %s. Falling back to mock service.", e)
                 ticket = self._service.create_incident(
                     requester_id=caller_employee_id,
                     category=category,
@@ -199,7 +199,7 @@ class ServiceImmediatelyClient:
                     comment_text=comment_text
                 )
             except Exception as e:
-                logger.warning(f"Live ServiceImmediately FastMCP add_comment failed: {e}. Falling back to mock service.")
+                logger.warning("Live ServiceImmediately FastMCP add_comment failed: %s. Falling back to mock service.", e)
                 comment = self._service.add_comment(ticket_id, caller_employee_id, comment_text)
         else:
             comment = self._service.add_comment(ticket_id, caller_employee_id, comment_text)
@@ -241,7 +241,7 @@ class ServiceImmediatelyClient:
                     updated_by=caller_employee_id
                 )
             except Exception as e:
-                logger.warning(f"Live ServiceImmediately FastMCP update_status failed: {e}.")
+                logger.warning("Live ServiceImmediately FastMCP update_status failed: %s.", e)
 
 
         updated = self._service.update_status(ticket_id, new_status, resolution_notes)

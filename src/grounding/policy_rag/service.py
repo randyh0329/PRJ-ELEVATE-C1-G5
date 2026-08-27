@@ -39,7 +39,7 @@ class PolicyRagService:
         cls,
         config_path: str | Path | Config | None = None,
         composer: str | None = None,
-    ) -> "PolicyRagService":
+    ) -> PolicyRagService:
         # An already-loaded `Config` is accepted so a caller that needs to read
         # settings before constructing the service - the eval harness reads the
         # gate - does not have to parse the YAML twice.

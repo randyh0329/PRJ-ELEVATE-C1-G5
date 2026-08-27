@@ -1,13 +1,13 @@
 """In-memory mock microservice simulating WorkWeek HCM API."""
 import datetime
 import uuid
-from typing import Dict, List, Optional
+
 from src.integrations.workweek.models import (
+    ContactUpdateResponse,
     EmployeeProfile,
     LeaveBalances,
     LeaveRequest,
     LeaveSubmissionResponse,
-    ContactUpdateResponse,
 )
 
 
@@ -15,9 +15,9 @@ class WorkWeekMockService:
     """Simulates WorkWeek HCM REST backend with deterministic state and error injection."""
 
     def __init__(self) -> None:
-        self._profiles: Dict[str, EmployeeProfile] = {}
-        self._balances: Dict[str, LeaveBalances] = {}
-        self._leave_requests: Dict[str, LeaveRequest] = {}
+        self._profiles: dict[str, EmployeeProfile] = {}
+        self._balances: dict[str, LeaveBalances] = {}
+        self._leave_requests: dict[str, LeaveRequest] = {}
         self.init_mock_data()
 
     def init_mock_data(self) -> None:
@@ -75,21 +75,21 @@ class WorkWeekMockService:
 
         self._leave_requests.clear()
 
-    def get_profile(self, employee_id: str) -> Optional[EmployeeProfile]:
+    def get_profile(self, employee_id: str) -> EmployeeProfile | None:
         """Fetch employee profile."""
         return self._profiles.get(employee_id)
 
-    def get_balances(self, employee_id: str) -> Optional[LeaveBalances]:
+    def get_balances(self, employee_id: str) -> LeaveBalances | None:
         """Fetch real-time leave balances directly from backend."""
         return self._balances.get(employee_id)
 
     def update_contact(
         self,
         employee_id: str,
-        home_address: Optional[str] = None,
-        phone_number: Optional[str] = None,
-        current_office: Optional[str] = None,
-        country: Optional[str] = None
+        home_address: str | None = None,
+        phone_number: str | None = None,
+        current_office: str | None = None,
+        country: str | None = None
     ) -> ContactUpdateResponse:
         """Update employee contact or office assignment."""
         profile = self._profiles.get(employee_id)
@@ -101,7 +101,7 @@ class WorkWeekMockService:
                 updated_fields={}
             )
 
-        updated: Dict[str, str] = {}
+        updated: dict[str, str] = {}
         if home_address:
             profile.home_address = home_address
             updated["home_address"] = home_address
@@ -198,7 +198,7 @@ class WorkWeekMockService:
         record.status = "CANCELLED"
         return True
 
-    def get_leave_request(self, request_id: str) -> Optional[LeaveRequest]:
+    def get_leave_request(self, request_id: str) -> LeaveRequest | None:
         """Fetch leave request by ID."""
         return self._leave_requests.get(request_id)
 

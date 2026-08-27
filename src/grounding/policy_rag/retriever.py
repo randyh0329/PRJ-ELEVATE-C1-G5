@@ -27,9 +27,7 @@ logger = logging.getLogger(__name__)
 
 _TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9$%.-]*")
 _STOPWORDS = frozenset(
-    """a an and any are as at be by can do does for from how i if in into is it may me my not
-    of on or our should so that the their there they this to us was we what when where which who
-    will with would you your""".split()
+    ["a", "an", "and", "any", "are", "as", "at", "be", "by", "can", "do", "does", "for", "from", "how", "i", "if", "in", "into", "is", "it", "may", "me", "my", "not", "of", "on", "or", "our", "should", "so", "that", "the", "their", "there", "they", "this", "to", "us", "was", "we", "what", "when", "where", "which", "who", "will", "with", "would", "you", "your"]
 )
 
 

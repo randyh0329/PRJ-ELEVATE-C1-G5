@@ -22,8 +22,8 @@ from a2a.client import ClientConfig, create_client
 from a2a.types import Message, Part, Role, SendMessageRequest
 from google.protobuf import json_format
 
-from src.grounding.policy_rag.a2a_app.executor import ENTITLEMENTS_HEADER
 from src.grounding.policy_rag.a2a_app.card import SKILL_IDS, SKILL_POLICY_ANSWER
+from src.grounding.policy_rag.a2a_app.executor import ENTITLEMENTS_HEADER
 
 
 def _artifact_payloads(response) -> tuple[list[str], list[dict]]:

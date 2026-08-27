@@ -1,29 +1,30 @@
 """Enterprise HR Agent Orchestrator (Reasoning Engine runtime)."""
 import datetime
-import re
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from pydantic import BaseModel, Field
 
-from src.core.safety import DLPRedactor, ModelArmor, dlp_redactor, model_armor
-from src.core.session import SessionMemory, session_store
-from src.core.saga import SagaCoordinator, saga_coordinator
-from src.grounding.policy_engine import DualGroundingEngine, dual_grounding_engine
-from src.integrations.workweek.client import WorkWeekClient, workweek_client
 from src.core.agents.hcm import workweek_autonomous_specialist
+from src.core.clock import business_today
+from src.core.safety import DLPRedactor, ModelArmor, dlp_redactor, model_armor
+from src.core.saga import SagaCoordinator, saga_coordinator
+from src.core.session import SessionMemory, session_store
+from src.grounding.policy_engine import DualGroundingEngine, dual_grounding_engine
 from src.integrations.service_immediately.client import ServiceImmediatelyClient, service_immediately_client
-from src.telemetry.audit_logger import AuditLogger, audit_logger
+from src.integrations.workweek.client import WorkWeekClient, workweek_client
 from src.models.routing import SupervisorRoutingDecision
+from src.telemetry.audit_logger import AuditLogger, audit_logger
 
 
 class AgentResponse(BaseModel):
     """Structured response from the HR Enterprise Agent."""
     response_text: str
     intent: str
-    citations: List[str] = Field(default_factory=list)
-    action_performed: Optional[str] = None
-    transaction_reference: Optional[str] = None
+    citations: list[str] = Field(default_factory=list)
+    action_performed: str | None = None
+    transaction_reference: str | None = None
     is_refusal: bool = False
-    processing_metadata: Dict[str, Any] = Field(default_factory=dict)
+    processing_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class HREnterpriseAgent:
@@ -31,15 +32,15 @@ class HREnterpriseAgent:
 
     def __init__(
         self,
-        dlp: Optional[DLPRedactor] = None,
-        armor: Optional[ModelArmor] = None,
-        grounding: Optional[DualGroundingEngine] = None,
-        ww_client: Optional[WorkWeekClient] = None,
-        sn_client: Optional[ServiceImmediatelyClient] = None,
-        saga: Optional[SagaCoordinator] = None,
-        sessions: Optional[SessionMemory] = None,
-        logger: Optional[AuditLogger] = None,
-        router: Optional[Any] = None
+        dlp: DLPRedactor | None = None,
+        armor: ModelArmor | None = None,
+        grounding: DualGroundingEngine | None = None,
+        ww_client: WorkWeekClient | None = None,
+        sn_client: ServiceImmediatelyClient | None = None,
+        saga: SagaCoordinator | None = None,
+        sessions: SessionMemory | None = None,
+        logger: AuditLogger | None = None,
+        router: Any | None = None
     ) -> None:
         self._dlp = dlp or dlp_redactor
         self._armor = armor or model_armor
@@ -58,12 +59,12 @@ class HREnterpriseAgent:
         self,
         user_prompt: str,
         caller_employee_id: str = "EMP-1001",
-        session_id: Optional[str] = None,
-        reference_date: Optional[datetime.date] = None
+        session_id: str | None = None,
+        reference_date: datetime.date | None = None
     ) -> AgentResponse:
         """Execute the end-to-end 4-stage agentic loop."""
         sess_id = session_id or f"sess_{caller_employee_id}"
-        today = reference_date or datetime.date.today()
+        today = reference_date or business_today()
 
         # --- STAGE 1: INGRESS SAFETY & DLP SCANNING (<120ms) ---
         redaction_res = self._dlp.redact(user_prompt)
@@ -120,7 +121,7 @@ class HREnterpriseAgent:
 
         return response
 
-    def _classify_intent(self, prompt: str, reference_date: Optional[datetime.date] = None) -> SupervisorRoutingDecision:
+    def _classify_intent(self, prompt: str, reference_date: datetime.date | None = None) -> SupervisorRoutingDecision:
         """
         Classify user intent using Gemini 3.7 Flash Supervisor Router.
         Compliant with SDD §3.1, §3.2 (FR-1.1, FR-2.1).
@@ -187,7 +188,7 @@ class HREnterpriseAgent:
         caller_id: str,
         prompt: str,
         today: datetime.date,
-        decision: Optional[SupervisorRoutingDecision] = None
+        decision: SupervisorRoutingDecision | None = None
     ) -> AgentResponse:
         """UC-1.2: Autonomous WorkWeek HCM Tool-Calling Agent."""
         if decision and decision.tool_name and decision.tool_name != "none":
@@ -244,7 +245,7 @@ class HREnterpriseAgent:
             )
         except ValueError as ve:
             return AgentResponse(
-                response_text=f"Unable to create ticket: {str(ve)}",
+                response_text=f"Unable to create ticket: {ve!s}",
                 intent="UC_1_3_SERVICE_IMMEDIATELY_INCIDENT",
                 action_performed="CREATE_INCIDENT_FAILED"
             )
@@ -347,7 +348,7 @@ class HREnterpriseAgent:
             caller_employee_id=caller_id,
             category="BADGE_ACCESS",
             office="London_Pancras",
-            start_date=(datetime.date.today() + datetime.timedelta(days=30)).isoformat()
+            start_date=(business_today() + datetime.timedelta(days=30)).isoformat()
         )
 
         msg = f"According to Section 14.1 (International Relocation), your Tier 2 allowance is £5,000. Your WorkWeek office assignment has been updated to London. Facilities Badge Ticket [{fac_ticket.ticket_id}] has been created for your first day access.\n\nCitation: {citation}"

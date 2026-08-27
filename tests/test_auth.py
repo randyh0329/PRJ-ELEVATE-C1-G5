@@ -1,11 +1,12 @@
 """Tests for Google OIDC, Identity Federation, and Session Authentication Module."""
 import pytest
 from fastapi.testclient import TestClient
+
 from src.main import app
 from src.security.auth import (
     AuthenticatedUser,
-    resolve_employee_id,
     mint_session_token,
+    resolve_employee_id,
     verify_session_token,
 )
 

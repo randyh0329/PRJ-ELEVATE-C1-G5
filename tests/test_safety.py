@@ -1,5 +1,4 @@
 """Unit tests for Cloud DLP SPII redaction and Vertex AI Model Armor filter."""
-import pytest
 from src.core.safety import DLPRedactor, ModelArmor
 
 

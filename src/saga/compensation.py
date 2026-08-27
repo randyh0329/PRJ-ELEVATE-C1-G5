@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 
 from src.core.state import (
     AgentState,
@@ -33,11 +34,11 @@ class SagaCompensationDecisionMatrix:
     def __init__(
         self,
         ledger: SagaLedgerManager,
-        rollback_handlers: Optional[Dict[str, Callable[[SagaStepRecord, AgentState], Any]]] = None,
+        rollback_handlers: dict[str, Callable[[SagaStepRecord, AgentState], Any]] | None = None,
     ):
         self.ledger = ledger
         self.rollback_handlers = rollback_handlers or {}
-        self.ops_queue: List[Dict[str, Any]] = []
+        self.ops_queue: list[dict[str, Any]] = []
 
     def register_rollback_handler(
         self, action: str, handler: Callable[[SagaStepRecord, AgentState], Any]
@@ -50,10 +51,10 @@ class SagaCompensationDecisionMatrix:
         failed_step_index: int,
         error_reason: str,
         state: AgentState,
-    ) -> Tuple[SagaWorkflowState, str]:
+    ) -> tuple[SagaWorkflowState, str]:
         """
         Executes the §5.4 compensation decision tree upon permanent failure of step N.
-        
+
         Returns:
             (resulting_saga_state, user_explanation_message)
         """
@@ -71,7 +72,7 @@ class SagaCompensationDecisionMatrix:
             raise ValueError(f"Step {failed_step_index} not found in saga {saga_id}")
 
         failed_class = SagaCompensationClass(failed_step_dict["compensationClass"])
-        
+
         # Prior steps that succeeded
         prior_steps = [
             s for s in steps
@@ -79,8 +80,8 @@ class SagaCompensationDecisionMatrix:
         ]
 
         logger.info(
-            f"Evaluating Saga compensation for {saga_id} at Step {failed_step_index} "
-            f"(Action: {failed_step_dict['action']}, Class: {failed_class.value})"
+            "Evaluating Saga compensation for %s at Step %s (Action: %s, Class: %s)",
+            saga_id, failed_step_index, failed_step_dict["action"], failed_class.value,
         )
 
         # -------------------------------------------------------------
@@ -95,7 +96,7 @@ class SagaCompensationDecisionMatrix:
                 follow_up_ref=follow_up_ref,
                 error_message=error_reason,
             )
-            
+
             resulting_state = SagaWorkflowState.PARTIALLY_COMPLETED_MANUAL_FOLLOWUP
             self.ledger.update_saga_state(saga_id, resulting_state)
 
@@ -155,7 +156,7 @@ class SagaCompensationDecisionMatrix:
                     handler = self.rollback_handlers.get(action)
                     if handler:
                         await handler(step_record, state)
-                    
+
                     self.ledger.update_step_status(
                         saga_id=saga_id,
                         step_index=p["stepIndex"],

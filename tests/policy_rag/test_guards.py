@@ -19,7 +19,6 @@ from src.grounding.policy_rag.guards import (
     evaluate,
     redact_placeholders,
 )
-
 from tests.policy_rag.conftest import make_chunk
 
 CFG = GuardConfig()

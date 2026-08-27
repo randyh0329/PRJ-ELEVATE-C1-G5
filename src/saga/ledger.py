@@ -7,10 +7,9 @@ from __future__ import annotations
 
 import datetime
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from src.core.state import (
-    SagaCompensationClass,
     SagaStepRecord,
     SagaStepStatus,
     SagaWorkflowState,
@@ -23,10 +22,10 @@ class SagaLedgerManager:
     Provides RPO=0 synchronous step logging and state machine auditing.
     """
 
-    def __init__(self, in_memory: bool = True, firestore_client: Optional[Any] = None):
+    def __init__(self, in_memory: bool = True, firestore_client: Any | None = None):
         self.in_memory = in_memory
         self.firestore_client = firestore_client
-        self._memory_store: Dict[str, Dict[str, Any]] = {}
+        self._memory_store: dict[str, dict[str, Any]] = {}
 
     def _get_timestamp(self) -> str:
         return datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -36,7 +35,7 @@ class SagaLedgerManager:
         session_id: str,
         employee_id: str,
         workflow_type: str,
-        saga_id: Optional[str] = None,
+        saga_id: str | None = None,
     ) -> str:
         """
         Initializes a new distributed Saga workflow transaction in Firestore.
@@ -100,10 +99,10 @@ class SagaLedgerManager:
         saga_id: str,
         step_index: int,
         status: SagaStepStatus,
-        external_ref_id: Optional[str] = None,
-        compensation_payload: Optional[Dict[str, Any]] = None,
-        follow_up_ref: Optional[str] = None,
-        error_message: Optional[str] = None,
+        external_ref_id: str | None = None,
+        compensation_payload: dict[str, Any] | None = None,
+        follow_up_ref: str | None = None,
+        error_message: str | None = None,
     ) -> None:
         """
         Updates the status, external reference, or compensation payload of a specific step.
@@ -158,7 +157,7 @@ class SagaLedgerManager:
                 "updatedAt": self._get_timestamp(),
             })
 
-    def get_saga(self, saga_id: str) -> Dict[str, Any]:
+    def get_saga(self, saga_id: str) -> dict[str, Any]:
         """
         Retrieves the committed Saga document and step ledger.
         """

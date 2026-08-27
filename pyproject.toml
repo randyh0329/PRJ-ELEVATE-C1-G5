@@ -35,6 +35,59 @@ vertex = ["google-cloud-aiplatform>=1.60"]
 # POLICY_RAG_COMPOSER=gemini
 gemini = ["google-genai>=1.0"]
 
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+# `okf/` is the handbook corpus. The .py files under references/ are documents
+# the RAG indexes, not application code, and are linted by nobody on purpose.
+extend-exclude = ["mcp-saas-draft", "terraform", ".venv", "var", "okf"]
+
+[tool.ruff.lint]
+# Correctness and hygiene, not style dogma. `UP` is included because the
+# codebase already targets 3.10+ and mixing `Optional[str]` with `str | None`
+# in the same package is the kind of inconsistency that makes a diff hard to read.
+select = [
+    "F",     # pyflakes - undefined names, unused imports, redefinitions
+    "E", "W", # pycodestyle
+    "I",     # import ordering
+    "UP",    # pyupgrade
+    "B",     # bugbear
+    "C4",    # comprehensions
+    "SIM",   # simplify
+    "PIE",   # misc lints
+    "RUF",   # ruff-specific
+    "PL",    # pylint subset
+    "DTZ",   # naive datetimes - this system writes audit timestamps
+    "G",     # logging format
+    "ASYNC", # blocking calls in async defs
+    "T20",   # stray print()
+]
+ignore = [
+    "E501",     # line length is handled by the formatter, not enforced here
+    "PLR0911", "PLR0912", "PLR0913", "PLR0915",  # arity/branch counts: the
+                # saga and guardrail dispatchers are wide by nature
+    "PLR2004",  # magic values read fine in guardrail thresholds
+    "SIM108",   # ternaries are not always clearer than an if/else
+    "PLC0415",  # function-level imports are deliberate: faiss, sentence-transformers
+                # and google-genai are optional extras, and importing them at module
+                # scope would make `import src.core.agent` pull in torch.
+    "PLR0917",  # positional arity - the adapter signatures mirror vendor APIs
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert on literals and print progress; the eval harnesses are CLIs.
+"tests/**" = ["T20", "S101"]
+# The harnesses are scripts: they print a report and read fixtures synchronously.
+"eval/**" = ["T20", "ASYNC230", "ASYNC240"]
+# `run_interactive_cli` is a terminal console; print is its output channel.
+"src/main.py" = ["T20"]
+"scripts/**" = ["T20"]
+"src/grounding/policy_rag/cli.py" = ["T20"]
+"src/grounding/policy_rag/a2a_app/client_demo.py" = ["T20"]
+# Re-export shims: the wildcard and the unused names are the point.
+"app/**" = ["F401", "F403", "PLC0414"]
+"**/__init__.py" = ["F401", "PLC0414"]
+
 [tool.pytest.ini_options]
 minversion = "8.0"
 addopts = "-ra -q"

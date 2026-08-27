@@ -1,6 +1,7 @@
 """Tests for FastAPI REST API endpoints."""
 import pytest
 from fastapi.testclient import TestClient
+
 from src.grounding.faiss_pipeline import faiss_policy_rag
 from src.main import app
 

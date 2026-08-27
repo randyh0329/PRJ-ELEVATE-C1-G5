@@ -12,7 +12,7 @@ Reads one JSON object argument, writes one JSON object to stdout.
 
 import json
 import sys
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 # SOURCED: Handbook Section 20.2, "Accrual Rates and Increments".
 # Read as (minimum years of continuous service, annual days).

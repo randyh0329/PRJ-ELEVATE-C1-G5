@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, ClassVar
 
 from src.core.state import AgentState
 
@@ -29,8 +29,8 @@ class GroundedAnswer:
     #: Groundedness of the composed answer, i.e. the SDD §3.3 gate this node
     #: enforces. Relevance is the other half and is applied inside the retriever.
     score: float = 0.0
-    text: Optional[str] = None
-    citations: List[Dict[str, str]] = field(default_factory=list)
+    text: str | None = None
+    citations: list[dict[str, str]] = field(default_factory=list)
     #: `answer` | `escalate` | `refuse`
     decision: str = "refuse"
     #: `faiss` (indexed handbook) | `curated` (the mock datastore below)
@@ -59,7 +59,7 @@ class PolicySpecialistNode:
     GROUNDING_GATE = 0.85
 
     # Pre-indexed policy knowledge base corpus (Mock Agent Search Datastore)
-    KNOWLEDGE_BASE = {
+    KNOWLEDGE_BASE: ClassVar[dict[str, dict[str, Any]]] = {
         "bereavement": {
             "title": "Bereavement Leave Policy",
             "citation": "policies/leave-policy-2026.pdf#bereavement",
@@ -92,13 +92,13 @@ class PolicySpecialistNode:
         },
     }
 
-    def __init__(self, rag: Optional[Any] = None) -> None:
+    def __init__(self, rag: Any | None = None) -> None:
         self._rag = rag
         #: Resolve the backend once rather than retrying a missing index - and
         #: logging the same warning - on every turn.
         self._rag_resolved = rag is not None
 
-    def _rag_service(self) -> Optional[Any]:
+    def _rag_service(self) -> Any | None:
         """The FAISS service, or `None` when the index has not been built."""
         if not self._rag_resolved:
             self._rag_resolved = True
@@ -120,7 +120,7 @@ class PolicySpecialistNode:
     async def query_knowledge_base(
         self,
         query: str,
-        entitlements: Optional[List[str]] = None,
+        entitlements: list[str] | None = None,
     ) -> GroundedAnswer:
         """
         Query the ACL-governed policy datastore with grounding attribution.
@@ -164,14 +164,12 @@ class PolicySpecialistNode:
         for key, doc in self.KNOWLEDGE_BASE.items():
             key_terms = key.split()
             # Require all terms for multi-word keys or strong single-term match
-            if all(term in q_lower for term in key_terms):
-                if doc["relevance"] > best_relevance:
-                    best_match = doc
-                    best_relevance = doc["relevance"]
-            elif len(key_terms) == 1 and key_terms[0] in q_lower and "reimbursement" in q_lower:
-                if doc["relevance"] > best_relevance:
-                    best_match = doc
-                    best_relevance = doc["relevance"]
+            matched = all(term in q_lower for term in key_terms) or (
+                len(key_terms) == 1 and key_terms[0] in q_lower and "reimbursement" in q_lower
+            )
+            if matched and doc["relevance"] > best_relevance:
+                best_match = doc
+                best_relevance = doc["relevance"]
 
         if best_match and best_relevance >= 0.80:
             return GroundedAnswer(
@@ -189,7 +187,7 @@ class PolicySpecialistNode:
         Processes policy query turns and guarantees zero-hallucination answers (FR-5.2).
         """
         query = state.get("masked_input", state.get("user_input", ""))
-        logger.info(f"[{self.AGENT_ID}] Executing grounded query for: '{query}'")
+        logger.info("[%s] Executing grounded query for: '%s'", self.AGENT_ID, query)
 
         result = await self.query_knowledge_base(query)
         state["grounding_score"] = result.score

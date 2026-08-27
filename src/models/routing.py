@@ -3,7 +3,8 @@ Routing & Tool Selection Schemas.
 Compliant with Enterprise Agentic Solution Design Document (MVP 1) §3.1 & §3.2.
 """
 
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -42,60 +43,52 @@ class SupervisorRoutingDecision(BaseModel):
     reasoning: str = Field(
         description="Brief natural language rationale explaining the routing decision."
     )
-    extracted_action: Optional[str] = Field(
+    extracted_action: str | None = Field(
         default=None,
         description="Specific sub-action identified if applicable."
     )
 
     # WorkWeek tool parameters for single-turn fast-path execution
-    tool_name: Optional[Literal[
-        "get_employee_balances",
-        "get_leave_requests",
-        "request_time_off",
-        "cancel_leave_request",
-        "update_personal_info",
-        "get_employee_profile",
-        "none",
-    ]] = Field(
+    tool_name: Literal["get_employee_balances", "get_leave_requests", "request_time_off", "cancel_leave_request", "update_personal_info", "get_employee_profile", "none"] | None = Field(
         default="none",
         description="If WorkWeek operation, the exact FastMCP tool to invoke."
     )
-    start_date: Optional[str] = Field(
+    start_date: str | None = Field(
         default=None,
         description="Leave start date in YYYY-MM-DD format (must be on or after today's reference date)."
     )
-    end_date: Optional[str] = Field(
+    end_date: str | None = Field(
         default=None,
         description="Leave end date in YYYY-MM-DD format."
     )
-    days: Optional[float] = Field(
+    days: float | None = Field(
         default=None,
         description="Number of leave days requested."
     )
-    leave_type: Optional[str] = Field(
+    leave_type: str | None = Field(
         default=None,
         description="Type of leave: 'Vacation' or 'Sick'."
     )
-    reason: Optional[str] = Field(
+    reason: str | None = Field(
         default=None,
         description="Reason for leave or update."
     )
-    request_id: Optional[str] = Field(
+    request_id: str | None = Field(
         default=None,
         description="Leave request ID for cancellation."
     )
-    home_address: Optional[str] = Field(
+    home_address: str | None = Field(
         default=None,
         description="New home address for update_personal_info."
     )
-    phone_number: Optional[str] = Field(
+    phone_number: str | None = Field(
         default=None,
         description="New phone number for update_personal_info."
     )
 
-    def get_tool_arguments(self) -> Dict[str, Any]:
+    def get_tool_arguments(self) -> dict[str, Any]:
         """Consolidates extracted fields into a unified argument dictionary."""
-        args: Dict[str, Any] = {}
+        args: dict[str, Any] = {}
         if self.start_date:
             args["start_date"] = self.start_date
         if self.end_date:
@@ -131,51 +124,51 @@ class WorkWeekToolSelection(BaseModel):
     ] = Field(
         description="The specific FastMCP tool to call, or 'none' if general conversational response."
     )
-    start_date: Optional[str] = Field(
+    start_date: str | None = Field(
         default=None,
         description="Leave start date in YYYY-MM-DD format (must be on or after today's reference date)."
     )
-    end_date: Optional[str] = Field(
+    end_date: str | None = Field(
         default=None,
         description="Leave end date in YYYY-MM-DD format."
     )
-    days: Optional[float] = Field(
+    days: float | None = Field(
         default=None,
         description="Number of leave days requested."
     )
-    leave_type: Optional[str] = Field(
+    leave_type: str | None = Field(
         default=None,
         description="Type of leave: 'Vacation' or 'Sick'."
     )
-    reason: Optional[str] = Field(
+    reason: str | None = Field(
         default=None,
         description="Reason for leave or update."
     )
-    request_id: Optional[str] = Field(
+    request_id: str | None = Field(
         default=None,
         description="Leave request ID for cancellation."
     )
-    home_address: Optional[str] = Field(
+    home_address: str | None = Field(
         default=None,
         description="New home address for update_personal_info."
     )
-    phone_number: Optional[str] = Field(
+    phone_number: str | None = Field(
         default=None,
         description="New phone number for update_personal_info."
     )
-    arguments: Dict[str, Any] = Field(
+    arguments: dict[str, Any] = Field(
         default_factory=dict,
         description="Dictionary of parameters to pass to the FastMCP tool."
     )
     reasoning: str = Field(
         description="Reasoning for selecting this specific tool and argument extraction."
     )
-    direct_response: Optional[str] = Field(
+    direct_response: str | None = Field(
         default=None,
         description="Optional direct message if no tool call is needed."
     )
 
-    def get_effective_arguments(self) -> Dict[str, Any]:
+    def get_effective_arguments(self) -> dict[str, Any]:
         """Consolidates explicit fields and generic arguments into a unified dictionary."""
         args = dict(self.arguments or {})
         if self.start_date:
