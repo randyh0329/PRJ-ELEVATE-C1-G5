@@ -13,8 +13,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List
 
-from app.graph import AgentOrchestrationGraph
-from app.state import AgentState
+from src.core.graph import AgentOrchestrationGraph
+from src.core.state import AgentState
 
 
 async def run_full_evaluation():

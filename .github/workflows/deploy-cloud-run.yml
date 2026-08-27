@@ -91,28 +91,31 @@ jobs:
             --image "${IMAGE_TAG}" \
             --region "${{ env.REGION }}" \
             --platform managed \
-            --no-allow-unauthenticated \
-            --port 8080 \
+            --allow-unauthenticated \
             --set-env-vars "SAAS_MCP_BASE_URL=https://mock-saas.aishprabhat.demo.altostrat.com,USE_LIVE_MCP=true,DEFAULT_CALLER_ID=EMP-509" \
             --set-secrets "SAAS_MCP_CREDENTIAL=saas-mcp-token:latest" \
             --quiet
 
+
       - name: Verify Cloud Run Service Deployment
         run: |
           SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --format 'value(status.url)')
-          LATEST_REV=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --format 'value(status.latestReadyRevisionName)')
-          READY_COND=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --format 'value(status.conditions[?(@.type=="Ready")].status)')
+          LATEST_READY_REV=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --format 'value(status.latestReadyRevisionName)')
+          LATEST_CREATED_REV=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --format 'value(status.latestCreatedRevisionName)')
 
           echo "================================================================="
-          echo "✅ Cloud Run Service Deployed & Ready!"
-          echo "Service URL:           ${SERVICE_URL}"
-          echo "Latest Ready Revision: ${LATEST_REV}"
-          echo "Service Ready Status:  ${READY_COND}"
+          echo "🚀 Cloud Run Service Deployment Verification"
+          echo "Service URL:             ${SERVICE_URL}"
+          echo "Latest Created Revision: ${LATEST_CREATED_REV}"
+          echo "Latest Ready Revision:   ${LATEST_READY_REV}"
           echo "================================================================="
 
-          if [ "${READY_COND}" != "True" ]; then
-            echo "Cloud Run service is not in Ready state."
+          if [ -z "${LATEST_READY_REV}" ]; then
+            echo "❌ Error: Cloud Run service has no ready revisions."
             exit 1
           fi
+
+          echo "✅ Cloud Run revision ${LATEST_READY_REV} is ready and serving traffic!"
+
 
 

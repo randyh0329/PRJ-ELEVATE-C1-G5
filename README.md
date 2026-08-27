@@ -155,6 +155,7 @@ python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 #### API Endpoints
+* `GET /` — Interactive Web Chat UI (responsive modern dark theme UI with persona switching and quick action buttons).
 * `POST /chat` — Process turn through safety filters and multi-agent StateGraph:
   ```bash
   curl -X POST http://localhost:8000/chat \
