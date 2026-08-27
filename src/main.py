@@ -10,6 +10,13 @@ from src.core.agent import HREnterpriseAgent, hr_enterprise_agent
 from src.telemetry.audit_logger import audit_logger
 from src.integrations.workweek.mock_service import workweek_mock_service
 from src.integrations.service_immediately.mock_service import service_immediately_mock_service
+from src.security.auth import (
+    AuthenticatedUser,
+    resolve_employee_id,
+    verify_google_id_token,
+    mint_session_token,
+    verify_session_token,
+)
 from config.settings import get_settings
 
 settings = get_settings()
@@ -21,11 +28,24 @@ app = FastAPI(
 )
 
 
+class GoogleAuthRequest(BaseModel):
+    """Google OIDC credential token payload."""
+    credential: str
+    client_id: Optional[str] = None
+
+
+class QuickAuthRequest(BaseModel):
+    """Test login payload for quick corporate login without external popups."""
+    email: str = "romij@google.com"
+    name: Optional[str] = "Romij Employee"
+
+
 class ChatRequest(BaseModel):
     """Inbound chat message request."""
     employee_id: str = "EMP-1001"
     message: str
     session_id: Optional[str] = None
+
 
 
 class ChatResponse(BaseModel):
@@ -67,11 +87,16 @@ def serve_web_chat_ui():
     }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
     body { background-color: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100vh; }
-    header { background: #0f172a; border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; }
+    header { background: #0f172a; border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
     .brand { display: flex; align-items: center; gap: 12px; }
     .brand h1 { font-size: 1.1rem; font-weight: 600; }
     .badge { background: rgba(56, 189, 248, 0.12); color: var(--primary); font-size: 0.75rem; padding: 3px 10px; border-radius: 9999px; border: 1px solid rgba(56, 189, 248, 0.25); font-weight: 600; }
-    .emp-selector { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; color: var(--muted); }
+    .auth-section { display: flex; align-items: center; gap: 12px; font-size: 0.85rem; }
+    .user-chip { display: flex; align-items: center; gap: 8px; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 20px; padding: 5px 14px; font-size: 0.82rem; }
+    .btn-test-auth { background: #2563eb; color: white; border: none; border-radius: 6px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: background 0.15s; display: flex; align-items: center; gap: 6px; }
+    .btn-test-auth:hover { background: #1d4ed8; }
+    .btn-logout { background: transparent; color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 4px 10px; font-size: 0.75rem; cursor: pointer; }
+    .btn-logout:hover { background: rgba(239, 68, 68, 0.15); }
     select { background: #1e293b; color: var(--text); border: 1px solid var(--border); padding: 6px 12px; border-radius: 6px; outline: none; font-size: 0.85rem; }
     .main-container { flex: 1; display: flex; flex-direction: column; max-width: 900px; width: 100%; margin: 0 auto; padding: 16px; overflow: hidden; }
     .quick-actions { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 14px; scrollbar-width: none; }
@@ -102,13 +127,29 @@ def serve_web_chat_ui():
       <h1>🚀 HR Agentic Solution</h1>
       <span class="badge">Google Cloud MVP 1</span>
     </div>
-    <div class="emp-selector">
-      <span>Logged In As:</span>
-      <select id="empSelect">
-        <option value="EMP-509" selected>EMP-509 (Romij Employee - Solutions Acceleration Architect)</option>
-        <option value="EMP-1001">EMP-1001 (John Doe - Staff Software Engineer)</option>
-        <option value="EMP-1002">EMP-1002 (Sarah Smith - Senior PM)</option>
-      </select>
+    <div class="auth-section" id="authSection">
+      <!-- Unauthenticated View -->
+      <div id="unauthControls" style="display: flex; align-items: center; gap: 10px;">
+        <button class="btn-test-auth" onclick="loginWithGoogleEmail('romij@google.com')">
+          <span>🔵</span> Google Login (romij@google.com)
+        </button>
+        <select id="empSelect" title="Select persona fallback">
+          <option value="EMP-509" selected>EMP-509 (Romij Employee)</option>
+          <option value="EMP-1001">EMP-1001 (Staff SE)</option>
+          <option value="EMP-1002">EMP-1002 (Senior PM)</option>
+        </select>
+      </div>
+
+      <!-- Authenticated View -->
+      <div id="authControls" style="display: none; align-items: center; gap: 10px;">
+        <div class="user-chip" id="userChip">
+          <span>👤</span>
+          <strong id="userDisplayName">Romij Employee</strong>
+          <span style="color: var(--muted);" id="userEmailSpan">(romij@google.com)</span>
+          <span class="badge" id="userEmpBadge">EMP-509</span>
+        </div>
+        <button class="btn-logout" onclick="logout()">Sign Out</button>
+      </div>
     </div>
   </header>
 
@@ -144,6 +185,73 @@ def serve_web_chat_ui():
     const empSelect = document.getElementById('empSelect');
     const typingIndicator = document.getElementById('typingIndicator');
 
+    let sessionToken = localStorage.getItem('hr_agent_session_token');
+    let currentUser = null;
+
+    async function checkAuth() {
+      if (!sessionToken) {
+        renderUnauth();
+        return;
+      }
+      try {
+        const res = await fetch('/auth/me', {
+          headers: { 'Authorization': 'Bearer ' + sessionToken }
+        });
+        const data = await res.json();
+        if (data.authenticated && data.user) {
+          currentUser = data.user;
+          renderAuth(currentUser);
+        } else {
+          sessionToken = null;
+          localStorage.removeItem('hr_agent_session_token');
+          renderUnauth();
+        }
+      } catch (e) {
+        renderUnauth();
+      }
+    }
+
+    function renderAuth(user) {
+      document.getElementById('unauthControls').style.display = 'none';
+      document.getElementById('authControls').style.display = 'flex';
+      document.getElementById('userDisplayName').textContent = user.name;
+      document.getElementById('userEmailSpan').textContent = `(${user.email})`;
+      document.getElementById('userEmpBadge').textContent = user.employee_id;
+    }
+
+    function renderUnauth() {
+      document.getElementById('unauthControls').style.display = 'flex';
+      document.getElementById('authControls').style.display = 'none';
+    }
+
+    async function loginWithGoogleEmail(email) {
+      try {
+        const res = await fetch('/auth/quick-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email, name: 'Romij Employee' })
+        });
+        const data = await res.json();
+        if (data.success && data.token) {
+          sessionToken = data.token;
+          localStorage.setItem('hr_agent_session_token', sessionToken);
+          currentUser = data.user;
+          renderAuth(currentUser);
+          appendMessage(`🔑 Authenticated via Google Identity (${currentUser.email}). Bound to WorkWeek Subject [${currentUser.employee_id}].`, false);
+        }
+      } catch (e) {
+        alert('Login failed: ' + e);
+      }
+    }
+
+    function logout() {
+      sessionToken = null;
+      currentUser = null;
+      localStorage.removeItem('hr_agent_session_token');
+      renderUnauth();
+      appendMessage('Signed out. Switched back to functional test credentials.', false);
+    }
+
     function appendMessage(text, isUser, meta = null, citations = []) {
       const msgDiv = document.createElement('div');
       msgDiv.className = 'msg ' + (isUser ? 'user' : 'agent');
@@ -176,15 +284,20 @@ def serve_web_chat_ui():
       const text = userInput.value.trim();
       if (!text) return;
 
-      const empId = empSelect.value;
+      const empId = currentUser ? currentUser.employee_id : empSelect.value;
       appendMessage(text, true);
       userInput.value = '';
       typingIndicator.style.display = 'block';
 
+      const headers = { 'Content-Type': 'application/json' };
+      if (sessionToken) {
+        headers['Authorization'] = 'Bearer ' + sessionToken;
+      }
+
       try {
         const res = await fetch('/chat', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: headers,
           body: JSON.stringify({ employee_id: empId, message: text })
         });
         const data = await res.json();
@@ -205,20 +318,116 @@ def serve_web_chat_ui():
       userInput.value = prompt;
       sendMessage();
     }
+
+    window.addEventListener('DOMContentLoaded', checkAuth);
   </script>
 </body>
 </html>"""
 
 
 
+# ==============================================================================
+# Authentication & Identity Federation Endpoints (SDD §4.1, §2.1 P6.1)
+# ==============================================================================
+@app.post("/auth/google")
+def google_login(req: GoogleAuthRequest):
+    """Authenticate via Google OIDC ID token and bind WorkWeek subject."""
+    try:
+        payload = verify_google_id_token(req.credential)
+        email = payload.get("email", "")
+        if not email:
+            raise HTTPException(status_code=400, detail="Google token does not contain an email claim.")
+
+        name = payload.get("name", email.split("@")[0].capitalize())
+        picture = payload.get("picture")
+
+        emp_info = resolve_employee_id(email, default_name=name)
+        user = AuthenticatedUser(
+            email=email,
+            employee_id=emp_info["employee_id"],
+            name=emp_info.get("name", name),
+            picture=picture,
+            role=emp_info.get("role", "End User"),
+            auth_provider="google_oidc"
+        )
+        token = mint_session_token(user)
+        return {"success": True, "token": token, "user": user.model_dump()}
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Google authentication failed: {str(e)}")
+
+
+@app.post("/auth/quick-login")
+def quick_login(req: QuickAuthRequest):
+    """Direct Google/corporate email login for fast local/cloudtop testing without external popups."""
+    emp_info = resolve_employee_id(req.email, default_name=req.name)
+    user = AuthenticatedUser(
+        email=req.email,
+        employee_id=emp_info["employee_id"],
+        name=emp_info.get("name", req.name or "Employee"),
+        picture=None,
+        role=emp_info.get("role", "End User"),
+        auth_provider="corporate_federation"
+    )
+    token = mint_session_token(user)
+    return {"success": True, "token": token, "user": user.model_dump()}
+
+
+@app.get("/auth/me")
+def get_current_user(
+    authorization: Optional[str] = Header(default=None),
+    x_goog_authenticated_user_email: Optional[str] = Header(default=None)
+):
+    """Return authenticated user profile from session token or Cloud Run IAP header."""
+    # 1. Bearer session token
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split("Bearer ")[1].strip()
+        user = verify_session_token(token)
+        if user:
+            return {"authenticated": True, "user": user.model_dump()}
+
+    # 2. Cloud Run IAP header (X-Goog-Authenticated-User-Email)
+    if x_goog_authenticated_user_email:
+        email = x_goog_authenticated_user_email.split(":")[-1].strip()
+        emp_info = resolve_employee_id(email)
+        user = AuthenticatedUser(
+            email=email,
+            employee_id=emp_info["employee_id"],
+            name=emp_info.get("name", "Google User"),
+            role=emp_info.get("role", "End User"),
+            auth_provider="cloud_run_iap"
+        )
+        return {"authenticated": True, "user": user.model_dump()}
+
+    return {"authenticated": False, "user": None}
+
+
 @app.post("/chat", response_model=ChatResponse)
 def handle_chat(
     payload: ChatRequest,
+    authorization: Optional[str] = Header(default=None),
     x_automation_origin: Optional[str] = Header(default="HR_AGENT_ORCHESTRATOR_V1"),
-    x_caller_employee_id: Optional[str] = Header(default=None)
+    x_caller_employee_id: Optional[str] = Header(default=None),
+    x_goog_authenticated_user_email: Optional[str] = Header(default=None)
 ):
     """Process user prompt through the agentic reasoning and safety loop."""
-    caller_id = x_caller_employee_id or payload.employee_id
+    caller_id = None
+
+    # Priority 1: Verified session token (Google OIDC or corporate federation)
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split("Bearer ")[1].strip()
+        user = verify_session_token(token)
+        if user:
+            caller_id = user.employee_id
+
+    # Priority 2: Cloud Run IAP header (X-Goog-Authenticated-User-Email)
+    if not caller_id and x_goog_authenticated_user_email:
+        email = x_goog_authenticated_user_email.split(":")[-1].strip()
+        caller_id = resolve_employee_id(email)["employee_id"]
+
+    # Priority 3: Explicit test caller header or payload
+    if not caller_id:
+        caller_id = x_caller_employee_id or payload.employee_id
+
     response = hr_enterprise_agent.process_message(
         user_prompt=payload.message,
         caller_employee_id=caller_id,
@@ -232,6 +441,7 @@ def handle_chat(
         transaction_reference=response.transaction_reference,
         processing_metadata=response.processing_metadata
     )
+
 
 
 @app.get("/audit-logs")
