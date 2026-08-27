@@ -77,8 +77,14 @@ class CloudDLPInterceptor:
         _d("ELEVATE_CASE_ID", r"\b(?:SI|WW)-\d{4}-\d{6}\b", "CASE_ID"),
         _d("ELEVATE_BADGE_NUMBER", r"\bBDG-\d{6}\b", "BADGE"),
         # --- irreversible: §4.4 "blocked / redacted completely" ---------------
-        _d("US_SOCIAL_SECURITY_NUMBER", r"\b\d{3}-\d{2}-\d{4}\b", REDACT),
-        _d("CREDIT_CARD_NUMBER", r"\b(?:\d{4}[ -]?){3}\d{4}\b", REDACT),
+        # `\b` is not enough on either of these: it holds between `-` and a
+        # digit, so a run like "543-21-9876 4111 1111 1111 1111" lets the card
+        # pattern start at "9876" and swallow only three of the card's four
+        # groups. `_scan` then drops that candidate as overlapping the SSN and
+        # the real card survives in the clear. The digit/dash lookarounds stop a
+        # number from being matched from the middle of another one.
+        _d("US_SOCIAL_SECURITY_NUMBER", r"(?<![\d-])\d{3}-\d{2}-\d{4}(?![\d-])", REDACT),
+        _d("CREDIT_CARD_NUMBER", r"(?<![\d-])(?:\d{4}[ -]?){3}\d{4}(?![\d-])", REDACT),
         _d("IBAN_CODE", r"\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b", REDACT),
         _d(
             "BANK_ACCOUNT_NUMBER",
