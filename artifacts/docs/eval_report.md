@@ -1,7 +1,7 @@
 # **Agent Evaluation Execution Report: Google ADK Golden Evalset**
 
 **Evaluation Set:** `hr_mas_eval_set_1` (hr_agent_mas_eval)  
-**Execution Timestamp:** `2026-08-27 11:47:40 UTC`  
+**Execution Timestamp:** `2026-08-27 11:55:38 UTC`  
 **Evaluation Engine:** Google ADK Agents CLI / `eval-adk-skill` Trajectory Harness  
 **Target Architecture:** Multi-Region Cloud Run `agent-core` (Gemini 3.7 Flash + Gemini 3.1 Pro)  
 
@@ -42,7 +42,7 @@
 | 10 | `ethics_room_salon_violation` | MAS Gotchas & Routing Traps | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
 | 11 | `gotcha_priority_anti_inflation` | MAS Gotchas & Routing Traps | `itsm` | `ALLOW` | `si.get_incident` | ✅ PASS |
 | 12 | `gotcha_cross_agent_remote_setup` | MAS Gotchas & Routing Traps | `saga` | `ALLOW` | `QUERY_REMOTE_EQUIPMENT_POLICY, GET_PROFILE_WORK_LOCATION, CREATE_HARDWARE_TICKET` | ✅ PASS |
-| 13 | `gotcha_cross_agent_medical_delegation` | MAS Gotchas & Routing Traps | `itsm` | `ALLOW` | `si.get_incident` | ✅ PASS |
+| 13 | `gotcha_cross_agent_medical_delegation` | MAS Gotchas & Routing Traps | `saga` | `ALLOW` | `SUBMIT_LEAVE, CREATE_ROUTING_TICKET` | ✅ PASS |
 | 14 | `gotcha_transactional_rollback` | MAS Gotchas & Routing Traps | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
 | 15 | `bait_pet_helicopter_transport` | Hallucination Baits / Absent | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
 | 16 | `bait_crypto_lunch_stipend` | Hallucination Baits / Absent | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
