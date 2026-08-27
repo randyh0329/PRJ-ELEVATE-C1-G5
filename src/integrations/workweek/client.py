@@ -62,23 +62,44 @@ class WorkWeekClient:
         profile = None
         if self._should_use_live_mcp(target_employee_id):
             try:
-                info = self._mcp_client.get_personal_info(target_employee_id)
-                profile = EmployeeProfile(
-                    employee_id=target_employee_id,
-                    full_name="Romij Employee" if target_employee_id == "EMP-509" else f"Employee {target_employee_id}",
-                    email=f"{target_employee_id.lower()}@elevate-corp.internal",
-                    home_address=info.get("address", "Singapore Office, 80 Pasir Panjang Rd, Singapore"),
-                    phone_number=info.get("phone", "+65-6521-0000"),
-                    work_location_status="REMOTE_FULL_TIME",
-                    current_office="Singapore",
-                    country="SG",
-                    job_title="Senior Software Engineer",
-                    manager_id="MGR-001",
-                    is_active=True
-                )
+                prof_data = self._mcp_client.get_employee_profile(target_employee_id)
+                if prof_data and ("first_name" in prof_data or "job_title" in prof_data):
+                    first = prof_data.get("first_name", "")
+                    last = prof_data.get("last_name", "")
+                    full = f"{first} {last}".strip() or f"Employee {target_employee_id}"
+                    profile = EmployeeProfile(
+                        employee_id=target_employee_id,
+                        full_name=full,
+                        email=prof_data.get("email") or f"{target_employee_id.lower()}@google.com",
+                        home_address=prof_data.get("home_address") or "N/A",
+                        phone_number=prof_data.get("phone_number") or "N/A",
+                        work_location_status=prof_data.get("role") or "N/A",
+                        current_office=prof_data.get("department") or "N/A",
+                        country=prof_data.get("country") or "N/A",
+                        job_title=prof_data.get("job_title") or "N/A",
+                        manager_id=prof_data.get("manager_id") or "N/A",
+                        is_active=True
+                    )
+                else:
+                    info = self._mcp_client.get_personal_info(target_employee_id)
+                    profile = EmployeeProfile(
+                        employee_id=target_employee_id,
+                        full_name=f"Employee {target_employee_id}",
+                        email=f"{target_employee_id.lower()}@google.com",
+                        home_address=info.get("address") or "N/A",
+                        phone_number=info.get("phone") or "N/A",
+                        work_location_status="N/A",
+                        current_office="N/A",
+                        country="N/A",
+                        job_title="N/A",
+                        manager_id="N/A",
+                        is_active=True
+                    )
+
+
             except Exception as e:
-                logger.warning(f"Live WorkWeek FastMCP profile lookup failed: {e}. Falling back to mock service.")
-                profile = self._service.get_profile(target_employee_id)
+                logger.error(f"Live WorkWeek FastMCP profile lookup failed: {e}")
+                raise RuntimeError(f"WorkWeek SaaS FastMCP communication error: {e}")
         else:
             profile = self._service.get_profile(target_employee_id)
 
@@ -118,8 +139,8 @@ class WorkWeekClient:
                     sick_remaining=sick_rem,
                 )
             except Exception as e:
-                logger.warning(f"Live WorkWeek FastMCP balance lookup failed: {e}. Falling back to mock service.")
-                balances = self._service.get_balances(target_employee_id)
+                logger.error(f"Live WorkWeek FastMCP balance lookup failed: {e}")
+                raise RuntimeError(f"WorkWeek SaaS FastMCP communication error: {e}")
         else:
             balances = self._service.get_balances(target_employee_id)
 
@@ -166,8 +187,8 @@ class WorkWeekClient:
             try:
                 self._mcp_client.update_personal_info(
                     employee_id=target_employee_id,
-                    address=home_address or "Singapore Office, 80 Pasir Panjang Rd, Singapore",
-                    phone=phone_number or "+65-6521-0000"
+                    address=home_address or "",
+                    phone=phone_number or ""
                 )
                 res = ContactUpdateResponse(
                     success=True,
@@ -176,14 +197,8 @@ class WorkWeekClient:
                     updated_fields={"home_address": home_address, "phone_number": phone_number}
                 )
             except Exception as e:
-                logger.warning(f"Live WorkWeek FastMCP contact update failed: {e}. Falling back to mock service.")
-                res = self._service.update_contact(
-                    employee_id=target_employee_id,
-                    home_address=home_address,
-                    phone_number=phone_number,
-                    current_office=current_office,
-                    country=country
-                )
+                logger.error(f"Live WorkWeek FastMCP contact update failed: {e}")
+                raise RuntimeError(f"WorkWeek SaaS FastMCP communication error: {e}")
         else:
             res = self._service.update_contact(
                 employee_id=target_employee_id,
@@ -262,15 +277,8 @@ class WorkWeekClient:
                 )
 
             except Exception as e:
-                logger.warning(f"Live WorkWeek FastMCP leave submission failed: {e}. Falling back to mock service.")
-                res = self._service.submit_leave(
-                    employee_id=target_employee_id,
-                    leave_type=leave_type,
-                    start_date=start_date.isoformat(),
-                    end_date=end_date.isoformat(),
-                    days=days,
-                    origin=self._origin
-                )
+                logger.error(f"Live WorkWeek FastMCP leave submission failed: {e}")
+                raise RuntimeError(f"WorkWeek SaaS FastMCP communication error: {e}")
         else:
             res = self._service.submit_leave(
                 employee_id=target_employee_id,
@@ -289,7 +297,27 @@ class WorkWeekClient:
         )
         return res
 
+    def get_leave_requests(self, caller_employee_id: str, target_employee_id: str) -> list:
+        """Fetch leave request history enforcing caller isolation."""
+        if caller_employee_id != target_employee_id:
+            raise PermissionError("Cannot view leave requests of another employee.")
+        requests = []
+        if self._should_use_live_mcp(target_employee_id):
+            try:
+                requests = self._mcp_client.get_leave_requests(target_employee_id)
+            except Exception as e:
+                logger.warning(f"Live WorkWeek FastMCP get_leave_requests failed: {e}")
+                requests = []
+        self._logger.log_event(
+            caller_employee_id=caller_employee_id,
+            action_type="WORKWEEK_GET_LEAVE_REQUESTS",
+            status="SUCCESS",
+            details={"count": len(requests)}
+        )
+        return requests
+
     def cancel_leave_request(self, caller_employee_id: str, request_id: str) -> bool:
+
         """Compensating action: Cancel a previously submitted leave request."""
         success = False
         if self._use_live_mcp and self._mcp_client and request_id.isdigit():

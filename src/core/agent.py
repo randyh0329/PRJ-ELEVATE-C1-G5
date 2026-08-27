@@ -9,6 +9,7 @@ from src.core.session import SessionMemory, session_store
 from src.core.saga import SagaCoordinator, saga_coordinator
 from src.grounding.policy_engine import DualGroundingEngine, dual_grounding_engine
 from src.integrations.workweek.client import WorkWeekClient, workweek_client
+from src.core.agents.hcm import workweek_autonomous_specialist
 from src.integrations.service_immediately.client import ServiceImmediatelyClient, service_immediately_client
 from src.telemetry.audit_logger import AuditLogger, audit_logger
 
@@ -126,19 +127,32 @@ class HREnterpriseAgent:
         if "relocation" in p or "relocating" in p or "transferring to the london" in p or "london office" in p or "building access" in p and "allowance" in p:
             return "UC_2_3_RELOCATION_ALLOWANCE_BADGE"
 
-        # UC-1.2: WorkWeek Leave Self-Service
-        if "vacation" in p or "time off" in p or "time-off" in p or "leave balance" in p or "pto" in p or "submit a leave" in p:
+        # UC-1.1: Policy Q&A
+        if any(k in p for k in ["policy", "bereavement", "entitlement", "handbook", "rule", "규정", "핸드북", "지침"]):
+            return "UC_1_1_POLICY_QA"
+
+        # UC-1.2: WorkWeek Leave & Profile Self-Service
+        if any(k in p for k in [
+            "vacation", "time off", "time-off", "leave balance", "pto", "submit a leave",
+            "leave request", "leave history", "profile", "job", "who am i", "my info",
+            "my details", "address", "manager", "boss", "report to", "department", "team",
+            "email", "phone", "hire date", "contact", "cancel leave",
+            # Korean keywords
+            "휴가", "연차", "병가", "월차", "반차", "휴무", "잔여", "남았", "얼마나",
+            "매니저", "팀장", "관리자", "부서", "직무", "주소", "연락처", "전화번호",
+            "프로필", "취소", "신청한 휴가", "휴가 목록", "휴가 내역", "휴가 이력"
+        ]):
             return "UC_1_2_WORKWEEK_LEAVE"
 
         # UC-1.3: ServiceImmediately Incident Management
-        if "ticket" in p or "vpn" in p or "incident" in p or "it helpdesk" in p or "wifi" in p or "dropping" in p:
+        if any(k in p for k in [
+            "ticket", "vpn", "incident", "it helpdesk", "wifi", "dropping", "network",
+            "티켓", "장애", "네트워크", "와이파이", "헬프데스크", "고장"
+        ]):
             return "UC_1_3_SERVICE_IMMEDIATELY_INCIDENT"
 
-        # UC-1.1: Policy Q&A
-        if "policy" in p or "bereavement" in p or "entitlement" in p or "handbook" in p or "rule" in p or "how many days" in p:
-            return "UC_1_1_POLICY_QA"
-
         return "GENERAL_INQUIRY"
+
 
     # --- HANDLERS FOR SINGLE-DOMAIN USE CASES ---
 
@@ -159,66 +173,19 @@ class HREnterpriseAgent:
         )
 
     def _handle_workweek_leave(self, caller_id: str, prompt: str, today: datetime.date) -> AgentResponse:
-        """UC-1.2: WorkWeek Leave Balance Inquiry and Request Submission."""
-        p = prompt.lower()
-
-        # Check if inquiry only or submission
-        if "check" in p or "how many" in p or "balance" in p or "remaining" in p:
-            balances = self._ww_client.get_leave_balances(caller_id, caller_id)
-            if not balances:
-                return AgentResponse(
-                    response_text="Could not retrieve your leave balances from WorkWeek.",
-                    intent="UC_1_2_WORKWEEK_LEAVE",
-                    action_performed="CHECK_BALANCE"
-                )
-            text = f"Your current WorkWeek leave balances are:\n- Vacation: {balances.vacation_remaining} days remaining ({balances.vacation_accrued} accrued, {balances.vacation_used} used)\n- Sick Leave: {balances.sick_remaining} days remaining ({balances.sick_accrued} accrued, {balances.sick_used} used)"
-            return AgentResponse(
-                response_text=text,
-                intent="UC_1_2_WORKWEEK_LEAVE",
-                action_performed="CHECK_BALANCE"
-            )
-
-        # Submission flow
-        # Default to 2 days Vacation starting upcoming Thursday/Friday if not parsed
-        days = 2.0
-        if "1 day" in p or "one day" in p:
-            days = 1.0
-        elif "3 days" in p or "three days" in p:
-            days = 3.0
-        elif "5 days" in p or "five days" in p:
-            days = 5.0
-
-        start_date = today + datetime.timedelta(days=1)
-        end_date = start_date + datetime.timedelta(days=int(days) - 1)
-
-        leave_type = "Vacation"
-        if "sick" in p:
-            leave_type = "Sick"
-
-        res = self._ww_client.submit_leave_request(
-            caller_employee_id=caller_id,
-            target_employee_id=caller_id,
-            leave_type=leave_type,
-            start_date=start_date,
-            end_date=end_date,
-            days=days,
+        """UC-1.2: Autonomous WorkWeek HCM Tool-Calling Agent."""
+        res = workweek_autonomous_specialist.plan_and_execute(
+            prompt=prompt,
+            caller_id=caller_id,
             reference_date=today
         )
+        return AgentResponse(
+            response_text=res["response_text"],
+            intent="UC_1_2_WORKWEEK_LEAVE",
+            action_performed=res["action_performed"],
+            transaction_reference=res.get("transaction_reference")
+        )
 
-        if res.success:
-            msg = f"Your {int(days)}-day {leave_type} request for {start_date.isoformat()} to {end_date.isoformat()} has been submitted in WorkWeek (Ref: {res.request_id}). Remaining balance: {res.remaining_balance} days."
-            return AgentResponse(
-                response_text=msg,
-                intent="UC_1_2_WORKWEEK_LEAVE",
-                action_performed="SUBMIT_LEAVE",
-                transaction_reference=res.request_id
-            )
-        else:
-            return AgentResponse(
-                response_text=f"Leave submission failed: {res.message}",
-                intent="UC_1_2_WORKWEEK_LEAVE",
-                action_performed="SUBMIT_LEAVE"
-            )
 
     def _handle_service_incident(self, caller_id: str, prompt: str) -> AgentResponse:
         """UC-1.3: ServiceImmediately Support Desk Incident Management."""

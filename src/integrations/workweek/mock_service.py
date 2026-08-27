@@ -71,6 +71,8 @@ class WorkWeekMockService:
                 sick_remaining=14.0
             ),
         }
+
+
         self._leave_requests.clear()
 
     def get_profile(self, employee_id: str) -> Optional[EmployeeProfile]:
