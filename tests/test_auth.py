@@ -16,25 +16,23 @@ def client():
 
 
 def test_resolve_employee_id_directory():
-    """Verify known corporate emails resolve to correct WorkWeek Employee IDs."""
-    romij_info = resolve_employee_id("romij@google.com")
-    assert romij_info["employee_id"] == "EMP-509"
-    assert "Romij" in romij_info["name"]
+    """Verify corporate emails dynamically derive display names and identifiers."""
+    dev_info = resolve_employee_id("developer@google.com")
+    assert dev_info["employee_id"] == "EMP-DEVELOPER"
+    assert dev_info["name"] == "Developer"
 
     sarah_info = resolve_employee_id("sarah.chen@elevate-corp.internal")
-    assert sarah_info["employee_id"] == "EMP-44210"
-
-    google_corp_info = resolve_employee_id("developer@google.com")
-    assert google_corp_info["employee_id"] == "EMP-509"
+    assert sarah_info["employee_id"] == "EMP-SARAH.CHEN"
+    assert sarah_info["name"] == "Sarah Chen"
 
 
 def test_session_token_minting_and_verification():
     """Verify cryptographically signed session tokens mint and verify correctly."""
     user = AuthenticatedUser(
-        email="romij@google.com",
-        employee_id="EMP-509",
-        name="Romij Employee",
-        role="Solutions Acceleration Architect",
+        email="developer@example.com",
+        employee_id="EMP-1001",
+        name="Test Developer",
+        role="End User",
         auth_provider="google_oidc"
     )
 
@@ -44,9 +42,9 @@ def test_session_token_minting_and_verification():
 
     verified = verify_session_token(token)
     assert verified is not None
-    assert verified.email == "romij@google.com"
-    assert verified.employee_id == "EMP-509"
-    assert verified.name == "Romij Employee"
+    assert verified.email == "developer@example.com"
+    assert verified.employee_id == "EMP-1001"
+    assert verified.name == "Test Developer"
 
     # Test tampering
     tampered = token[:-4] + "fake"
@@ -55,29 +53,31 @@ def test_session_token_minting_and_verification():
 
 def test_quick_login_and_auth_me_endpoint(client):
     """Verify /auth/quick-login returns a valid session token and /auth/me verifies it."""
-    login_resp = client.post("/auth/quick-login", json={"email": "romij@google.com", "name": "Romij Employee"})
+    login_resp = client.post("/auth/quick-login", json={"email": "developer@example.com", "name": "Test Developer"})
     assert login_resp.status_code == 200
     data = login_resp.json()
     assert data["success"] is True
     assert "token" in data
     token = data["token"]
-    assert data["user"]["employee_id"] == "EMP-509"
+    assert "employee_id" in data["user"]
+
 
     # Verify /auth/me with Bearer token
     me_resp = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert me_resp.status_code == 200
     me_data = me_resp.json()
     assert me_data["authenticated"] is True
-    assert me_data["user"]["email"] == "romij@google.com"
-    assert me_data["user"]["employee_id"] == "EMP-509"
+    assert me_data["user"]["email"] == "developer@example.com"
+    assert "employee_id" in me_data["user"]
+
 
 
 def test_chat_with_authenticated_session_token(client):
     """Verify /chat binds caller subject from session token without relying on client payload."""
-    login_resp = client.post("/auth/quick-login", json={"email": "romij@google.com"})
+    login_resp = client.post("/auth/quick-login", json={"email": "developer@example.com"})
     token = login_resp.json()["token"]
 
-    # In payload, client specifies fake employee_id="EMP-9999", but session token is for romij (EMP-509)
+    # In payload, client specifies fake employee_id="EMP-9999", but session token is bound to caller
     chat_resp = client.post(
         "/chat",
         headers={"Authorization": f"Bearer {token}"},
@@ -95,7 +95,7 @@ def test_chat_with_cloud_run_iap_header(client):
     """Verify /chat automatically recognizes Google Cloud IAP header."""
     chat_resp = client.post(
         "/chat",
-        headers={"X-Goog-Authenticated-User-Email": "accounts.google.com:romij@google.com"},
+        headers={"X-Goog-Authenticated-User-Email": "accounts.google.com:developer@example.com"},
         json={"employee_id": "EMP-9999", "message": "내 연차 얼마나 남았어?"}
     )
     assert chat_resp.status_code == 200

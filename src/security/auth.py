@@ -36,54 +36,23 @@ class AuthenticatedUser(BaseModel):
 
 
 
-# Corporate Email to WorkWeek Employee ID Directory
-# In production, this can query a Directory API or WorkWeek HRIS lookup
-EMAIL_DIRECTORY_MAP: Dict[str, Dict[str, str]] = {
-    "romij@google.com": {
-        "employee_id": "EMP-509",
-        "name": "Romij Employee",
-        "role": "Solutions Acceleration Architect",
-    },
-    "randyh0329@gmail.com": {
-        "employee_id": "EMP-1001",
-        "name": "Randy H",
-        "role": "End User",
-    },
-    "sarah.chen@elevate-corp.internal": {
-        "employee_id": "EMP-44210",
-        "name": "Sarah Chen",
-        "role": "Senior Staff Architect",
-    },
-}
-
 SESSION_SECRET_KEY = "elevate-enterprise-agentic-session-secret"
 
 
 def resolve_employee_id(email: str, default_name: Optional[str] = None) -> Dict[str, str]:
     """
-    Resolves corporate email to WorkWeek Employee ID and metadata.
-    If the user has a @google.com email, defaults to EMP-509 (Romij Employee).
+    Derives user display metadata from corporate email.
+    Primary employee_id is dynamically resolved from the user's FastMCP token (X-MCP-Token).
     """
     clean_email = email.strip().lower()
-    if clean_email in EMAIL_DIRECTORY_MAP:
-        return EMAIL_DIRECTORY_MAP[clean_email]
-
-    # Google corporate domain heuristic
-    if clean_email.endswith("@google.com"):
-        ldap = clean_email.split("@")[0]
-        return {
-            "employee_id": "EMP-509",
-            "name": default_name or f"{ldap.capitalize()} (Google)",
-            "role": "Solutions Acceleration Architect",
-        }
-
-    # Generic corporate fallback
     ldap = clean_email.split("@")[0]
+    formatted_name = default_name or ldap.replace(".", " ").title()
     return {
-        "employee_id": "EMP-1001",
-        "name": default_name or ldap.capitalize(),
+        "employee_id": f"EMP-{ldap.upper()}",
+        "name": formatted_name,
         "role": "End User",
     }
+
 
 
 def verify_google_id_token(id_token: str) -> Dict[str, Any]:
