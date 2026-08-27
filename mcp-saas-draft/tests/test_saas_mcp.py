@@ -1,5 +1,13 @@
+import sys
+from pathlib import Path
+
+# Add mcp-saas-draft directory to sys.path
+MCP_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(MCP_DIR))
+
 import pytest
 from src.saas_mcp_client import SaaSMCPClient
+
 from src.adk_tools import (
     get_current_employee_id,
     get_employee_balances,
