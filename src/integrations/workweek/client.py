@@ -71,13 +71,13 @@ class WorkWeekClient:
                         employee_id=target_employee_id,
                         full_name=full,
                         email=prof_data.get("email") or f"{target_employee_id.lower()}@google.com",
-                        home_address=prof_data.get("home_address") or "Corporate Office",
-                        phone_number=prof_data.get("phone_number") or "",
-                        work_location_status=prof_data.get("role") or "FULL_TIME",
-                        current_office=prof_data.get("department") or "Engineering",
-                        country=prof_data.get("country") or "US",
-                        job_title=prof_data.get("job_title") or "Corporate Employee",
-                        manager_id=prof_data.get("manager_id") or "EMP-1",
+                        home_address=prof_data.get("home_address") or "N/A",
+                        phone_number=prof_data.get("phone_number") or "N/A",
+                        work_location_status=prof_data.get("role") or "N/A",
+                        current_office=prof_data.get("department") or "N/A",
+                        country=prof_data.get("country") or "N/A",
+                        job_title=prof_data.get("job_title") or "N/A",
+                        manager_id=prof_data.get("manager_id") or "N/A",
                         is_active=True
                     )
                 else:
@@ -86,15 +86,16 @@ class WorkWeekClient:
                         employee_id=target_employee_id,
                         full_name=f"Employee {target_employee_id}",
                         email=f"{target_employee_id.lower()}@google.com",
-                        home_address=info.get("address") or "Corporate Office",
-                        phone_number=info.get("phone") or "",
-                        work_location_status="FULL_TIME",
-                        current_office="Engineering",
-                        country="US",
-                        job_title="Corporate Employee",
-                        manager_id="EMP-1",
+                        home_address=info.get("address") or "N/A",
+                        phone_number=info.get("phone") or "N/A",
+                        work_location_status="N/A",
+                        current_office="N/A",
+                        country="N/A",
+                        job_title="N/A",
+                        manager_id="N/A",
                         is_active=True
                     )
+
 
             except Exception as e:
                 logger.warning(f"Live WorkWeek FastMCP profile lookup failed: {e}. Falling back to mock service.")
