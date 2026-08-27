@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from src.grounding.policy_rag.config import GENERAL_ENTITLEMENT
+from src.grounding.policy_rag.documents import Chunk
 from src.grounding.policy_rag.embeddings import build_provider
 from src.grounding.policy_rag.index import PolicyIndex
 from src.grounding.policy_rag.retriever import RetrievalRequest, Retriever, tokenize
@@ -97,17 +98,115 @@ def test_max_chunks_per_document_is_enforced(config, retriever):
     assert max(counts.values()) <= config.retrieval.max_chunks_per_document
 
 
-def test_lexical_boost_never_lowers_a_score(retriever):
-    """Absence of shared vocabulary is not evidence of irrelevance."""
-    dense_only = retriever._fuse(0.70, 0.0)
-    corroborated = retriever._fuse(0.70, 0.9)
+def test_lexical_boost_never_lowers_a_score(retriever, config):
+    """Absence of shared vocabulary is not evidence of irrelevance.
+
+    Measured strictly inside the calibration band. At or above `cosine_ceiling`
+    the calibrated score is already 1.0 and there is no headroom for the boost
+    to act on, so a cosine picked from outside the band would make this pass
+    vacuously - which is what happened when the ceiling last moved.
+    """
+    calibration = config.retrieval
+    inside = (calibration.cosine_floor + calibration.cosine_ceiling) / 2
+
+    dense_only = retriever._fuse(inside, 0.0)
+    corroborated = retriever._fuse(inside, 0.9)
+
     assert corroborated > dense_only
-    assert retriever._fuse(0.70, 0.0) == pytest.approx(retriever._calibrate(0.70))
+    assert dense_only == pytest.approx(retriever._calibrate(inside))
+
+
+def test_lexical_boost_cannot_lift_a_saturated_score_past_one(retriever, config):
+    """The lift is proportional to remaining headroom, so 1.0 is a hard ceiling."""
+    at_ceiling = config.retrieval.cosine_ceiling
+    assert retriever._fuse(at_ceiling, 1.0) == pytest.approx(1.0)
+    assert retriever._fuse(at_ceiling + 0.2, 1.0) == pytest.approx(1.0)
 
 
 def test_lexical_boost_cannot_carry_a_weak_match_over_the_gate(retriever):
     """A keyword-stuffed but semantically wrong passage must stay below 1.0."""
     assert retriever._fuse(0.0, 1.0) < 1.0
+
+
+# --- navigational chunks and lexical corroboration ---------------------------
+
+
+def _chunk(text: str, chunk_id: str = "c-1") -> Chunk:
+    return Chunk(
+        chunk_id=chunk_id,
+        doc_id="d-1",
+        corpus_id="okf-handbook",
+        path="policies/leave.md",
+        doc_title="Leave",
+        doc_type="policy",
+        authority="governing",
+        entitlement=GENERAL_ENTITLEMENT,
+        heading_path=["Carryover"],
+        anchor="carryover",
+        text=text,
+        ordinal=0,
+    )
+
+
+def test_a_prose_paragraph_has_no_link_density(retriever):
+    prose = (
+        "Annual leave accrues at 1.25 days per completed month of service. "
+        "Unused days carry over to the following year up to a cap of five."
+    )
+    assert retriever._compute_link_density(_chunk(prose)) == 0.0
+
+
+def test_a_section_index_is_almost_all_link(retriever):
+    """The shape this rule exists to catch: a heading whose body is a link list."""
+    signpost = (
+        "- [Annual leave](leave/annual.md)\n"
+        "- [Medical leave](leave/medical.md)\n"
+        "- [Parental leave](leave/parental.md)\n"
+    )
+    assert retriever._compute_link_density(_chunk(signpost)) > 0.9
+
+
+def test_link_density_is_a_fraction_even_for_an_empty_chunk(retriever):
+    assert retriever._compute_link_density(_chunk("")) == 0.0
+    assert retriever._compute_link_density(_chunk("   \n\n  ")) == 0.0
+
+
+def test_navigational_chunks_are_never_returned(retriever, config):
+    """And the corpus really contains some, so the assertion is not vacuous."""
+    densities = [retriever._compute_link_density(c) for c in retriever.index.chunks]
+    assert max(densities) > config.retrieval.max_link_density, (
+        "no navigational chunk in the fixture corpus - this test proves nothing"
+    )
+
+    for hit in _all(retriever, query="where do I find the leave policies"):
+        assert retriever._link_density[hit.chunk.chunk_id] <= config.retrieval.max_link_density
+
+
+def test_an_uncorroborated_hit_is_rejected_rather_than_answered(retriever, config):
+    """A hit sharing no vocabulary with the question cannot clear the gate.
+
+    Driven with the gate wide open and the corroboration floor raised above
+    everything, so the only reason anything can be rejected is this rule - and
+    the rejected hits stay visible for observability rather than vanishing.
+    """
+    config.retrieval.min_lexical_corroboration = 1.01
+    try:
+        result = retriever.retrieve(
+            RetrievalRequest(query="vacation leave accrual", relevance_gate=0.0, top_k=50)
+        )
+    finally:
+        config.retrieval.min_lexical_corroboration = 0.12
+
+    assert result.hits == []
+    assert result.rejected
+    # `best_relevance` still reports what was found: refusing is not the same as
+    # having seen nothing, and the distinction is what makes a refusal debuggable.
+    assert result.best_relevance > 0.0
+
+
+def test_every_answered_hit_carries_some_corroboration(retriever, config):
+    for hit in retriever.retrieve(RetrievalRequest(query="vacation leave accrual")).hits:
+        assert hit.lexical_score >= config.retrieval.min_lexical_corroboration
 
 
 # --- citations (FR-5.3 / FR-5.4) --------------------------------------------

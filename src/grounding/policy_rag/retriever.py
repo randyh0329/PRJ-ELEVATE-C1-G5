@@ -26,6 +26,9 @@ from src.grounding.policy_rag.index import PolicyIndex
 logger = logging.getLogger(__name__)
 
 _TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9$%.-]*")
+_WHITESPACE_RE = re.compile(r"\s+")
+#: Inline markdown links, including the bare-autolink and image forms.
+_MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*\]\([^)]*\)|<https?://[^>]+>")
 _STOPWORDS = frozenset(
     ["a", "an", "and", "any", "are", "as", "at", "be", "by", "can", "do", "does", "for", "from", "how", "i", "if", "in", "into", "is", "it", "may", "me", "my", "not", "of", "on", "or", "our", "should", "so", "that", "the", "their", "there", "they", "this", "to", "us", "was", "we", "what", "when", "where", "which", "who", "will", "with", "would", "you", "your"]
 )
@@ -91,6 +94,34 @@ class Retriever:
         self.index = index
         self.embedder = embedder
         self._idf = self._build_idf(index)
+        self._link_density = {c.chunk_id: self._compute_link_density(c) for c in index.chunks}
+
+    # --- navigational chunks ------------------------------------------------
+
+    @staticmethod
+    def _compute_link_density(chunk: Chunk) -> float:
+        """Fraction of the chunk's visible characters that live inside links.
+
+        A handbook contains two kinds of passage that read alike to an embedding
+        model. One states a rule. The other is a signpost - a section index, a
+        "related policies" list, an empty heading whose body is three links -
+        and it is *about* the rule without stating it.
+
+        A signpost matches a question well precisely because it repeats the
+        question's topic words, so dense retrieval ranks it highly and it then
+        occupies a slot that a real passage needed. Worse, when it is the only
+        hit, the service either refuses a question the corpus can answer or
+        cites a page that does not contain the claim, breaking FR-5.2.
+
+        There is no reliable signal for this in the score. There is one in the
+        markup: a signpost is mostly link syntax.
+        """
+        text = chunk.text
+        visible = len(_WHITESPACE_RE.sub("", text))
+        if visible == 0:
+            return 0.0
+        linked = sum(len(_WHITESPACE_RE.sub("", m.group(0))) for m in _MARKDOWN_LINK_RE.finditer(text))
+        return min(1.0, linked / visible)
 
     # --- lexical side -------------------------------------------------------
 
@@ -198,6 +229,10 @@ class Retriever:
                 continue
             if chunk.entitlement not in entitlements:
                 continue
+            # Dropped rather than rejected: a signpost is not weak evidence, it
+            # is not evidence, so it should not colour `best_relevance` either.
+            if self._link_density.get(chunk.chunk_id, 0.0) > cfg.max_link_density:
+                continue
             lexical = self._lexical_score(query_terms, chunk)
             scored.append(
                 Hit(
@@ -219,6 +254,19 @@ class Retriever:
         per_document: Counter[str] = Counter()
         for hit in scored:
             if hit.relevance < gate:
+                rejected.append(hit)
+                continue
+            # A hit can clear the gate on dense similarity while sharing almost
+            # no vocabulary with the question. That combination is the signature
+            # of a near-miss: the same *subject* discussed under a different
+            # rule. `_fuse` deliberately does not penalise missing overlap, so
+            # the requirement is expressed here instead, as an admissibility
+            # rule rather than a score adjustment.
+            if hit.lexical_score < cfg.min_lexical_corroboration:
+                logger.debug(
+                    "dropping uncorroborated hit (dense %.3f, lexical %.3f): %s",
+                    hit.dense_score, hit.lexical_score, hit.citation.uri,
+                )
                 rejected.append(hit)
                 continue
             # FR-5.3: a citation that does not resolve is not a citation. A hit

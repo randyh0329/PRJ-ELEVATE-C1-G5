@@ -32,7 +32,12 @@ _OKF_TYPE_MAP = {
     "attested computation": "computation",
     "reference": "reference",
     "skill": "skill",
-    "orientation": "nav",
+    # Not `nav`. `nav` is for folder index pages, which carry no policy claims
+    # and are deliberately unretrievable; the onboarding guide is a substantive
+    # section that happens to restate rules owned elsewhere. Filing it under
+    # `nav` made an entire handbook section invisible to retrieval - the only
+    # place the corpus describes a new hire's first week.
+    "orientation": "orientation",
 }
 
 

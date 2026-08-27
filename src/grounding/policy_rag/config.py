@@ -53,8 +53,18 @@ class RetrievalConfig:
     cosine_floor: float = 0.50
     cosine_ceiling: float = 0.82
     max_chunks_per_document: int = 3
+    #: A chunk whose text is more than this fraction markdown-link characters is
+    #: a routing aid - a table of contents or a "see also" list. It names the
+    #: document that answers the question without containing the answer, so it
+    #: is not groundable material. See `Retriever._link_density`.
+    max_link_density: float = 0.35
+    #: Least lexical overlap a hit must have with the question before the
+    #: calibrated dense score is allowed to clear the gate. See
+    #: `Retriever.retrieve` - and read the caveat in `scripts/eval_retrieval.py`
+    #: about where this number came from.
+    min_lexical_corroboration: float = 0.12
     default_doc_types: list[str] = field(
-        default_factory=lambda: ["policy", "datasheet", "computation", "reference", "skill"]
+        default_factory=lambda: ["policy", "datasheet", "computation", "reference", "skill", "orientation"]
     )
 
 
@@ -158,6 +168,8 @@ def load_config(path: str | os.PathLike[str] | None = None) -> Config:
         cosine_floor=float(calib.get("cosine_floor", 0.50)),
         cosine_ceiling=float(calib.get("cosine_ceiling", 0.82)),
         max_chunks_per_document=int(ret_raw.get("max_chunks_per_document", 3)),
+        max_link_density=float(ret_raw.get("max_link_density", 0.35)),
+        min_lexical_corroboration=float(ret_raw.get("min_lexical_corroboration", 0.12)),
         default_doc_types=list(ret_raw.get("default_doc_types", RetrievalConfig().default_doc_types)),
     )
 
