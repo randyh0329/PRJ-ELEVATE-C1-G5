@@ -1,8 +1,8 @@
 ---
-type: Guidebook
-title: Altostrat Singapore Employee Policy Handbook - reader's guide
-description: How this bundle maps to the source handbook, which layer governs when sections disagree, and what must not be answered from this corpus.
-tags: [orientation, singapore, hr-policy, handbook, provenance]
+type: Corpus Datasheet
+title: Altostrat Singapore Employee Policy Handbook - corpus datasheet
+description: How this bundle was built from the source handbook, which layer governs when sections disagree, the trust tier of every concept, and what must not be answered from this corpus.
+tags: [datasheet, orientation, singapore, hr-policy, handbook, provenance, limitations]
 status: stable
 generated: { by: claude-code/opus-5, at: 2026-08-27T00:00:00Z }
 stale_after: 2027-07-01T00:00:00Z

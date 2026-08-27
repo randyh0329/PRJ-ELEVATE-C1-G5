@@ -18,7 +18,7 @@ the governing sections in at least three places. See **Where this section diverg
 
 > **Read this as orientation, not as policy.** Where this section and a governing policy
 > section disagree, the governing section wins. This is a producer decision - the handbook
-> does not state a precedence rule. See the [guidebook](/guidebook.md).
+> does not state a precedence rule. See the [corpus datasheet](/corpus-datasheet.md).
 
 The handbook contains **two** Section 30s. This is the first; the second is
 [performance and discipline](/conduct/performance-and-discipline.md).

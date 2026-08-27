@@ -4,7 +4,7 @@ okf_version: "0.2"
 
 # Start here
 
-* [Guidebook](guidebook.md) - how this bundle is organised, which layer of the source governs, and what must not be answered from it.
+* [Corpus datasheet](corpus-datasheet.md) - how this bundle was built, which layer of the source governs, the trust tier of every concept, and what must not be answered from it. **Read this first.**
 * [Source defect register](references/source-defects.md) - every known contradiction, duplicate, gap and placeholder in the source handbook.
 
 # Leave and time off

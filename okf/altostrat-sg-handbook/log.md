@@ -3,7 +3,7 @@
 ## 2026-08-27
 
 * **Initialization**: Created the bundle from a single source document, `ALTOSTRAT SINGAPORE EMPLOYEE POLICY HANDBOOK & CONDUCT GUIDELINES.md` at `randyh0329/PRJ-ELEVATE-C1-G5@main`, as read on 2026-08-27.
-* **Creation**: Established the [Guidebook](/guidebook.md) as the orientation concept, including the layer-precedence convention that resolves the source's duplicated sections.
+* **Creation**: Established the [corpus datasheet](/corpus-datasheet.md) as the orientation concept, recording the bundle's provenance, the layer-precedence convention that resolves the source's duplicated sections, the trust posture, and the questions that must not be answered from this corpus.
 * **Creation**: Split the source into 31 policy concepts across [leave](/leave/) (11), [conduct](/conduct/) (6), [ethics](/ethics/) (4), [workplace](/workplace/) (7) and [people-ops](/people-ops/) (3).
 * **Creation**: Established the [source defect register](/references/source-defects.md) recording 23 findings - contradictions, duplicated section numbers, missing sections, corrupted text, unresolved placeholders and authoring artefacts left in the source.
 * **Creation**: Established [vacation entitlement](/computations/vacation-entitlement.md) as an Attested Computation, with its [computation source](/references/computations/vacation_entitlement.py), [executor skill](/references/skills/run-python-entitlement.md) and [attester](/references/attesters/entitlement_binding.py).

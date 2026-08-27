@@ -15,7 +15,7 @@ sources:
 
 **This topic exists only in the handbook's summary layer.** There is no detailed
 counterpart section, so it is thinner than comparable policies. See the
-[guidebook](/guidebook.md).
+[corpus datasheet](/corpus-datasheet.md).
 
 # Hybrid structure
 

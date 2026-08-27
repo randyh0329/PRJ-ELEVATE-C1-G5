@@ -372,7 +372,7 @@ first pass, D15 and D23 having been split out during writing.
 
 Six of the twelve contradictions are between the handbook's **summary layer** (Sections 1-5)
 and its **detail layer** (Sections 13-14, 18-28). That pattern is the reason the
-[guidebook](/guidebook.md) adopts a precedence rule - and the reason it flags that rule as a
+[corpus datasheet](/corpus-datasheet.md) adopts a precedence rule - and the reason it flags that rule as a
 producer decision the source does not authorise.
 
 [^hb]: ALTOSTRAT SINGAPORE EMPLOYEE POLICY HANDBOOK & CONDUCT GUIDELINES, complete document, as checked out from `randyh0329/PRJ-ELEVATE-C1-G5@main` on 2026-08-27

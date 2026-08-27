@@ -30,7 +30,7 @@ sources:
 
 **This topic exists only in the handbook's summary layer.** Section 4 has no detailed
 counterpart section, so the rules below are all the source provides. See the
-[guidebook](/guidebook.md).
+[corpus datasheet](/corpus-datasheet.md).
 
 # Frugality and booking
 
