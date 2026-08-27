@@ -94,7 +94,45 @@ class SaaSFastMCPClient:
         logger.error(f"Sync MCP call {tool_name} to {url} failed with {resp.status_code}: {resp.text}")
         raise RuntimeError(f"FastMCP call failed with HTTP {resp.status_code}: {resp.text}")
 
+    def read_resource_sync(self, server_path: str, uri: str) -> Dict[str, Any]:
+        """Synchronously reads an MCP resource (JSON-RPC 'resources/read')."""
+        client = self._get_sync_client()
+        clean_path = server_path.strip("/")
+        url = f"{self.base_url}/{clean_path}/"
+
+        payload = {
+            "jsonrpc": "2.0",
+            "id": "resource-read",
+            "method": "resources/read",
+            "params": {"uri": uri}
+        }
+
+        resp = client.post(url, json=payload, headers=self._get_headers())
+        if resp.status_code == 200:
+            data = resp.json()
+            if "result" in data:
+                return data["result"]
+            return data
+
+        logger.error(f"Sync MCP resource read {uri} at {url} failed: {resp.status_code} {resp.text}")
+        raise RuntimeError(f"FastMCP resource read failed with HTTP {resp.status_code}: {resp.text}")
+
+    def get_employee_profile(self, employee_id: str) -> Dict[str, Any]:
+        """Reads WorkWeek employee profile resource (workweek://employees/{id}/profile)."""
+        uri = f"workweek://employees/{employee_id}/profile"
+        try:
+            res = self.read_resource_sync("work-week/mcp/", uri)
+            contents = res.get("contents", [{}])[0].get("text", "{}")
+            return json.loads(contents)
+        except Exception as e:
+            logger.warning(f"Failed to read employee profile resource {uri}: {e}")
+            try:
+                return self.get_personal_info(employee_id)
+            except Exception:
+                return {}
+
     async def call_tool_async(
+
         self,
         server_path: str,
         tool_name: str,

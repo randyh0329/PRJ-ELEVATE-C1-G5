@@ -62,23 +62,43 @@ class WorkWeekClient:
         profile = None
         if self._should_use_live_mcp(target_employee_id):
             try:
-                info = self._mcp_client.get_personal_info(target_employee_id)
-                profile = EmployeeProfile(
-                    employee_id=target_employee_id,
-                    full_name="Romij Employee" if target_employee_id == "EMP-509" else f"Employee {target_employee_id}",
-                    email=f"{target_employee_id.lower()}@elevate-corp.internal",
-                    home_address=info.get("address", "Singapore Office, 80 Pasir Panjang Rd, Singapore"),
-                    phone_number=info.get("phone", "+65-6521-0000"),
-                    work_location_status="REMOTE_FULL_TIME",
-                    current_office="Singapore",
-                    country="SG",
-                    job_title="Senior Software Engineer",
-                    manager_id="MGR-001",
-                    is_active=True
-                )
+                prof_data = self._mcp_client.get_employee_profile(target_employee_id)
+                if prof_data and "job_title" in prof_data:
+                    first = prof_data.get("first_name", "")
+                    last = prof_data.get("last_name", "")
+                    full = f"{first} {last}".strip() or ("Romij Employee" if target_employee_id == "EMP-509" else f"Employee {target_employee_id}")
+                    profile = EmployeeProfile(
+                        employee_id=target_employee_id,
+                        full_name=full,
+                        email=prof_data.get("email", f"{target_employee_id.lower()}@elevate-corp.internal"),
+                        home_address=prof_data.get("home_address", "Singapore Office, 80 Pasir Panjang Rd, Singapore"),
+                        phone_number=prof_data.get("phone_number", "+65-6521-0000"),
+                        work_location_status="REMOTE_FULL_TIME",
+                        current_office=prof_data.get("department", "Singapore"),
+                        country="SG",
+                        job_title=prof_data.get("job_title", "Solutions Acceleration Architect"),
+                        manager_id=prof_data.get("manager_id", "EMP-1"),
+                        is_active=True
+                    )
+                else:
+                    info = self._mcp_client.get_personal_info(target_employee_id)
+                    profile = EmployeeProfile(
+                        employee_id=target_employee_id,
+                        full_name="Romij Employee" if target_employee_id == "EMP-509" else f"Employee {target_employee_id}",
+                        email="romij@google.com" if target_employee_id == "EMP-509" else f"{target_employee_id.lower()}@elevate-corp.internal",
+                        home_address=info.get("address", "Singapore Office, 80 Pasir Panjang Rd, Singapore"),
+                        phone_number=info.get("phone", "+65-6521-0000"),
+                        work_location_status="REMOTE_FULL_TIME",
+                        current_office="Google Forge (Customer Engineering)",
+                        country="SG",
+                        job_title="Solutions Acceleration Architect",
+                        manager_id="EMP-1",
+                        is_active=True
+                    )
             except Exception as e:
                 logger.warning(f"Live WorkWeek FastMCP profile lookup failed: {e}. Falling back to mock service.")
                 profile = self._service.get_profile(target_employee_id)
+
         else:
             profile = self._service.get_profile(target_employee_id)
 
