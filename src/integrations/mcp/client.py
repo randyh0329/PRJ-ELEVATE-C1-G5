@@ -56,15 +56,16 @@ class SaaSFastMCPClient:
         return self._sync_client
 
     async def _get_async_client(self) -> httpx.AsyncClient:
-        try:
-            current_loop = asyncio.get_running_loop()
-        except RuntimeError:
-            current_loop = None
+        # An AsyncClient holds connections bound to the loop that opened them,
+        # so one cached across loops raises "attached to a different loop" on
+        # reuse. The body of a coroutine only runs under a loop, so there is
+        # always one to compare against.
+        current_loop = asyncio.get_running_loop()
 
         if (
             self._async_client is None
             or self._async_client.is_closed
-            or getattr(self, "_bound_loop", None) != current_loop
+            or self._bound_loop != current_loop
         ):
             self._bound_loop = current_loop
             self._async_client = httpx.AsyncClient(timeout=self.timeout)
