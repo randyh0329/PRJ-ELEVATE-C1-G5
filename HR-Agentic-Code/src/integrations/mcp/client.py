@@ -125,9 +125,41 @@ class SaaSFastMCPClient:
         logger.error(f"Async MCP call {tool_name} to {url} failed with {resp.status_code}: {resp.text}")
         raise RuntimeError(f"FastMCP call failed with HTTP {resp.status_code}: {resp.text}")
 
+    def read_resource_sync(self, endpoint_path: str, uri: str) -> Optional[Dict[str, Any]]:
+        """Read a FastMCP Resource by URI synchronously using JSON-RPC."""
+        clean_path = endpoint_path.strip("/")
+        url = f"{self.base_url}/{clean_path}/"
+        payload = {
+            "jsonrpc": "2.0",
+            "id": f"resource-read-{uri}",
+            "method": "resources/read",
+            "params": {"uri": uri}
+        }
+        client = self._get_sync_client()
+        resp = client.post(url, json=payload, headers=self._get_headers())
+        if resp.status_code == 200:
+            data = resp.json()
+            contents = data.get("result", {}).get("contents", [])
+            if contents and "text" in contents[0]:
+                try:
+                    return json.loads(contents[0]["text"])
+                except Exception:
+                    return {"text": contents[0]["text"]}
+        return None
+
+
     # =========================================================================
     # High-level WorkWeek FastMCP Operations
     # =========================================================================
+
+    def get_employee_profile(self, employee_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch real employee profile metadata directly from WorkWeek FastMCP resource."""
+        uri = f"workweek://employees/{employee_id}/profile"
+        try:
+            return self.read_resource_sync("work-week/mcp/", uri)
+        except Exception as e:
+            logger.warning(f"Live WorkWeek FastMCP profile resource read failed: {e}")
+            return None
 
     def get_current_employee_id(self) -> str:
         """Resolves authenticated session employee ID (e.g. 'EMP-509')."""

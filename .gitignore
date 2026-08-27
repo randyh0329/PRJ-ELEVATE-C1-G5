@@ -2,14 +2,8 @@
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
-*.so
-
-# Distribution / packaging
-build/
-dist/
-*.egg-info/
+*.pyc
+*.pyo
 
 # Virtual Environments
 .venv/
@@ -34,14 +28,15 @@ Thumbs.db
 htmlcov/
 
 # Logs
-=======
-.venv/
-__pycache__/
-*.pyc
-*.pyo
-.pytest_cache/
-.coverage
-htmlcov/
-.env
-.DS_Store
 *.log
+
+# Terraform artifacts
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json

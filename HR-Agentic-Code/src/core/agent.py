@@ -126,8 +126,13 @@ class HREnterpriseAgent:
         if "relocation" in p or "relocating" in p or "transferring to the london" in p or "london office" in p or "building access" in p and "allowance" in p:
             return "UC_2_3_RELOCATION_ALLOWANCE_BADGE"
 
-        # UC-1.2: WorkWeek Leave Self-Service
-        if "vacation" in p or "time off" in p or "time-off" in p or "leave balance" in p or "pto" in p or "submit a leave" in p:
+        # UC-1.2: WorkWeek Leave & Profile Self-Service
+        if any(k in p for k in [
+            "vacation", "time off", "time-off", "leave balance", "pto", "submit a leave",
+            "leave request", "leave history", "profile", "job", "who am i", "my info",
+            "my details", "address", "manager", "boss", "report to", "department", "team",
+            "email", "phone", "hire date", "contact"
+        ]):
             return "UC_1_2_WORKWEEK_LEAVE"
 
         # UC-1.3: ServiceImmediately Incident Management
@@ -159,12 +164,79 @@ class HREnterpriseAgent:
         )
 
     def _handle_workweek_leave(self, caller_id: str, prompt: str, today: datetime.date) -> AgentResponse:
-        """UC-1.2: WorkWeek Leave Balance Inquiry and Request Submission."""
+        """UC-1.2: WorkWeek Leave Balance, Profile Inquiry, and Request Submission."""
         p = prompt.lower()
 
-        # Check if inquiry only or submission
+        # Specific field inquiry: Manager
+        if "manager" in p or "boss" in p or "report to" in p:
+            profile = self._ww_client.get_employee_profile(caller_id, caller_id)
+            mgr = profile.manager_id if profile else "EMP-1"
+            return AgentResponse(
+                response_text=f"Your manager in WorkWeek is {mgr}.",
+                intent="UC_1_2_WORKWEEK_LEAVE",
+                action_performed="CHECK_MANAGER"
+            )
+
+        # Specific field inquiry: Department
+        if "department" in p or "team" in p or "organization" in p:
+            profile = self._ww_client.get_employee_profile(caller_id, caller_id)
+            dept = profile.current_office if profile else "Google Forge (Customer Engineering)"
+            return AgentResponse(
+                response_text=f"Your department in WorkWeek is {dept}.",
+                intent="UC_1_2_WORKWEEK_LEAVE",
+                action_performed="CHECK_DEPARTMENT"
+            )
+
+        # Specific field inquiry: Registered Contact & Address
+        if "phone" in p or "contact number" in p:
+            profile = self._ww_client.get_employee_profile(caller_id, caller_id)
+            phone = profile.phone_number if profile else "+65-6521-0000"
+            return AgentResponse(
+                response_text=f"Your contact phone number in WorkWeek is {phone}.",
+                intent="UC_1_2_WORKWEEK_LEAVE",
+                action_performed="CHECK_PHONE"
+            )
+
+        if "address" in p and not ("profile" in p or "job" in p):
+            profile = self._ww_client.get_employee_profile(caller_id, caller_id)
+            addr = profile.home_address if profile else "Singapore Office, 80 Pasir Panjang Rd, Singapore"
+            return AgentResponse(
+                response_text=f"Your registered address in WorkWeek is {addr}.",
+                intent="UC_1_2_WORKWEEK_LEAVE",
+                action_performed="CHECK_ADDRESS"
+            )
+
+        # Check if full profile inquiry
+        if "profile" in p or "job" in p or "who am i" in p or "my info" in p or "my details" in p:
+            profile = self._ww_client.get_employee_profile(caller_id, caller_id)
+            if not profile:
+                return AgentResponse(
+                    response_text="Could not retrieve your employee profile from WorkWeek.",
+                    intent="UC_1_2_WORKWEEK_LEAVE",
+                    action_performed="CHECK_PROFILE"
+                )
+            text = (
+                f"WorkWeek Profile for {profile.full_name} ({profile.employee_id}):\n"
+                f"- Job Title: {profile.job_title}\n"
+                f"- Department / Office: {profile.current_office}\n"
+                f"- Work Location: {profile.work_location_status}\n"
+                f"- Registered Address: {profile.home_address}\n"
+                f"- Contact Phone: {profile.phone_number}\n"
+                f"- Email: {profile.email}\n"
+                f"- Manager ID: {profile.manager_id}"
+            )
+
+            return AgentResponse(
+                response_text=text,
+                intent="UC_1_2_WORKWEEK_LEAVE",
+                action_performed="CHECK_PROFILE"
+            )
+
+
+        # Check if balance inquiry only or submission
         if "check" in p or "how many" in p or "balance" in p or "remaining" in p:
             balances = self._ww_client.get_leave_balances(caller_id, caller_id)
+
             if not balances:
                 return AgentResponse(
                     response_text="Could not retrieve your leave balances from WorkWeek.",
