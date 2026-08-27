@@ -101,7 +101,13 @@ class HREnterpriseAgent:
         elif intent == "UC_2_3_RELOCATION_ALLOWANCE_BADGE":
             response = self._handle_relocation(caller_employee_id, sanitized_prompt)
         elif intent == "UC_1_2_WORKWEEK_LEAVE":
-            response = self._handle_workweek_leave(caller_employee_id, sanitized_prompt, today, routing_decision)
+            response = self._handle_workweek_leave(
+                caller_employee_id,
+                sanitized_prompt,
+                today,
+                routing_decision,
+                original_prompt=user_prompt
+            )
         elif intent == "UC_1_3_SERVICE_IMMEDIATELY_INCIDENT":
             response = self._handle_service_incident(caller_employee_id, sanitized_prompt)
         elif intent == "UC_1_1_POLICY_QA":
@@ -178,11 +184,38 @@ class HREnterpriseAgent:
         caller_id: str,
         prompt: str,
         today: datetime.date,
-        decision: Optional[SupervisorRoutingDecision] = None
+        decision: Optional[SupervisorRoutingDecision] = None,
+        original_prompt: Optional[str] = None
     ) -> AgentResponse:
         """UC-1.2: Autonomous WorkWeek HCM Tool-Calling Agent."""
+        can_use_fast_path = False
+        args: Dict[str, Any] = {}
+        raw_prompt = original_prompt or prompt
+
         if decision and decision.tool_name and decision.tool_name != "none":
             args = decision.get_tool_arguments()
+            tool = decision.tool_name
+
+            # Guard: Mutating tools require valid, non-empty domain parameters
+            if tool == "update_personal_info":
+                phone = args.get("phone_number")
+                if not phone or "[REDACTED" in str(phone):
+                    m = DLPRedactor.PHONE_PATTERN.search(raw_prompt)
+                    if m:
+                        args["phone_number"] = m.group(0).strip()
+                if args.get("phone_number") or args.get("home_address"):
+                    can_use_fast_path = True
+            elif tool == "request_time_off":
+                if args.get("start_date"):
+                    can_use_fast_path = True
+            elif tool == "cancel_leave_request":
+                if args.get("request_id"):
+                    can_use_fast_path = True
+            else:
+                # Read-only operations (get_employee_balances, get_leave_requests, get_employee_profile)
+                can_use_fast_path = True
+
+        if can_use_fast_path and decision:
             res = workweek_autonomous_specialist.execute_fast_path(
                 tool_name=decision.tool_name,
                 arguments=args,
@@ -190,8 +223,9 @@ class HREnterpriseAgent:
                 reference_date=today
             )
         else:
+            # Fallback to full specialist tool selection with raw prompt for unredacted parameters
             res = workweek_autonomous_specialist.plan_and_execute(
-                prompt=prompt,
+                prompt=raw_prompt,
                 caller_id=caller_id,
                 reference_date=today
             )
