@@ -5,7 +5,11 @@ on:
     branches:
       - main
     paths:
-      - 'HR-Agentic-Code/**'
+      - 'src/**'
+      - 'config/**'
+      - 'requirements.txt'
+      - 'Dockerfile'
+      - 'tests/**'
       - 'terraform/**'
       - '.github/workflows/deploy-cloud-run.yml'
   workflow_dispatch:
@@ -32,18 +36,18 @@ jobs:
         with:
           python-version: '3.13'
           cache: 'pip'
-          cache-dependency-path: 'HR-Agentic-Code/requirements.txt'
+          cache-dependency-path: 'requirements.txt'
 
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r HR-Agentic-Code/requirements.txt
+          pip install -r requirements.txt
 
       - name: Execute Pytest Test Suite
         env:
-          PYTHONPATH: HR-Agentic-Code
+          PYTHONPATH: .
         run: |
-          pytest HR-Agentic-Code/tests/ -v
+          pytest tests/ -v
 
   build-and-deploy:
     name: Build Container & Deploy to Cloud Run
@@ -75,7 +79,7 @@ jobs:
       - name: Build and Push Docker Image
         run: |
           IMAGE_TAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME }}"
-          docker build -t ${IMAGE_TAG}:${{ github.sha }} -t ${IMAGE_TAG}:latest HR-Agentic-Code/
+          docker build -t ${IMAGE_TAG}:${{ github.sha }} -t ${IMAGE_TAG}:latest .
           docker push ${IMAGE_TAG}:${{ github.sha }}
           docker push ${IMAGE_TAG}:latest
 
