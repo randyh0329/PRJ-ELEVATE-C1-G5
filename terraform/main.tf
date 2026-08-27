@@ -189,9 +189,10 @@ resource "google_cloud_run_v2_service" "hr_agentic_service" {
     }
 
     containers {
-      image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.artifact_repo_id}/${var.service_name}:latest"
+      image = var.container_image
 
       resources {
+
         limits = {
           cpu    = "1000m"
           memory = "1024Mi"

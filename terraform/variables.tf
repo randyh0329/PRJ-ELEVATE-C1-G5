@@ -40,3 +40,10 @@ variable "github_repository" {
   type        = string
   default     = "randyh0329/PRJ-ELEVATE-C1-G5"
 }
+
+variable "container_image" {
+  description = "Initial container image for Cloud Run bootstrap (defaults to Google Cloud Run hello sample until CI/CD builds the app image)."
+  type        = string
+  default     = "us-docker.pkg.dev/cloudrun/container/hello"
+}
+
