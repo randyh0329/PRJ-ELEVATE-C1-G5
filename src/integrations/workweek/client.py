@@ -1,6 +1,7 @@
 """WorkWeek HCM client adapter with security checks, operational guardrails, and FastMCP integration."""
 import datetime
 import logging
+import re
 
 from config.settings import get_settings
 from src.guardrails.operation_guardrails import OperationGuardrailEngine, guardrail_engine
@@ -15,6 +16,10 @@ from src.integrations.workweek.models import (
 from src.telemetry.audit_logger import AuditLogger, audit_logger
 
 logger = logging.getLogger("integrations.workweek")
+
+#: The reference WorkWeek returns for an accepted leave request, as it appears
+#: in the tool's prose response ("... created with ID: 4012").
+_LEAVE_ID_RE = re.compile(r"id:\s*(\S+)", re.IGNORECASE)
 
 
 class WorkWeekClient:
@@ -297,9 +302,15 @@ class WorkWeekClient:
                     days=days
                 )
                 text = mcp_res.get("content", [{}])[0].get("text", "")
+                # Matched case-insensitively because the tool has been seen to
+                # answer with both "id:" and "ID:". Splitting on the literal
+                # while testing with .lower() raised IndexError on the second
+                # form, and the except below reported an accepted request as a
+                # transport failure - which invites the employee to file twice.
                 req_id = "WW-LV-MCP"
-                if "id:" in text.lower():
-                    req_id = f"WW-LV-{text.split('id:')[1].split()[0]}"
+                id_match = _LEAVE_ID_RE.search(text)
+                if id_match:
+                    req_id = f"WW-LV-{id_match.group(1)}"
                 res = LeaveSubmissionResponse(
                     success=True,
                     request_id=req_id,
