@@ -34,7 +34,7 @@ class Settings(BaseSettings):
 
     # SaaS FastMCP Settings (WorkWeek & ServiceImmediately)
     SAAS_MCP_BASE_URL: str = "https://mock-saas.aishprabhat.demo.altostrat.com"
-    SAAS_MCP_CREDENTIAL: str = "mcp_HiIwlFkRL-DrjYgdQvO-fMHg8Q8A_YskI5J00qrP8SA"
+    SAAS_MCP_CREDENTIAL: str = "mcp_3DpwwQTaG6eV5SJpTA-QIV7aUqDblj-Qkn8bDkeiHWk"
     USE_LIVE_MCP: bool = True
 
     # Future Boilerplate Settings (Live SaaS / RAG / A2A)

@@ -248,10 +248,12 @@ class VertexGeminiClient:
         """Classify user intent and extract tool arguments using Gemini Supervisor Router."""
         ref = reference_date or business_today()
         ref_context = (
-            f"\n\nCRITICAL CONTEXT: Today's reference date is {ref.isoformat()} ({ref.strftime('%A')}). "
-            f"If the request is UC_1_2_WORKWEEK_LEAVE, identify the specific tool_name (e.g. get_employee_balances, "
-            f"get_leave_requests, request_time_off, cancel_leave_request, update_personal_info, get_employee_profile). "
-            f"For request_time_off, extract start_date (>= {ref.isoformat()}), end_date, days, leave_type ('Vacation' or 'Sick'), and reason."
+            f"\n\nCRITICAL CONTEXT: Today's reference date is {ref.isoformat()} ({ref.strftime('%A')}).\n"
+            f"If the request is UC_1_2_WORKWEEK_LEAVE, identify the specific tool_name:\n"
+            f"- request_time_off: MUST extract start_date (>= {ref.isoformat()}), end_date, days (float), leave_type ('Vacation' or 'Sick'), and reason.\n"
+            f"- update_personal_info: MUST extract phone_number and/or home_address.\n"
+            f"- cancel_leave_request: MUST extract request_id.\n"
+            f"- get_employee_balances, get_leave_requests, get_employee_profile: no extra arguments needed."
         )
         return self.generate_structured(
             prompt=f"[Reference Today: {ref.isoformat()}]\nUser request: {prompt}",

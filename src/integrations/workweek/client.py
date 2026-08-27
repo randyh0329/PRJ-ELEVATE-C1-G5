@@ -163,9 +163,16 @@ class WorkWeekClient:
         current_office: str | None = None,
         country: str | None = None
     ) -> ContactUpdateResponse:
-        """Update contact details after passing syntax and security guardrails."""
         if caller_employee_id != target_employee_id:
             raise PermissionError("Cross-employee profile modification is strictly prohibited.")
+
+        if not home_address and not phone_number and not current_office and not country:
+            return ContactUpdateResponse(
+                success=False,
+                employee_id=target_employee_id,
+                message="No contact or office update parameters were provided.",
+                updated_fields={}
+            )
 
         guard_res = self._guardrails.validate_contact_update(phone_number, home_address)
         if not guard_res.is_valid:
@@ -185,17 +192,41 @@ class WorkWeekClient:
         res = None
         if self._should_use_live_mcp(target_employee_id) and (home_address or phone_number):
             try:
-                self._mcp_client.update_personal_info(
+                cur_address = home_address
+                cur_phone = phone_number
+                if not cur_address or not cur_phone:
+                    try:
+                        cur_prof = self.get_employee_profile(caller_employee_id, target_employee_id)
+                        if cur_prof:
+                            if not cur_address:
+                                cur_address = cur_prof.home_address
+                            if not cur_phone:
+                                cur_phone = cur_phone or cur_prof.phone_number
+                    except Exception as e:
+                        logger.warning("Could not read current profile to merge contact info: %s", e)
+
+                raw_res = self._mcp_client.update_personal_info(
                     employee_id=target_employee_id,
-                    address=home_address or "",
-                    phone=phone_number or ""
+                    address=cur_address or "Corporate Office",
+                    phone=cur_phone or "+1-555-0100"
                 )
-                res = ContactUpdateResponse(
-                    success=True,
-                    employee_id=target_employee_id,
-                    message="Contact details updated successfully in WorkWeek FastMCP.",
-                    updated_fields={"home_address": home_address, "phone_number": phone_number}
-                )
+                text = ""
+                if isinstance(raw_res, dict) and "content" in raw_res:
+                    text = raw_res["content"][0].get("text", "")
+                if "Error:" in text:
+                    res = ContactUpdateResponse(
+                        success=False,
+                        employee_id=target_employee_id,
+                        message=text,
+                        updated_fields={}
+                    )
+                else:
+                    res = ContactUpdateResponse(
+                        success=True,
+                        employee_id=target_employee_id,
+                        message="Contact details updated successfully in WorkWeek FastMCP.",
+                        updated_fields={"home_address": cur_address, "phone_number": cur_phone}
+                    )
             except Exception as e:
                 logger.error("Live WorkWeek FastMCP contact update failed: %s", e)
                 raise RuntimeError(f"WorkWeek SaaS FastMCP communication error: {e}") from e

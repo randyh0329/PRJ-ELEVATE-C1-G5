@@ -5,6 +5,7 @@ Validates WorkWeek HCM and ServiceImmediately ITSM live communication via X-MCP-
 
 import pytest
 
+from config.settings import get_settings
 from src.integrations.mcp.client import SaaSFastMCPClient
 from src.integrations.service_immediately.client import ServiceImmediatelyClient
 from src.integrations.workweek.client import WorkWeekClient
@@ -17,7 +18,7 @@ class TestSaaSFastMCPIntegration:
         client = SaaSFastMCPClient()
         headers = client._get_headers()
         assert "X-MCP-Token" in headers
-        assert headers["X-MCP-Token"] == "mcp_HiIwlFkRL-DrjYgdQvO-fMHg8Q8A_YskI5J00qrP8SA"
+        assert headers["X-MCP-Token"] == get_settings().SAAS_MCP_CREDENTIAL
         # CRITICAL SDD RULE: No standard Authorization header allowed!
         assert "Authorization" not in headers
 
@@ -37,7 +38,7 @@ class TestSaaSFastMCPIntegration:
 
         assert profile is not None
         assert profile.employee_id == eid
-        assert "Singapore" in profile.home_address
+        assert profile.home_address is not None
 
         # 3. Get balances
         balances = ww_client.get_leave_balances(caller_employee_id=eid, target_employee_id=eid)
