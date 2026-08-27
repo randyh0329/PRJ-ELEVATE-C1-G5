@@ -174,11 +174,14 @@ class HREnterpriseAgent:
             text = (
                 f"WorkWeek Profile for {profile.full_name} ({profile.employee_id}):\n"
                 f"- Job Title: {profile.job_title}\n"
-                f"- Work Location: {profile.work_location_status} ({profile.current_office}, {profile.country})\n"
+                f"- Department / Office: {profile.current_office}\n"
+                f"- Work Location: {profile.work_location_status}\n"
                 f"- Registered Address: {profile.home_address}\n"
                 f"- Contact Phone: {profile.phone_number}\n"
-                f"- Email: {profile.email}"
+                f"- Email: {profile.email}\n"
+                f"- Manager ID: {profile.manager_id}"
             )
+
             return AgentResponse(
                 response_text=text,
                 intent="UC_1_2_WORKWEEK_LEAVE",
