@@ -13,7 +13,7 @@ from src.core.models.routing import SupervisorRoutingDecision, WorkWeekToolSelec
 class MockVertexGeminiClient:
     """Deterministic mock for Gemini 3.7 Flash in CI and offline unit testing (Approach B)."""
 
-    def route_intent(self, prompt: str) -> SupervisorRoutingDecision:
+    def route_intent(self, prompt: str, **kwargs) -> SupervisorRoutingDecision:
         p = prompt.lower()
 
         # UC-2.1: Equipment Procurement
@@ -180,7 +180,7 @@ class MockVertexGeminiClient:
 def mock_vertex_gemini(monkeypatch):
     """Automatically mock VertexGeminiClient in all pytest tests for deterministic CI execution."""
     mock_client = MockVertexGeminiClient()
-    monkeypatch.setattr(VertexGeminiClient, "route_intent", lambda self, prompt: mock_client.route_intent(prompt))
+    monkeypatch.setattr(VertexGeminiClient, "route_intent", lambda self, prompt, **kwargs: mock_client.route_intent(prompt, **kwargs))
     monkeypatch.setattr(VertexGeminiClient, "select_workweek_tool", lambda self, prompt, **kwargs: mock_client.select_workweek_tool(prompt, **kwargs))
 
 

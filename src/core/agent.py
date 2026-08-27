@@ -85,7 +85,7 @@ class HREnterpriseAgent:
             )
 
         # --- STAGE 2: INTENT CLASSIFICATION (Gemini 3.7 Flash Supervisor Router) ---
-        routing_decision = self._classify_intent(sanitized_prompt)
+        routing_decision = self._classify_intent(sanitized_prompt, today)
         intent = routing_decision.intent
 
         # Record user turn in session memory
@@ -101,7 +101,7 @@ class HREnterpriseAgent:
         elif intent == "UC_2_3_RELOCATION_ALLOWANCE_BADGE":
             response = self._handle_relocation(caller_employee_id, sanitized_prompt)
         elif intent == "UC_1_2_WORKWEEK_LEAVE":
-            response = self._handle_workweek_leave(caller_employee_id, sanitized_prompt, today)
+            response = self._handle_workweek_leave(caller_employee_id, sanitized_prompt, today, routing_decision)
         elif intent == "UC_1_3_SERVICE_IMMEDIATELY_INCIDENT":
             response = self._handle_service_incident(caller_employee_id, sanitized_prompt)
         elif intent == "UC_1_1_POLICY_QA":
@@ -120,12 +120,12 @@ class HREnterpriseAgent:
 
         return response
 
-    def _classify_intent(self, prompt: str) -> SupervisorRoutingDecision:
+    def _classify_intent(self, prompt: str, reference_date: Optional[datetime.date] = None) -> SupervisorRoutingDecision:
         """
         Classify user intent using Gemini 3.7 Flash Supervisor Router.
         Compliant with SDD §3.1, §3.2 (FR-1.1, FR-2.1).
         """
-        decision = self._router.route_intent(prompt)
+        decision = self._router.route_intent(prompt, reference_date=reference_date)
         self._logger.log_event(
             caller_employee_id="SUPERVISOR",
             action_type="SUPERVISOR_INTENT_ROUTING",
@@ -173,13 +173,28 @@ class HREnterpriseAgent:
             action_performed="POLICY_LOOKUP"
         )
 
-    def _handle_workweek_leave(self, caller_id: str, prompt: str, today: datetime.date) -> AgentResponse:
+    def _handle_workweek_leave(
+        self,
+        caller_id: str,
+        prompt: str,
+        today: datetime.date,
+        decision: Optional[SupervisorRoutingDecision] = None
+    ) -> AgentResponse:
         """UC-1.2: Autonomous WorkWeek HCM Tool-Calling Agent."""
-        res = workweek_autonomous_specialist.plan_and_execute(
-            prompt=prompt,
-            caller_id=caller_id,
-            reference_date=today
-        )
+        if decision and decision.tool_name and decision.tool_name != "none":
+            args = decision.get_tool_arguments()
+            res = workweek_autonomous_specialist.execute_fast_path(
+                tool_name=decision.tool_name,
+                arguments=args,
+                caller_id=caller_id,
+                reference_date=today
+            )
+        else:
+            res = workweek_autonomous_specialist.plan_and_execute(
+                prompt=prompt,
+                caller_id=caller_id,
+                reference_date=today
+            )
         return AgentResponse(
             response_text=res["response_text"],
             intent="UC_1_2_WORKWEEK_LEAVE",

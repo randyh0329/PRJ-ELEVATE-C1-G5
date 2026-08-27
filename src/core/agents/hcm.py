@@ -244,7 +244,7 @@ class WorkWeekAutonomousSpecialist:
         # Step 1: Gemini Function Calling for FastMCP Tool Selection & Argument Extraction
         selection = self._llm.select_workweek_tool(prompt, reference_date=ref_date)
         tool_name = selection.tool_name
-        args = selection.arguments or {}
+        args = selection.get_effective_arguments()
 
         if tool_name == "none":
             return {
@@ -255,8 +255,18 @@ class WorkWeekAutonomousSpecialist:
                 "transaction_reference": None
             }
 
-        # Step 2: Execute selected tool against live FastMCP client
-        tool_res = self.execute_tool(tool_name, args, caller_id, ref_date)
+        return self.execute_fast_path(tool_name, args, caller_id, ref_date)
+
+    def execute_fast_path(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        caller_id: str,
+        reference_date: Optional[datetime.date] = None
+    ) -> Dict[str, Any]:
+        """Directly executes WorkWeek tool without a redundant 2nd LLM round-trip."""
+        ref_date = reference_date or datetime.date.today()
+        tool_res = self.execute_tool(tool_name, arguments, caller_id, ref_date)
         if tool_res.get("status") == "ERROR":
             return {
                 "response_text": f"❌ WorkWeek FastMCP 서비스 연결 오류: {tool_res.get('message')}. 개인 FastMCP 토큰을 확인해 주세요.",
@@ -265,8 +275,15 @@ class WorkWeekAutonomousSpecialist:
                 "tool_result": tool_res,
                 "transaction_reference": None
             }
+        return self._format_tool_response(tool_name, arguments, tool_res)
 
-        # Step 3: Format domain response based on executed tool
+    def _format_tool_response(
+        self,
+        tool_name: str,
+        args: Dict[str, Any],
+        tool_res: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Format domain response based on executed tool."""
         if tool_name == "cancel_leave_request":
             req_id = args.get("request_id") or tool_res.get("request_id", "")
             if tool_res.get("status") == "SUCCESS":

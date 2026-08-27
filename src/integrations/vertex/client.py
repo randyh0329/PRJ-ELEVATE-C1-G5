@@ -77,10 +77,11 @@ class VertexGeminiClient:
         self.model_id = (
             model_id
             or os.environ.get("VERTEX_MODEL_ID")
-            or getattr(settings, "VERTEX_MODEL_ID", "gemini-2.5-flash")
+            or getattr(settings, "VERTEX_MODEL_ID", "gemini-3.7-flash")
         )
         self._cached_token: Optional[str] = None
         self._token_expiry: float = 0.0
+        self._http_client = httpx.Client(timeout=25.0)
 
     def _get_auth_token(self) -> str:
         """Obtain a valid Google Cloud OAuth2 access token."""
@@ -170,12 +171,26 @@ class VertexGeminiClient:
         Handles model 404 with automatic fallback.
         """
         token = self._get_auth_token()
-        models_to_try = [self.model_id]
-        if "gemini-2.5-flash" not in models_to_try:
-            models_to_try.append("gemini-2.5-flash")
+        candidates = []
+        if self.model_id == "gemini-3.7-flash":
+            candidates.append(("gemini-3.7-flash", "global"))
+            candidates.append(("gemini-2.5-flash", self.region or "us-central1"))
+        else:
+            candidates.append((self.model_id, self.region or "us-central1"))
+            candidates.append(("gemini-3.7-flash", "global"))
+            candidates.append(("gemini-2.5-flash", "us-central1"))
 
         schema = response_model.model_json_schema()
         clean_schema = self._clean_schema(schema)
+
+        generation_config = {
+            "temperature": temperature,
+            "responseMimeType": "application/json",
+            "responseSchema": clean_schema,
+        }
+        # Disable extended thinking budget for Gemini 3.7 Flash to achieve sub-second/Flash speeds for routing & tool calling
+        if "3.7" in self.model_id:
+            generation_config["thinkingConfig"] = {"thinkingBudget": 0}
 
         payload = {
             "contents": [
@@ -188,18 +203,15 @@ class VertexGeminiClient:
                 "role": "system",
                 "parts": [{"text": system_instruction}],
             },
-            "generationConfig": {
-                "temperature": temperature,
-                "responseMimeType": "application/json",
-                "responseSchema": clean_schema,
-            },
+            "generationConfig": generation_config,
         }
 
         last_err: Optional[Exception] = None
-        for model in models_to_try:
+        for model, loc in candidates:
+            endpoint = "aiplatform.googleapis.com" if loc == "global" else f"{loc}-aiplatform.googleapis.com"
             url = (
-                f"https://{self.region}-aiplatform.googleapis.com/v1/projects/{self.project_id}/"
-                f"locations/{self.region}/publishers/google/models/{model}:generateContent"
+                f"https://{endpoint}/v1/projects/{self.project_id}/"
+                f"locations/{loc}/publishers/google/models/{model}:generateContent"
             )
             headers = {
                 "Authorization": f"Bearer {token}",
@@ -207,30 +219,42 @@ class VertexGeminiClient:
             }
 
             try:
-                with httpx.Client(timeout=10.0) as client:
-                    resp = client.post(url, json=payload, headers=headers)
-                    if resp.status_code == 404 and model != models_to_try[-1]:
-                        logger.warning(f"Model '{model}' returned 404; falling back to next available model.")
-                        continue
-                    if resp.status_code != 200:
-                        raise RuntimeError(f"Vertex AI API call failed: {resp.status_code} {resp.text}")
+                resp = self._http_client.post(url, json=payload, headers=headers)
+                if resp.status_code in [404, 400] and (model, loc) != candidates[-1]:
+                    logger.warning(
+                        f"Model '{model}' at '{loc}' returned {resp.status_code}; falling back."
+                    )
+                    continue
+                if resp.status_code != 200:
+                    raise RuntimeError(f"Vertex AI API call failed: {resp.status_code} {resp.text}")
 
-                    data = resp.json()
-                    raw_json_text = data["candidates"][0]["content"]["parts"][0]["text"]
-                    parsed_dict = json.loads(raw_json_text)
-                    return response_model.model_validate(parsed_dict)
+                data = resp.json()
+                raw_json_text = data["candidates"][0]["content"]["parts"][0]["text"]
+                parsed_dict = json.loads(raw_json_text)
+                return response_model.model_validate(parsed_dict)
             except Exception as e:
                 last_err = e
-                if model != models_to_try[-1]:
+                if (model, loc) != candidates[-1]:
                     continue
 
         raise last_err or RuntimeError("Failed to generate structured response from Vertex AI.")
 
-    def route_intent(self, prompt: str) -> SupervisorRoutingDecision:
-        """Classify user intent using Gemini Supervisor Router."""
+    def route_intent(
+        self,
+        prompt: str,
+        reference_date: Optional[datetime.date] = None
+    ) -> SupervisorRoutingDecision:
+        """Classify user intent and extract tool arguments using Gemini Supervisor Router."""
+        ref = reference_date or datetime.date.today()
+        ref_context = (
+            f"\n\nCRITICAL CONTEXT: Today's reference date is {ref.isoformat()} ({ref.strftime('%A')}). "
+            f"If the request is UC_1_2_WORKWEEK_LEAVE, identify the specific tool_name (e.g. get_employee_balances, "
+            f"get_leave_requests, request_time_off, cancel_leave_request, update_personal_info, get_employee_profile). "
+            f"For request_time_off, extract start_date (>= {ref.isoformat()}), end_date, days, leave_type ('Vacation' or 'Sick'), and reason."
+        )
         return self.generate_structured(
-            prompt=prompt,
-            system_instruction=self.SUPERVISOR_SYSTEM_INSTRUCTION,
+            prompt=f"[Reference Today: {ref.isoformat()}]\nUser request: {prompt}",
+            system_instruction=self.SUPERVISOR_SYSTEM_INSTRUCTION + ref_context,
             response_model=SupervisorRoutingDecision,
             temperature=0.0,
         )
