@@ -384,7 +384,8 @@ def serve_web_chat_ui():
       
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
-      bubble.innerHTML = text.replace(/\n/g, '<br>');
+      bubble.textContent = text;
+
 
       if (citations && citations.length > 0) {
         const citeDiv = document.createElement('div');
