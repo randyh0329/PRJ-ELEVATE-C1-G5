@@ -12,8 +12,7 @@ from src.integrations.workweek.client import WorkWeekClient, workweek_client
 from src.core.agents.hcm import workweek_autonomous_specialist
 from src.integrations.service_immediately.client import ServiceImmediatelyClient, service_immediately_client
 from src.telemetry.audit_logger import AuditLogger, audit_logger
-from src.integrations.vertex.client import VertexGeminiClient, vertex_gemini_client
-from src.core.models.routing import SupervisorRoutingDecision
+from src.models.routing import SupervisorRoutingDecision
 
 
 class AgentResponse(BaseModel):
@@ -40,7 +39,7 @@ class HREnterpriseAgent:
         saga: Optional[SagaCoordinator] = None,
         sessions: Optional[SessionMemory] = None,
         logger: Optional[AuditLogger] = None,
-        router: Optional[VertexGeminiClient] = None
+        router: Optional[Any] = None
     ) -> None:
         self._dlp = dlp or dlp_redactor
         self._armor = armor or model_armor
@@ -50,7 +49,10 @@ class HREnterpriseAgent:
         self._saga = saga or saga_coordinator
         self._sessions = sessions or session_store
         self._logger = logger or audit_logger
-        self._router = router or vertex_gemini_client
+        if router is None:
+            from src.integrations.vertex.client import vertex_gemini_client
+            router = vertex_gemini_client
+        self._router = router
 
     def process_message(
         self,

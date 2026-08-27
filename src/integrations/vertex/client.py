@@ -1,12 +1,13 @@
 """
-Vertex AI Gemini 3.7 Flash Client.
+Vertex AI Gemini Client.
 Compliant with Enterprise Agentic Solution Design Document (MVP 1) §2.2, §3.1 & §3.2.
-Provides structured output generation and tool call selection using Gemini 3.7 Flash.
+Provides structured output generation and tool call selection using Gemini on Vertex AI.
 """
 
 import json
 import logging
 import os
+import shutil
 import subprocess
 import time
 from typing import Any, Dict, Optional, Type, TypeVar
@@ -14,7 +15,7 @@ import httpx
 from pydantic import BaseModel
 
 from config.settings import get_settings
-from src.core.models.routing import SupervisorRoutingDecision, WorkWeekToolSelection
+from src.models.routing import SupervisorRoutingDecision, WorkWeekToolSelection
 
 logger = logging.getLogger("integrations.vertex")
 
@@ -72,7 +73,11 @@ class VertexGeminiClient:
         settings = get_settings()
         self.project_id = project_id or getattr(settings, "PROJECT_ID", "pe-group5")
         self.region = region or getattr(settings, "REGION", "us-central1")
-        self.model_id = model_id or "gemini-3.7-flash"
+        self.model_id = (
+            model_id
+            or os.environ.get("VERTEX_MODEL_ID")
+            or getattr(settings, "VERTEX_MODEL_ID", "gemini-2.5-flash")
+        )
         self._cached_token: Optional[str] = None
         self._token_expiry: float = 0.0
 
@@ -82,7 +87,7 @@ class VertexGeminiClient:
         if self._cached_token and now < self._token_expiry:
             return self._cached_token
 
-        # Priority 1: Environment override
+        # Priority 1: Explicit environment override
         env_token = os.environ.get("VERTEX_AI_TOKEN") or os.environ.get("GCP_ACCESS_TOKEN")
         if env_token:
             self._cached_token = env_token
@@ -91,38 +96,61 @@ class VertexGeminiClient:
 
         # Priority 2: Cloud Run / GCE Metadata Server
         try:
-            with httpx.Client(timeout=1.5) as client:
+            with httpx.Client(timeout=1.0) as client:
                 res = client.get(
                     "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
                     headers={"Metadata-Flavor": "Google"},
                 )
                 if res.status_code == 200:
                     data = res.json()
-                    self._cached_token = data.get("access_token")
-                    expires_in = data.get("expires_in", 3600)
-                    self._token_expiry = now + expires_in - 60
-                    logger.debug("Successfully retrieved access token from Cloud Run metadata server.")
-                    return self._cached_token
+                    token = data.get("access_token")
+                    if token:
+                        self._cached_token = token
+                        expires_in = data.get("expires_in", 3600)
+                        self._token_expiry = now + expires_in - 60
+                        logger.debug("Retrieved access token from Cloud Run metadata server.")
+                        return token
         except Exception:
             pass
 
-        # Priority 3: Local gcloud CLI
-        try:
-            proc = subprocess.run(
-                ["gcloud", "auth", "print-access-token"],
-                capture_output=True,
-                text=True,
-                timeout=4.0,
-                check=False,
-            )
-            if proc.returncode == 0:
-                token = proc.stdout.strip()
-                if token:
-                    self._cached_token = token
-                    self._token_expiry = now + 3300
-                    return token
-        except Exception:
-            pass
+        # Priority 3: Local gcloud CLI (Application Default Credentials or auth print-access-token)
+        candidate_paths = [
+            shutil.which("gcloud"),
+            os.path.expanduser("~/google-cloud-sdk/bin/gcloud"),
+            "/usr/local/google/home/romij/google-cloud-sdk/bin/gcloud",
+            "/usr/bin/gcloud",
+        ]
+        gcloud_bin = next((p for p in candidate_paths if p and os.path.isfile(p) and os.access(p, os.X_OK)), None)
+
+        if gcloud_bin:
+            for subcmd in [
+                ["auth", "application-default", "print-access-token"],
+                ["auth", "print-access-token"],
+            ]:
+                try:
+                    proc = subprocess.run(
+                        [gcloud_bin] + subcmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=5.0,
+                        check=False,
+                    )
+                    if proc.returncode == 0:
+                        raw_output = proc.stdout.strip()
+                        # Extract the actual token line, skipping any gcloud WARNING lines
+                        lines = [
+                            line.strip()
+                            for line in raw_output.splitlines()
+                            if line.strip() and not line.startswith("WARNING") and not line.startswith("If you need")
+                        ]
+                        if lines:
+                            token = lines[-1]
+                            self._cached_token = token
+                            self._token_expiry = now + 3300
+                            logger.debug(f"Retrieved token using {gcloud_bin} {' '.join(subcmd)}")
+                            return token
+                except Exception as e:
+                    logger.debug(f"gcloud subcmd {subcmd} failed: {e}")
 
         raise PermissionError(
             "Could not authenticate to Vertex AI. Ensure Google ADC, Cloud Run Metadata Server, "
@@ -137,21 +165,15 @@ class VertexGeminiClient:
         temperature: float = 0.0,
     ) -> T:
         """
-        Invokes Vertex AI Gemini 3.7 Flash with a strict Pydantic response schema.
+        Invokes Vertex AI Gemini with a strict Pydantic response schema.
+        Handles model 404 with automatic fallback.
         """
         token = self._get_auth_token()
-        url = (
-            f"https://{self.region}-aiplatform.googleapis.com/v1/projects/{self.project_id}/"
-            f"locations/{self.region}/publishers/google/models/{self.model_id}:generateContent"
-        )
-
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
+        models_to_try = [self.model_id]
+        if "gemini-2.5-flash" not in models_to_try:
+            models_to_try.append("gemini-2.5-flash")
 
         schema = response_model.model_json_schema()
-        # Clean $defs / titles for Gemini OpenAPI schema compatibility
         clean_schema = self._clean_schema(schema)
 
         payload = {
@@ -172,23 +194,39 @@ class VertexGeminiClient:
             },
         }
 
-        with httpx.Client(timeout=10.0) as client:
-            resp = client.post(url, json=payload, headers=headers)
-            if resp.status_code != 200:
-                logger.error(f"Vertex AI request failed ({resp.status_code}): {resp.text}")
-                raise RuntimeError(f"Vertex AI API call failed: {resp.status_code} {resp.text}")
+        last_err: Optional[Exception] = None
+        for model in models_to_try:
+            url = (
+                f"https://{self.region}-aiplatform.googleapis.com/v1/projects/{self.project_id}/"
+                f"locations/{self.region}/publishers/google/models/{model}:generateContent"
+            )
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            }
 
-            data = resp.json()
             try:
-                raw_json_text = data["candidates"][0]["content"]["parts"][0]["text"]
-                parsed_dict = json.loads(raw_json_text)
-                return response_model.model_validate(parsed_dict)
-            except (KeyError, IndexError, json.JSONDecodeError) as e:
-                logger.error(f"Failed to parse Gemini structured output: {data}. Error: {e}")
-                raise ValueError(f"Invalid structured output from Gemini: {e}")
+                with httpx.Client(timeout=10.0) as client:
+                    resp = client.post(url, json=payload, headers=headers)
+                    if resp.status_code == 404 and model != models_to_try[-1]:
+                        logger.warning(f"Model '{model}' returned 404; falling back to next available model.")
+                        continue
+                    if resp.status_code != 200:
+                        raise RuntimeError(f"Vertex AI API call failed: {resp.status_code} {resp.text}")
+
+                    data = resp.json()
+                    raw_json_text = data["candidates"][0]["content"]["parts"][0]["text"]
+                    parsed_dict = json.loads(raw_json_text)
+                    return response_model.model_validate(parsed_dict)
+            except Exception as e:
+                last_err = e
+                if model != models_to_try[-1]:
+                    continue
+
+        raise last_err or RuntimeError("Failed to generate structured response from Vertex AI.")
 
     def route_intent(self, prompt: str) -> SupervisorRoutingDecision:
-        """Classify user intent using Gemini 3.7 Flash Supervisor Router."""
+        """Classify user intent using Gemini Supervisor Router."""
         return self.generate_structured(
             prompt=prompt,
             system_instruction=self.SUPERVISOR_SYSTEM_INSTRUCTION,
@@ -197,7 +235,7 @@ class VertexGeminiClient:
         )
 
     def select_workweek_tool(self, prompt: str) -> WorkWeekToolSelection:
-        """Select WorkWeek FastMCP tool and extract arguments using Gemini 3.7 Flash."""
+        """Select WorkWeek FastMCP tool and extract arguments using Gemini."""
         return self.generate_structured(
             prompt=prompt,
             system_instruction=self.WORKWEEK_TOOL_SYSTEM_INSTRUCTION,
@@ -208,7 +246,6 @@ class VertexGeminiClient:
     def _clean_schema(self, schema: Dict[str, Any]) -> Dict[str, Any]:
         """Sanitize Pydantic JSON schema for Vertex AI Gemini OpenAPI compatibility."""
         sanitized = dict(schema)
-        # Remove unsupported top-level OpenAPI keys if present
         for key in ["$defs", "title", "description"]:
             sanitized.pop(key, None)
         return sanitized

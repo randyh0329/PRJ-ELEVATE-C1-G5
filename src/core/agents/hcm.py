@@ -16,8 +16,7 @@ from typing import Any, Dict, List, Optional
 from src.security.token_minter import CompositeTokenMinter
 from src.core.state import AgentState
 from src.integrations.workweek.client import WorkWeekClient, workweek_client
-from src.integrations.vertex.client import VertexGeminiClient, vertex_gemini_client
-from src.core.models.routing import WorkWeekToolSelection
+from src.models.routing import WorkWeekToolSelection
 
 logger = logging.getLogger("agents.hcm")
 
@@ -95,10 +94,13 @@ class WorkWeekAutonomousSpecialist:
     def __init__(
         self,
         client: Optional[WorkWeekClient] = None,
-        llm_client: Optional[VertexGeminiClient] = None
+        llm_client: Optional[Any] = None
     ):
         self.client = client or workweek_client
-        self._llm = llm_client or vertex_gemini_client
+        if llm_client is None:
+            from src.integrations.vertex.client import vertex_gemini_client
+            llm_client = vertex_gemini_client
+        self._llm = llm_client
 
     def execute_tool(
         self,

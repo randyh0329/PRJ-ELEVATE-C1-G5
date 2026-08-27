@@ -10,7 +10,6 @@ import logging
 from typing import Any, Dict, Literal, Optional
 
 from src.core.state import AgentState
-from src.integrations.vertex.client import VertexGeminiClient, vertex_gemini_client
 
 logger = logging.getLogger("agents.supervisor")
 
@@ -29,8 +28,11 @@ class SupervisorAgentNode:
         "human", "representative", "agent please", "speak to someone", "operator"
     ]
 
-    def __init__(self, router: Optional[VertexGeminiClient] = None) -> None:
-        self._router = router or vertex_gemini_client
+    def __init__(self, router: Optional[Any] = None) -> None:
+        if router is None:
+            from src.integrations.vertex.client import vertex_gemini_client
+            router = vertex_gemini_client
+        self._router = router
 
     async def execute(self, state: AgentState) -> AgentState:
         """
