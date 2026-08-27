@@ -133,7 +133,7 @@ def _print_summary(stats: dict, gate: float) -> None:
     print(f"  refusal accuracy   {stats['refusal_accuracy']:.2%}")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--golden", type=Path, default=DEFAULT_GOLDEN)
     parser.add_argument("--config", type=Path, default=None)
@@ -147,7 +147,7 @@ def main() -> int:
         default=None,
         help="exit non-zero below this overall pass rate (for CI)",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     config = load_config(args.config)
     service = PolicyRagService.from_config(config)

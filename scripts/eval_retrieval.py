@@ -118,9 +118,19 @@ def score(service: PolicyRagService, questions: list[dict], candidate: Candidate
     return summarise(run(service, questions, SDD_RELEVANCE_GATE))
 
 
-def admissible(stats: dict) -> bool:
-    """A calibration that starts answering unanswerable questions is not a fix."""
-    return stats["refusal_accuracy"] == 1.0 and stats["escalate_accuracy"] == 1.0
+def admissible(stats: dict, *, has_refusals: bool = True, has_escalations: bool = True) -> bool:
+    """A calibration that starts answering unanswerable questions is not a fix.
+
+    `summarise` reports an accuracy of 0.0 for a category with no questions in
+    it, which is the right default for a report and the wrong one here: "no
+    refusal questions were asked" is not "every refusal was wrong". Without the
+    distinction, a golden subset containing only answerable questions makes
+    every candidate inadmissible, and the sweep then blames the corpus for what
+    is really a gap in the question set.
+    """
+    return (not has_refusals or stats["refusal_accuracy"] == 1.0) and (
+        not has_escalations or stats["escalate_accuracy"] == 1.0
+    )
 
 
 def rank_key(row: dict) -> tuple:
@@ -206,7 +216,16 @@ def main(argv: list[str] | None = None) -> int:
         stats = score(service, questions, candidate)
         rows.append({"candidate": candidate, **stats})
 
-    viable = [r for r in rows if admissible(r)]
+    expects = {q["expect"] for q in questions}
+    has_refusals = "refuse" in expects
+    has_escalations = "escalate" in expects
+    if not (has_refusals or has_escalations):
+        print(
+            "warning: this question set contains nothing that must be withheld, so "
+            "every candidate is admissible and the sweep is unconstrained.\n"
+        )
+
+    viable = [r for r in rows if admissible(r, has_refusals=has_refusals, has_escalations=has_escalations)]
     header = (
         f"{'floor':>6}{'ceil':>7}{'boost':>7}{'link<':>7}{'minlex':>8}  "
         f"{'pass':>7}  {'answer':>7}  {'MRR':>6}"

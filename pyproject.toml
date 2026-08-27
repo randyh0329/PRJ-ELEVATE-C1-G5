@@ -27,6 +27,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Everything needed to run the suite the way CI runs it.
+dev = ["pytest-cov>=5.0", "ruff>=0.6"]
 # Default embedding provider (`embedding.provider: local` in config/corpus.yaml).
 # Not needed when running with POLICY_RAG_EMBEDDING_PROVIDER=hash.
 local-embeddings = ["sentence-transformers>=3.0"]
@@ -95,3 +97,24 @@ testpaths = ["tests"]
 pythonpath = ["."]
 # The A2A surface tests are bare `async def test_*` with no explicit marker.
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["src", "app", "config", "eval", "scripts", "a2a_app"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = [
+    # Script entry guards: the body is one call, and reaching it means running
+    # the module as a subprocess, which measures the shell rather than the code.
+    'if __name__ == "__main__":',
+    # Typing-only imports never execute.
+    "if TYPE_CHECKING:",
+    # A raised NotImplementedError in an ABC is the contract, not a branch.
+    "raise NotImplementedError$",
+    "@(abc\\.)?abstractmethod",
+    # Unreachable-by-construction guards. These assert an invariant the type
+    # system cannot; a test that covers one is a test of the impossible.
+    "raise AssertionError",
+]
