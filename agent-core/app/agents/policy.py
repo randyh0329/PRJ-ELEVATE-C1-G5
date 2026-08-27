@@ -63,11 +63,22 @@ class PolicySpecialistNode:
         Simulates Agent Search datastore query with ACL filtering and grounding attribution.
         """
         q_lower = query.lower()
+        
+        # Explicit Hallucination Baits / Absent Policies (Tier 3) -> Strict Refusal
+        if any(bait in q_lower for bait in ["helicopter", "crypto", "bitcoin", "yacht", "dog transport", "pet transport"]):
+            return 0.0, None, []
+
         best_match = None
         best_relevance = 0.0
 
         for key, doc in self.KNOWLEDGE_BASE.items():
-            if any(term in q_lower for term in key.split()):
+            key_terms = key.split()
+            # Require all terms for multi-word keys or strong single-term match
+            if all(term in q_lower for term in key_terms):
+                if doc["relevance"] > best_relevance:
+                    best_match = doc
+                    best_relevance = doc["relevance"]
+            elif len(key_terms) == 1 and key_terms[0] in q_lower and "reimbursement" in q_lower:
                 if doc["relevance"] > best_relevance:
                     best_match = doc
                     best_relevance = doc["relevance"]

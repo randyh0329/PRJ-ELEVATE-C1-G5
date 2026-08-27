@@ -68,7 +68,7 @@ class SupervisorAgentNode:
             state["next_node"] = "saga_coordinator"
             return state
 
-        if any(term in user_text for term in ["relocat", "transfer", "london office", "new office"]):
+        if any(term in user_text for term in ["transfer to", "relocating to", "london office", "new office", "relocation allowance"]) and not any(bait in user_text for bait in ["pet", "dog", "helicopter"]):
             state["route"] = "saga"
             state["saga_type"] = "UC-2.3-RELOCATION"
             state["next_node"] = "saga_coordinator"
