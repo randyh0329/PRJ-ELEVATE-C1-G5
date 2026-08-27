@@ -604,19 +604,30 @@ def handle_chat(
         current_mcp_token.set(token_to_set)
 
 
-    response = hr_enterprise_agent.process_message(
-        user_prompt=payload.message,
-        caller_employee_id=caller_id,
-        session_id=payload.session_id
-    )
-    return ChatResponse(
-        response=response.response_text,
-        intent=response.intent,
-        citations=response.citations,
-        action_performed=response.action_performed,
-        transaction_reference=response.transaction_reference,
-        processing_metadata=response.processing_metadata
-    )
+    try:
+        response = hr_enterprise_agent.process_message(
+            user_prompt=payload.message,
+            caller_employee_id=caller_id,
+            session_id=payload.session_id
+        )
+        return ChatResponse(
+            response=response.response_text,
+            intent=response.intent,
+            citations=response.citations,
+            action_performed=response.action_performed,
+            transaction_reference=response.transaction_reference,
+            processing_metadata=response.processing_metadata
+        )
+    except Exception as e:
+        logger.error(f"Error processing chat message: {e}", exc_info=True)
+        return ChatResponse(
+            response=f"⚠️ Error processing request: {str(e)}",
+            intent="SYSTEM_ERROR",
+            citations=[],
+            action_performed="ERROR",
+            transaction_reference=None,
+            processing_metadata={"error": str(e)}
+        )
 
 
 
