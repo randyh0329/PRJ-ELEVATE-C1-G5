@@ -1,0 +1,70 @@
+apiVersion: elevate.hr/v1
+kind: MockFidelityProfile
+metadata:
+  name: workweek-and-itsm-mocks
+  profile: integration-test        # one of: unit | integration-test | load-test | chaos
+spec:
+  latency:
+    distribution: lognormal
+    percentiles_ms:
+      p50: 180
+      p95: 900
+      p99: 2500
+    jitter_ms: 40
+    per_operation_overrides:
+      submitLeaveRequest:
+        p50: 320
+        p95: 1400
+        p99: 3200
+      getEmployeeProfile:
+        p50: 90
+        p95: 400
+        p99: 1100
+      createIncident:
+        p50: 250
+        p95: 1100
+        p99: 2800
+  faults:
+    injection:
+      http_429: 0.02
+      http_500: 0.01
+      http_503: 0.01
+      timeout: 0.005
+      slow_loris: 0.002
+    deterministic_triggers:
+      - when_header:
+          X-Test-Fault: "429"
+        respond:
+          status: 429
+          headers:
+            Retry-After: "30"
+      - when_header:
+          X-Test-Fault: "503-permanent"
+        respond:
+          status: 503
+          repeat: always
+      - when_header:
+          X-Test-Fault: "500"
+        respond:
+          status: 500
+          repeat: once
+  rate_limit:
+    algorithm: token_bucket
+    sustained_rps: 50
+    burst: 100
+    on_exceed:
+      status: 429
+      header_retry_after_seconds: 30
+  idempotency:
+    header: X-Idempotency-Key
+    retention_minutes: 60
+    on_replay:
+      status: 409
+      body_ref: "#/components/schemas/IdempotencyConflict"
+  state:
+    persistence: firestore-emulator
+    seed_dataset: fixtures/workweek-seed-v3.json
+    enforce_business_rules: true
+  observability:
+    emit_request_log: true
+    echo_trace_header: X-Cloud-Trace-Context

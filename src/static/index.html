@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Elevate HR & IT Enterprise Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #1a73e8;
+      --primary-hover: #1557b0;
+      --bg: #f8f9fa;
+      --card-bg: #ffffff;
+      --text: #202124;
+      --text-secondary: #5f6368;
+      --border: #dadce0;
+      --assistant-bubble: #f1f3f4;
+      --user-bubble: #e8f0fe;
+      --user-text: #174ea6;
+      --accent-green: #137333;
+      --accent-red: #d93025;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Google Sans', 'Roboto', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Header */
+    header {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 1px 2px rgba(60,64,67,0.05);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-logo {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, #1a73e8, #4285f4);
+      color: white;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 18px;
+    }
+
+    .brand-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .brand-subtitle {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .user-profile {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #e8f0fe;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--primary);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: #34a853;
+      border-radius: 50%;
+    }
+
+    /* Main Container */
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      max-width: 960px;
+      width: 100%;
+      margin: 0 auto;
+      height: calc(100vh - 65px);
+      padding: 16px 20px 20px 20px;
+    }
+
+    /* Action Chips */
+    .chips-bar {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 4px 0 12px 0;
+      scrollbar-width: none;
+    }
+    .chips-bar::-webkit-scrollbar { display: none; }
+
+    .chip {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      padding: 6px 14px;
+      border-radius: 16px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .chip:hover {
+      background: #e8f0fe;
+      color: var(--primary);
+      border-color: #aecbfa;
+    }
+
+    /* Chat Messages Window */
+    .chat-container {
+      flex: 1;
+      overflow-y: auto;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .message-row {
+      display: flex;
+      flex-direction: column;
+      max-width: 82%;
+    }
+
+    .message-row.user {
+      align-self: flex-end;
+      align-items: flex-end;
+    }
+
+    .message-row.assistant {
+      align-self: flex-start;
+      align-items: flex-start;
+    }
+
+    .message-bubble {
+      padding: 12px 16px;
+      border-radius: 16px;
+      font-size: 14px;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+
+    .user .message-bubble {
+      background: var(--user-bubble);
+      color: var(--user-text);
+      border-bottom-right-radius: 4px;
+    }
+
+    .assistant .message-bubble {
+      background: var(--assistant-bubble);
+      color: var(--text);
+      border-bottom-left-radius: 4px;
+    }
+
+    .message-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 4px;
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .citations-container {
+      margin-top: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .citation-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #e6f4ea;
+      color: #137333;
+      border: 1px solid #ceead6;
+      border-radius: 12px;
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 500;
+      text-decoration: none;
+    }
+
+    .contest-btn {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 11px;
+      text-decoration: underline;
+    }
+    .contest-btn:hover { color: var(--primary); }
+
+    /* Input Bar */
+    .input-bar {
+      margin-top: 14px;
+      display: flex;
+      gap: 10px;
+    }
+
+    .input-bar input {
+      flex: 1;
+      padding: 14px 18px;
+      font-size: 14px;
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      outline: none;
+      background: var(--card-bg);
+      box-shadow: 0 1px 3px rgba(60,64,67,0.08);
+      font-family: inherit;
+    }
+    .input-bar input:focus { border-color: var(--primary); }
+
+    .input-bar button {
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 24px;
+      padding: 0 24px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+    .input-bar button:hover { background: var(--primary-hover); }
+
+    /* Privacy Modal */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(32,33,36,0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .modal-card {
+      background: var(--card-bg);
+      border-radius: 16px;
+      max-width: 540px;
+      width: 90%;
+      padding: 24px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    }
+
+    .modal-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    .modal-body {
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text-secondary);
+      margin-bottom: 20px;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .btn-secondary {
+      background: #f1f3f4;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <div class="brand-logo">E</div>
+      <div>
+        <div class="brand-title">Elevate HR Assistant</div>
+        <div class="brand-subtitle">Automated People Operations & IT Self-Service</div>
+      </div>
+    </div>
+    <div class="user-profile">
+      <div class="status-dot"></div>
+      <span id="userBadge">Alex Morgan (EMP-44210)</span>
+    </div>
+  </header>
+
+  <main>
+    <div class="chips-bar">
+      <div class="chip" onclick="sendPrompt('What is my remaining vacation balance?')">🏖️ Check Vacation Balance</div>
+      <div class="chip" onclick="sendPrompt('How many days of bereavement leave do I get for immediate family?')">📜 Bereavement Policy</div>
+      <div class="chip" onclick="sendPrompt('Can I order an external monitor for remote work?')">🖥️ Order Monitor (UC-2.1)</div>
+      <div class="chip" onclick="sendPrompt('I need to file medical leave for surgery next week')">🏥 Medical Leave (UC-2.2)</div>
+      <div class="chip" onclick="sendPrompt('I am relocating to the London office, my new address is 221B Baker St')">🇬🇧 London Relocation (UC-2.3)</div>
+      <div class="chip" onclick="sendPrompt('privacy')">🔒 Privacy Notice</div>
+      <div class="chip" onclick="sendPrompt('human')">🙋 Speak to Human</div>
+    </div>
+
+    <div class="chat-container" id="chatContainer">
+      <div class="message-row assistant">
+        <div class="message-bubble">
+          Hello Alex! I am your enterprise HR & IT assistant. You can check vacation balances, review enterprise policies, submit leaves, and open IT service tickets. How can I help you today?
+        </div>
+        <div class="message-meta">
+          <span>AI Assistant • Just now</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-bar">
+      <input type="text" id="userInput" placeholder="Ask about policies, submit leaves, or open support tickets..." onkeydown="if(event.key==='Enter') sendMessage()" />
+      <button onclick="sendMessage()">Send</button>
+    </div>
+  </main>
+
+  <!-- First-Session Privacy Modal (SDD §4.12) -->
+  <div class="modal-overlay" id="privacyModal">
+    <div class="modal-card">
+      <div class="modal-title">Enterprise Virtual Assistant Privacy Notice</div>
+      <div class="modal-body">
+        <p>Welcome to the Elevate Virtual Assistant. In compliance with GDPR Articles 12–14 and Enterprise Data Protection standards:</p>
+        <br>
+        <ul style="padding-left: 18px;">
+          <li>Conversations are recorded in secure encrypted storage for <strong>30 days</strong> for session continuity.</li>
+          <li>Pseudonymised audit logs are retained for <strong>365 days</strong> for regulatory compliance.</li>
+          <li>All personally identifiable information (SSN, phone, address) is automatically de-identified before model processing.</li>
+          <li>You can type <code>what do you know about me</code> to inspect records, <code>forget me</code> to purge history, or <code>human</code> to transfer to a human specialist.</li>
+        </ul>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-primary" onclick="closePrivacyModal()">I Understand & Agree</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const sessionId = "sess-" + Math.random().toString(36).substring(2, 10);
+    const chatContainer = document.getElementById("chatContainer");
+    const userInput = document.getElementById("userInput");
+
+    function closePrivacyModal() {
+      document.getElementById("privacyModal").style.display = "none";
+    }
+
+    function sendPrompt(text) {
+      userInput.value = text;
+      sendMessage();
+    }
+
+    async function sendMessage() {
+      const text = userInput.value.trim();
+      if (!text) return;
+      userInput.value = "";
+
+      // Add user bubble
+      appendMessage("user", text);
+
+      // Call Chat Ingress API
+      try {
+        const res = await fetch("/api/v1/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer EMP-44210"
+          },
+          body: JSON.stringify({
+            message: text,
+            sessionId: sessionId,
+            stream: false
+          })
+        });
+        const data = await res.json();
+        appendMessage("assistant", data.content, data.citations, data.escalated);
+      } catch (err) {
+        appendMessage("assistant", "⚠️ Unable to reach assistant gateway: " + err.message);
+      }
+    }
+
+    function appendMessage(sender, content, citations = [], escalated = false) {
+      const row = document.createElement("div");
+      row.className = "message-row " + sender;
+
+      const bubble = document.createElement("div");
+      bubble.className = "message-bubble";
+      bubble.innerHTML = formatMarkdown(content);
+
+      row.appendChild(bubble);
+
+      // Render Citations
+      if (citations && citations.length > 0) {
+        const citeDiv = document.createElement("div");
+        citeDiv.className = "citations-container";
+        citations.forEach(c => {
+          const badge = document.createElement("a");
+          badge.className = "citation-badge";
+          badge.href = "#";
+          badge.innerHTML = "📄 " + (c.section || c.documentTitle);
+          badge.title = c.documentTitle + " (" + c.uri + ")";
+          citeDiv.appendChild(badge);
+        });
+        row.appendChild(citeDiv);
+      }
+
+      // Meta & Contest Button
+      const meta = document.createElement("div");
+      meta.className = "message-meta";
+      meta.innerHTML = `<span>${sender === "user" ? "Alex Morgan" : "AI Assistant"} • ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>`;
+      
+      if (sender === "assistant") {
+        const contestBtn = document.createElement("button");
+        contestBtn.className = "contest-btn";
+        contestBtn.innerText = "Contest Decision";
+        contestBtn.onclick = () => appealDecision(content);
+        meta.appendChild(contestBtn);
+      }
+
+      row.appendChild(meta);
+      chatContainer.appendChild(row);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    function formatMarkdown(text) {
+      if (!text) return "";
+      let html = text
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\n/g, '<br>');
+      return html;
+    }
+
+    async function appealDecision(contentSnippet) {
+      const reason = prompt("Please provide the reason for contesting this automated response / decision:", "I believe my leave / request was evaluated incorrectly.");
+      if (!reason) return;
+
+      try {
+        const res = await fetch("/api/v1/contest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": "Bearer EMP-44210" },
+          body: JSON.stringify({
+            sessionId: sessionId,
+            employeeId: "EMP-44210",
+            reason: reason
+          })
+        });
+        const data = await res.json();
+        alert(`Appeal Logged Successfully!\nAppeal ID: ${data.appealId}\nSLA: < 4 business hours.\nHR Employee Relations will review your file.`);
+      } catch (err) {
+        alert("Failed to submit appeal: " + err.message);
+      }
+    }
+  </script>
+</body>
+</html>

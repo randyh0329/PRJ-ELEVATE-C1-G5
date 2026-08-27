@@ -1,0 +1,88 @@
+apiVersion: elevate.hr/v1
+kind: AgentAndToolRegistry
+metadata:
+  name: hr-agent-registry
+  version: 1.4.0
+  last_reviewed_at: "2026-08-26T00:00:00Z"
+  owner: Platform Team
+
+agents:
+  - id: supervisor_router
+    name: Supervisor / Router
+    owner: Platform Team
+    version: sup-1.4.0
+    model: gemini-3.7-flash@pinned
+    prompt_file: prompts/supervisor.txt
+    prompt_file_sha256: 8f3d8a7c2e1b4f5a6d9e0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f
+    authorized_tools: []
+    prohibited_tools:
+      - ww.*
+      - si.*
+      - agent_search.*
+    description: Ingress intent classifier and router that delegates strictly to specialist agents. Never executes external tools directly.
+
+  - id: policy_specialist
+    name: Policy Specialist
+    owner: HR Knowledge Team
+    version: pol-1.4.0
+    model: gemini-3.7-flash@pinned
+    prompt_file: prompts/policy_specialist.txt
+    prompt_file_sha256: a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0
+    authorized_tools:
+      - agent_search.query
+    prohibited_tools:
+      - ww.*
+      - si.*
+    description: Answers questions on curated static HR policies using ACL-filtered Agent Search with verified citations.
+
+  - id: hcm_specialist
+    name: WorkWeek HCM Specialist
+    owner: HCM Integration Team
+    version: hcm-1.4.0
+    model: gemini-3.7-flash@pinned
+    prompt_file: prompts/hcm_specialist.txt
+    prompt_file_sha256: b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3
+    authorized_tools:
+      - ww.get_profile
+      - ww.update_contact
+      - ww.get_balances
+      - ww.submit_leave
+      - ww.cancel_leave
+    prohibited_tools:
+      - agent_search.*
+      - si.*
+    description: Handles WorkWeek HCM employee profile queries, contact information updates, and leave transactions.
+
+  - id: itsm_specialist
+    name: ServiceImmediately Specialist
+    owner: ITSM Integration Team
+    version: itsm-1.4.0
+    model: gemini-3.7-flash@pinned
+    prompt_file: prompts/itsm_specialist.txt
+    prompt_file_sha256: c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4
+    authorized_tools:
+      - si.get_incident
+      - si.create_incident
+      - si.post_comment
+      - si.update_status
+    prohibited_tools:
+      - agent_search.*
+      - ww.*
+    description: Manages ServiceImmediately IT and HR service desk incident querying, creation, commenting, and state transitions.
+
+  - id: saga_coordinator
+    name: Cross-System Saga Coordinator
+    owner: Platform Team
+    version: saga-1.4.0
+    model: gemini-3.1-pro@pinned
+    prompt_file: prompts/saga_coordinator.txt
+    prompt_file_sha256: d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5
+    authorized_tools:
+      - delegate.policy_specialist
+      - delegate.hcm_specialist
+      - delegate.itsm_specialist
+    prohibited_tools:
+      - ww.*
+      - si.*
+      - agent_search.*
+    description: Coordinates complex cross-system workflows (Equipment UC-2.1, Medical Leave UC-2.2, Relocation UC-2.3) with explicit compensation classification.
