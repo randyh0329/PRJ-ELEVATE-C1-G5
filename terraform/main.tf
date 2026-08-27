@@ -259,12 +259,13 @@ resource "google_cloud_run_v2_service" "hr_agentic_service" {
   }
 }
 
-# Allow public invocations for Phase 1 Fast-Path MVP validation
-resource "google_cloud_run_v2_service_iam_member" "public_invoker" {
+# Grant GitHub Actions CI/CD deployer service account invoke permission (complies with Organization Domain Restricted Sharing)
+resource "google_cloud_run_v2_service_iam_member" "deployer_invoker" {
   project  = var.project_id
   location = var.region
   name     = google_cloud_run_v2_service.hr_agentic_service.name
   role     = "roles/run.invoker"
-  member   = "allUsers"
+  member   = "serviceAccount:${google_service_account.github_deployer_sa.email}"
 }
+
 
