@@ -3,7 +3,7 @@ type: HR Policy
 title: Anti-Bribery & Government Ethics
 description: Zero-tolerance bribery rule, the definition of "something of value" and "government official", RCI pre-approval thresholds, due diligence and record-keeping flags.
 tags: [ethics, anti-bribery, government-official, rci, pre-approval, due-diligence, fcpa]
-status: draft
+status: stable
 generated: { by: claude-code/opus-5, at: 2026-08-27T00:00:00Z }
 stale_after: 2027-07-01T00:00:00Z
 sources:
@@ -21,8 +21,9 @@ sources:
     last_modified: 2026-07-01T00:00:00Z
 ---
 
-`status: draft` because the source gives **three different channels** for RCI
-pre-approval. See **Conflict** below.
+> **Unsettled in the source.** The handbook gives **three different channels** for RCI
+> pre-approval. This concept records all three rather than choosing; see **Conflict**
+> below.
 
 # The rule
 

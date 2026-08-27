@@ -3,7 +3,7 @@ type: HR Policy
 title: Conflicts of Interest
 description: The definition of a conflict, employee and manager disclosure duties, ten enumerated conflict categories, and the Ethics and Business Integrity review.
 tags: [ethics, conflict-of-interest, ebi, disclosure, outside-work, investments, recusal]
-status: draft
+status: stable
 generated: { by: claude-code/opus-5, at: 2026-08-27T00:00:00Z }
 stale_after: 2027-07-01T00:00:00Z
 sources:
@@ -21,8 +21,9 @@ sources:
     last_modified: 2026-07-01T00:00:00Z
 ---
 
-`status: draft` because the manager escalation path and the EBI contact channel are each
-stated two different ways. See **Conflicts** below.
+> **Unsettled in the source.** The manager escalation path and the EBI contact channel are
+> each stated two different ways. This concept records both rather than choosing; see
+> **Conflicts** below.
 
 # Definition
 

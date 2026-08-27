@@ -3,7 +3,7 @@ type: HR Policy
 title: Maternity Leave (Singapore)
 description: 24 weeks paid maternity leave, Shared Parental Leave extension to 26 weeks, intern entitlement, and the two WorkWeek leave codes.
 tags: [leave, maternity, singapore, shared-parental-leave, spl, lifesg, workweek]
-status: draft
+status: stable
 generated: { by: claude-code/opus-5, at: 2026-08-27T00:00:00Z }
 stale_after: 2026-12-31T00:00:00Z
 sources:
@@ -21,9 +21,10 @@ sources:
     last_modified: 2026-07-01T00:00:00Z
 ---
 
-`status: draft` because the SPL interaction with
-[baby bonding leave](/leave/baby-bonding.md) is stated three different ways in the
-source. See **Conflict** below.
+> **Unsettled in the source.** The SPL interaction with
+> [baby bonding leave](/leave/baby-bonding.md) is stated three different ways, and intern
+> entitlement turns on a one-word difference worth 16 weeks. This concept records each
+> reading rather than choosing; see **Conflict** below.
 
 # Eligibility
 

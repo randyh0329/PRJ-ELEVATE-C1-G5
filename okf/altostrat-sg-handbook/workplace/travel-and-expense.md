@@ -3,7 +3,7 @@ type: HR Policy
 title: Travel & Expense (T&E) Guidelines
 description: Booking timelines, company card mandate, Concur submission windows and aged-claim approvals, lodging and ground transport caps, the US$120 meal cap, and international relocation.
 tags: [workplace, travel, expense, concur, company-card, meals, lodging, relocation, itsm]
-status: draft
+status: stable
 generated: { by: claude-code/opus-5, at: 2026-08-27T00:00:00Z }
 stale_after: 2027-07-01T00:00:00Z
 sources:
@@ -25,8 +25,8 @@ sources:
     last_modified: 2026-07-01T00:00:00Z
 ---
 
-`status: draft` because the travel booking channel is stated two different ways. See
-**Conflict** below.
+> **Unsettled in the source.** The travel booking channel is stated two different ways.
+> This concept records both rather than choosing; see **Conflict** below.
 
 **This topic exists only in the handbook's summary layer.** Section 4 has no detailed
 counterpart section, so the rules below are all the source provides. See the

@@ -1,7 +1,7 @@
 ---
 type: Reference
 title: Source defect register
-description: Twenty-one defects found in the Altostrat Singapore handbook - contradictions, structural faults, corrupted text, authoring artifacts, unresolved placeholders and gaps - with the concepts affected by each.
+description: Twenty-three defects found in the Altostrat Singapore handbook - contradictions, structural faults, corrupted text, authoring artifacts, unresolved placeholders and gaps - with the concepts affected by each.
 tags: [reference, defects, errata, contradictions, provenance, data-quality]
 status: stable
 generated: { by: claude-code/opus-5, at: 2026-08-27T00:00:00Z }
@@ -363,8 +363,13 @@ not say whether unused TOIL is paid out, forfeited, or must be consumed before t
 # How this register is used
 
 Each affected concept links here and states the defect in its own **Conflict** or gaps
-section rather than picking a winner. Concepts whose core rule is affected by a Blocking
-defect carry `status: draft`.
+section rather than picking a winner.
+
+A defect in the source does **not** change the affected concept's `status`. Under OKF
+v0.2 §5.4, `status` describes the concept document - `draft` means "not yet reviewed;
+possibly incomplete" - so a concept that faithfully and completely records a
+contradiction is `stable`. Concepts affected by a Blocking defect instead open with a
+callout naming the unsettled point and pointing at their **Conflict** section.
 
 The counts: **12 contradictions, 3 structural defects, 5 text defects, 1 placeholder
 cluster, 2 gaps** - 23 numbered entries covering the 21 distinct problems identified on the

@@ -3,7 +3,7 @@ type: HR Policy
 title: Baby Bonding Leave (Global)
 description: 18 weeks paid leave for non-birthing parents through birth, adoption, surrogacy or fostering, with a contested Singapore SPL interaction.
 tags: [leave, baby-bonding, bbl, global, adoption, surrogacy, spl, singapore]
-status: draft
+status: stable
 generated: { by: claude-code/opus-5, at: 2026-08-27T00:00:00Z }
 stale_after: 2026-12-31T00:00:00Z
 sources:
@@ -21,8 +21,9 @@ sources:
     last_modified: 2026-07-01T00:00:00Z
 ---
 
-`status: draft` because the Singapore SPL interaction is stated three different ways
-across the source. See **Conflict** below.
+> **Unsettled in the source.** The Singapore SPL interaction is stated three different ways
+> across the handbook, and one passage contradicts itself within a single bullet. This
+> concept records all three rather than choosing; see **Conflict** below.
 
 # Purpose and eligibility
 

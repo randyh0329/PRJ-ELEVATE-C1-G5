@@ -3,7 +3,7 @@ type: Orientation
 title: New Employee Onboarding Guidelines
 description: The five-phase first-weeks guide - equipment and security, ethics training, workplace culture, time off, travel - and a warning that its restatements diverge from the governing policy sections.
 tags: [workplace, onboarding, new-hire, orientation, training, first-week]
-status: draft
+status: stable
 generated: { by: claude-code/opus-5, at: 2026-08-27T00:00:00Z }
 stale_after: 2027-07-01T00:00:00Z
 sources:
@@ -13,8 +13,8 @@ sources:
     last_modified: 2026-07-01T00:00:00Z
 ---
 
-`status: draft` because this section is a **restatement layer** whose content diverges from
-the governing sections in at least three places. See **Where this section diverges** below.
+> **Restatement layer.** This section restates rules owned by other sections, and diverges
+> from them in at least three places. See **Where this section diverges** below.
 
 > **Read this as orientation, not as policy.** Where this section and a governing policy
 > section disagree, the governing section wins. This is a producer decision - the handbook

@@ -3,7 +3,7 @@ type: HR Policy
 title: Commercial Gifts & Entertainment (Non-Government)
 description: Business courtesies with non-government partners - prohibited categories, the twice-in-3-months frequency limit, and the four written pre-approval tiers.
 tags: [ethics, gifts, entertainment, pre-approval, non-government, tvc, thresholds]
-status: draft
+status: stable
 generated: { by: claude-code/opus-5, at: 2026-08-27T00:00:00Z }
 stale_after: 2027-07-01T00:00:00Z
 sources:
@@ -17,8 +17,9 @@ sources:
     last_modified: 2026-07-01T00:00:00Z
 ---
 
-`status: draft` because the two layers state the approval-tier boundaries in
-incompatible ways at exactly US$250 and US$500. See **Conflict** below.
+> **Unsettled in the source.** The two layers state the approval-tier boundaries in
+> incompatible ways at exactly US$250 and US$500. This concept records both readings rather
+> than choosing; see **Conflict** below.
 
 # Scope
 

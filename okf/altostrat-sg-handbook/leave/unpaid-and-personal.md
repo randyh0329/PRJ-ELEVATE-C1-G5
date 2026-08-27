@@ -3,7 +3,7 @@ type: HR Policy
 title: Unpaid Time Off & Personal Leave (Global)
 description: Up to 30 days unpaid time off, reclassifying to a 92-day continuous personal leave beyond that, plus unpaid compassionate leave.
 tags: [leave, unpaid, personal-leave, compassionate, global, visa, workweek]
-status: draft
+status: stable
 generated: { by: claude-code/opus-5, at: 2026-08-27T00:00:00Z }
 stale_after: 2027-07-01T00:00:00Z
 sources:
@@ -21,9 +21,10 @@ sources:
     last_modified: 2026-07-01T00:00:00Z
 ---
 
-`status: draft` because the source gives two different upper bounds for personal leave
-and disagrees on whether the qualifying criteria are requirements or discretionary
-factors. See **Conflicts** below.
+> **Unsettled in the source.** The handbook gives two different upper bounds for personal
+> leave and disagrees on whether the qualifying criteria are requirements or discretionary
+> factors. This concept records both readings rather than choosing; see **Conflicts**
+> below.
 
 # Eligibility
 

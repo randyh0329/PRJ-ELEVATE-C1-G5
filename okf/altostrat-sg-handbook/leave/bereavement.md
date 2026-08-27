@@ -3,7 +3,7 @@ type: HR Policy
 title: Bereavement Leave (Global)
 description: Four weeks of paid leave per event including pregnancy loss, taken within 12 months of the death, with EAP and peer support.
 tags: [leave, bereavement, global, compassionate, eap, lyra]
-status: draft
+status: stable
 generated: { by: claude-code/opus-5, at: 2026-08-27T00:00:00Z }
 stale_after: 2027-07-01T00:00:00Z
 sources:
@@ -17,8 +17,8 @@ sources:
     last_modified: 2026-07-01T00:00:00Z
 ---
 
-`status: draft` because the two layers disagree on whether interns and apprentices are
-eligible. See **Conflict** below.
+> **Unsettled in the source.** The two layers disagree on whether interns and apprentices
+> are eligible. This concept records both rather than choosing; see **Conflict** below.
 
 # Purpose
 

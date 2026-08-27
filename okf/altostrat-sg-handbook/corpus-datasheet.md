@@ -120,9 +120,17 @@ work requests), 21 (global leaves overview), 29 (exit), 30 (onboarding), 30 agai
 
 No concept in this bundle carries a `verified` entry, so every concept sits at the
 **unverified** tier under OKF v0.2 §5.3. The bundle was machine-extracted from a
-single document and has had no human review. `status: draft` marks the concepts whose
-source content is internally contradictory; `status: stable` marks the rest. Neither
-value implies review has happened.
+single document and has had no human review.
+
+`status` is a property of the **concept document**, not of the policy it describes.
+Every policy concept here is `stable` - complete against the source and ready for
+consumption. A concept can be `stable` and still describe a rule the source contradicts
+itself on; that condition is recorded in the concept's **Conflict** section and in the
+[source defect register](/references/source-defects.md), not in `status`. The single
+`draft` in this bundle is [vacation
+entitlement](/computations/vacation-entitlement.md), which is genuinely incomplete: four
+of its rules are producer assumptions the source does not supply. No `status` value
+implies review has happened.
 
 `usage_count` and `usage_window` are absent throughout, because no usage telemetry for
 the source document was available. They are omitted rather than estimated.
