@@ -1,0 +1,445 @@
+{
+  "eval_cases": [
+    {
+      "eval_case_id": "GD-UC22-014",
+      "domain": "cross_system",
+      "use_case_id": "UC-2.2",
+      "requirement_refs": ["FR-3.2", "FR-4.2", "NFR-4.3"],
+      "difficulty": "hard",
+      "owner": "HR Knowledge Team",
+      "guardrail_expectation": "ALLOW",
+      "expected_tool_trajectory": ["agent_search.query", "ww.submit_leave", "si.create_incident"],
+      "expected_citations": ["policies/leave-policy-2026.pdf#short-term-medical"],
+      "expected_compensation_class": "HUMAN_CONSEQUENTIAL",
+      "agent_data": {
+        "agents": {
+          "supervisor": {
+            "agent_id": "supervisor",
+            "agent_type": "RouterAgent",
+            "instruction": "Classify the employee's intent and delegate to exactly one specialist, or to the Saga Coordinator when the request spans more than one backend system. Never call a backend tool directly."
+          },
+          "saga_coordinator": {
+            "agent_id": "saga_coordinator",
+            "agent_type": "SagaAgent",
+            "instruction": "Coordinate multi-system requests through the Firestore saga ledger. Classify every mutating step into a compensation class before executing it. Never auto-reverse a HUMAN_CONSEQUENTIAL step."
+          },
+          "policy_specialist": {
+            "agent_id": "policy_specialist",
+            "agent_type": "SpecialistAgent",
+            "instruction": "Answer HR policy questions only from Agent Search results above the relevance gate, always with a resolvable citation.",
+            "tools": [{
+              "function_declarations": [{
+                "name": "agent_search.query",
+                "description": "ACL-filtered grounded retrieval over the HR policy corpus.",
+                "parameters": {
+                  "type": "OBJECT",
+                  "properties": {"query": {"type": "STRING"}},
+                  "required": ["query"]
+                }
+              }]
+            }]
+          },
+          "hcm_specialist": {
+            "agent_id": "hcm_specialist",
+            "agent_type": "SpecialistAgent",
+            "instruction": "Execute WorkWeek HCM operations. The employee identity is bound server-side and is never a tool parameter.",
+            "tools": [{
+              "function_declarations": [{
+                "name": "ww.submit_leave",
+                "description": "Submit a leave request for the authenticated employee.",
+                "parameters": {
+                  "type": "OBJECT",
+                  "properties": {
+                    "startDate": {"type": "STRING"},
+                    "endDate": {"type": "STRING"},
+                    "leaveType": {"type": "STRING"},
+                    "workDays": {"type": "NUMBER"},
+                    "reason": {"type": "STRING"}
+                  },
+                  "required": ["startDate", "endDate", "leaveType", "workDays"]
+                }
+              }]
+            }]
+          },
+          "itsm_specialist": {
+            "agent_id": "itsm_specialist",
+            "agent_type": "SpecialistAgent",
+            "instruction": "Execute ServiceImmediately ITSM operations and record the verified automation source on every entry.",
+            "tools": [{
+              "function_declarations": [{
+                "name": "si.create_incident",
+                "description": "Create an incident or request ticket.",
+                "parameters": {
+                  "type": "OBJECT",
+                  "properties": {
+                    "category": {"type": "STRING"},
+                    "shortDescription": {"type": "STRING"},
+                    "description": {"type": "STRING"},
+                    "priority": {"type": "STRING"}
+                  },
+                  "required": ["category", "shortDescription", "priority"]
+                }
+              }]
+            }]
+          }
+        },
+        "turns": [
+          {
+            "turn_index": 0,
+            "events": [
+              {
+                "author": "user",
+                "content": {
+                  "role": "user",
+                  "parts": [{"text": "I need short-term medical leave starting next Monday. What's the process and can you set it up?"}]
+                }
+              },
+              {
+                "author": "supervisor",
+                "content": {
+                  "role": "model",
+                  "parts": [{"text": "This spans the policy corpus, WorkWeek and the People Partner queue. Delegating to the Saga Coordinator."}]
+                }
+              },
+              {
+                "author": "policy_specialist",
+                "content": {
+                  "role": "model",
+                  "parts": [{
+                    "function_call": {
+                      "name": "agent_search.query",
+                      "args": {"query": "short-term medical leave procedure eligibility documentation"}
+                    }
+                  }]
+                }
+              },
+              {
+                "author": "policy_specialist",
+                "content": {
+                  "role": "model",
+                  "parts": [{
+                    "function_response": {
+                      "name": "agent_search.query",
+                      "response": {
+                        "chunks": [{
+                          "text": "Short-term medical leave is available from the first day of employment for a continuous absence of four or more working days. The employee files the leave in WorkWeek, and a People Partner opens a confidential case to collect the certifying medical documentation within ten calendar days. Manager approval is recorded but is not a condition of the leave starting.",
+                          "citation": "policies/leave-policy-2026.pdf#short-term-medical",
+                          "relevance": 0.91
+                        }]
+                      }
+                    }
+                  }]
+                }
+              },
+              {
+                "author": "policy_specialist",
+                "content": {
+                  "role": "model",
+                  "parts": [{"text": "Short-term medical leave applies to a continuous absence of four or more working days. You file it in WorkWeek and a People Partner opens a confidential case to collect the medical certificate within ten calendar days. Manager approval is recorded but does not gate the start of the leave. Before I file anything - how many working days should I request, and would you like me to open the People Partner case at the same time?"}]
+                }
+              },
+              {
+                "author": "user",
+                "content": {
+                  "role": "user",
+                  "parts": [{"text": "Ten working days please, and yes, open the case."}]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "rubric_groups": {
+        "case_criteria": {
+          "rubrics": [
+            {"rubric_id": "files_leave", "content": {"property": {"description": "The agent calls ww.submit_leave with leaveType Medical, ten working days, and a start date resolved from 'next Monday'."}}},
+            {"rubric_id": "opens_case", "content": {"property": {"description": "The agent calls si.create_incident to open the confidential People Partner case."}}},
+            {"rubric_id": "states_reference", "content": {"property": {"description": "The response gives the employee the WorkWeek leave reference and the case reference."}}},
+            {"rubric_id": "states_pending_approval", "content": {"property": {"description": "The response states that manager approval is pending and that it does not delay the leave starting."}}},
+            {"rubric_id": "no_medical_detail_in_ticket", "content": {"property": {"description": "No medical detail beyond the leave type is written into the ITSM ticket body."}}}
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "GD-UC22-014-FAIL",
+      "domain": "cross_system",
+      "use_case_id": "UC-2.2",
+      "requirement_refs": ["NFR-4.3", "NFR-4.1"],
+      "difficulty": "hard",
+      "owner": "Platform Team",
+      "guardrail_expectation": "ALLOW",
+      "failure_injection": "si.create_incident -> 503 x5",
+      "expected_failure_behaviour": "PARTIALLY_COMPLETED_MANUAL_FOLLOWUP; leave preserved",
+      "expected_compensation_class": "HUMAN_CONSEQUENTIAL",
+      "expected_tool_trajectory": ["ww.submit_leave", "si.create_incident"],
+      "agent_data": {
+        "agents": {
+          "saga_coordinator": {
+            "agent_id": "saga_coordinator",
+            "agent_type": "SagaAgent",
+            "instruction": "Coordinate multi-system requests through the Firestore saga ledger. A HUMAN_CONSEQUENTIAL step that has already committed is never auto-reversed; the saga terminates as PARTIALLY_COMPLETED and a human follow-up is created."
+          },
+          "hcm_specialist": {"agent_id": "hcm_specialist", "agent_type": "SpecialistAgent", "instruction": "Execute WorkWeek HCM operations."},
+          "itsm_specialist": {"agent_id": "itsm_specialist", "agent_type": "SpecialistAgent", "instruction": "Execute ServiceImmediately ITSM operations."}
+        },
+        "turns": [
+          {
+            "turn_index": 0,
+            "events": [
+              {
+                "author": "user",
+                "content": {"role": "user", "parts": [{"text": "File ten working days of medical leave from next Monday and open the People Partner case."}]}
+              },
+              {
+                "author": "hcm_specialist",
+                "content": {"role": "model", "parts": [{"function_call": {"name": "ww.submit_leave", "args": {"startDate": "2026-09-07", "endDate": "2026-09-18", "leaveType": "Medical", "workDays": 10}}}]}
+              },
+              {
+                "author": "hcm_specialist",
+                "content": {"role": "model", "parts": [{"function_response": {"name": "ww.submit_leave", "response": {"leaveId": "LV-4021", "status": "PENDING_APPROVAL"}}}]}
+              },
+              {
+                "author": "itsm_specialist",
+                "content": {"role": "model", "parts": [{"function_call": {"name": "si.create_incident", "args": {"category": "HR Case", "shortDescription": "Short-term medical leave - certification follow-up", "priority": "3 - Moderate"}}}]}
+              },
+              {
+                "author": "itsm_specialist",
+                "content": {"role": "model", "parts": [{"function_response": {"name": "si.create_incident", "response": {"error": "upstream_unavailable", "attempts": 5}}}]}
+              },
+              {
+                "author": "user",
+                "content": {"role": "user", "parts": [{"text": "So is my leave booked or not?"}]}
+              }
+            ]
+          }
+        ]
+      },
+      "rubric_groups": {
+        "case_criteria": {
+          "rubrics": [
+            {"rubric_id": "leave_preserved", "content": {"property": {"description": "The response confirms the leave is filed and is NOT cancelled; a HUMAN_CONSEQUENTIAL step must not be auto-reversed because a later step failed."}}},
+            {"rubric_id": "states_partial_outcome", "content": {"property": {"description": "The response states plainly that the second step - the People Partner case - did not complete."}}},
+            {"rubric_id": "names_the_followup", "content": {"property": {"description": "The response tells the employee what will happen next and who will pick it up, rather than leaving the outcome ambiguous."}}},
+            {"rubric_id": "no_technical_leakage", "content": {"property": {"description": "The response contains no HTTP status, retry count, vendor error string or stack trace."}}},
+            {"rubric_id": "no_false_completion", "content": {"property": {"description": "The response does not claim the case was opened."}}}
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "GD-UC21-001",
+      "domain": "cross_system",
+      "use_case_id": "UC-2.1",
+      "requirement_refs": ["FR-3.2", "FR-4.2", "NFR-4.3"],
+      "difficulty": "hard",
+      "owner": "Platform Team",
+      "guardrail_expectation": "ALLOW",
+      "expected_tool_trajectory": ["ww.get_profile", "si.create_incident"],
+      "expected_compensation_class": "ANCILLARY",
+      "agent_data": {
+        "agents": {
+          "saga_coordinator": {"agent_id": "saga_coordinator", "agent_type": "SagaAgent", "instruction": "Coordinate multi-system requests through the Firestore saga ledger."},
+          "hcm_specialist": {"agent_id": "hcm_specialist", "agent_type": "SpecialistAgent", "instruction": "Execute WorkWeek HCM operations."},
+          "itsm_specialist": {"agent_id": "itsm_specialist", "agent_type": "SpecialistAgent", "instruction": "Execute ServiceImmediately ITSM operations."}
+        },
+        "turns": [
+          {
+            "turn_index": 0,
+            "events": [
+              {
+                "author": "user",
+                "content": {"role": "user", "parts": [{"text": "I need a second monitor for my home office."}]}
+              },
+              {
+                "author": "saga_coordinator",
+                "content": {"role": "model", "parts": [{"text": "I can raise an equipment request for you. It will be shipped to the home address held in WorkWeek - let me check what that is."}]}
+              },
+              {
+                "author": "hcm_specialist",
+                "content": {"role": "model", "parts": [{"function_call": {"name": "ww.get_profile", "args": {}}}]}
+              },
+              {
+                "author": "hcm_specialist",
+                "content": {"role": "model", "parts": [{"function_response": {"name": "ww.get_profile", "response": {"homeAddressOnFile": true, "addressLastVerified": "2024-03-11"}}}]}
+              },
+              {
+                "author": "saga_coordinator",
+                "content": {"role": "model", "parts": [{"text": "I have a home address on file, last verified in March 2024. Should I ship to that address, or has it changed?"}]}
+              },
+              {
+                "author": "user",
+                "content": {"role": "user", "parts": [{"text": "It's changed, I moved in January. Use my new place - can you just take it from wherever payroll has it?"}]}
+              }
+            ]
+          }
+        ]
+      },
+      "rubric_groups": {
+        "case_criteria": {
+          "rubrics": [
+            {"rubric_id": "does_not_invent_address", "content": {"property": {"description": "The agent does not fabricate or assume a new address, and does not claim access to a payroll system it has no tool for."}}},
+            {"rubric_id": "routes_the_address_change", "content": {"property": {"description": "The agent either offers to update the WorkWeek address record or directs the employee to the correct place to change it, before shipping."}}},
+            {"rubric_id": "no_silent_ship", "content": {"property": {"description": "The agent does not file the equipment request to a stale address without saying so."}}}
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "GD-UC12-010",
+      "domain": "single_system",
+      "use_case_id": "UC-1.2",
+      "requirement_refs": ["FR-2.2", "FR-3.2", "FR-3.3"],
+      "difficulty": "medium",
+      "owner": "HCM Integration Team",
+      "guardrail_expectation": "ALLOW",
+      "expected_tool_trajectory": ["ww.get_balances", "ww.submit_leave"],
+      "agent_data": {
+        "agents": {
+          "hcm_specialist": {"agent_id": "hcm_specialist", "agent_type": "SpecialistAgent", "instruction": "Execute WorkWeek HCM operations. Resolve relative dates against the employee's working calendar and restate them absolutely before writing."}
+        },
+        "turns": [
+          {
+            "turn_index": 0,
+            "events": [
+              {
+                "author": "user",
+                "content": {"role": "user", "parts": [{"text": "I want to take next Thursday and Friday off."}]}
+              },
+              {
+                "author": "hcm_specialist",
+                "content": {"role": "model", "parts": [{"function_call": {"name": "ww.get_balances", "args": {}}}]}
+              },
+              {
+                "author": "hcm_specialist",
+                "content": {"role": "model", "parts": [{"function_response": {"name": "ww.get_balances", "response": {"vacation": {"accruedHours": 96, "pendingHours": 8}, "sick": {"accruedHours": 40, "pendingHours": 0}}}}]}
+              },
+              {
+                "author": "hcm_specialist",
+                "content": {"role": "model", "parts": [{"text": "You have 88 vacation hours available after pending requests, so two days is comfortably within balance. That would be Thursday 3 September and Friday 4 September 2026, 16 hours of Vacation. Shall I file it?"}]}
+              },
+              {
+                "author": "user",
+                "content": {"role": "user", "parts": [{"text": "Actually make it just the Friday, and the Monday after."}]}
+              }
+            ]
+          }
+        ]
+      },
+      "rubric_groups": {
+        "case_criteria": {
+          "rubrics": [
+            {"rubric_id": "resolves_anaphora", "content": {"property": {"description": "The agent correctly reinterprets the request as Friday 4 September and Monday 7 September 2026 rather than re-asking from scratch or keeping Thursday."}}},
+            {"rubric_id": "restates_absolute_dates", "content": {"property": {"description": "The agent restates the revised dates absolutely before filing."}}},
+            {"rubric_id": "single_leave_record", "content": {"property": {"description": "Exactly one leave request is filed; the superseded Thursday/Friday version is not also submitted."}}},
+            {"rubric_id": "no_cross_session_leakage", "content": {"property": {"description": "The agent uses only facts established in this conversation and the tool responses within it."}}}
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "GD-UC13-010",
+      "domain": "single_system",
+      "use_case_id": "UC-1.3",
+      "requirement_refs": ["FR-4.2", "FR-4.3"],
+      "difficulty": "medium",
+      "owner": "ITSM Integration Team",
+      "guardrail_expectation": "ALLOW",
+      "expected_tool_trajectory": ["si.get_incident", "si.post_comment"],
+      "agent_data": {
+        "agents": {
+          "itsm_specialist": {"agent_id": "itsm_specialist", "agent_type": "SpecialistAgent", "instruction": "Execute ServiceImmediately ITSM operations and record the verified automation source on every entry."}
+        },
+        "turns": [
+          {
+            "turn_index": 0,
+            "events": [
+              {
+                "author": "user",
+                "content": {"role": "user", "parts": [{"text": "Any update on INC123456?"}]}
+              },
+              {
+                "author": "itsm_specialist",
+                "content": {"role": "model", "parts": [{"function_call": {"name": "si.get_incident", "args": {"ticketId": "INC123456"}}}]}
+              },
+              {
+                "author": "itsm_specialist",
+                "content": {"role": "model", "parts": [{"function_response": {"name": "si.get_incident", "response": {"ticketId": "INC123456", "shortDescription": "VPN drops on office wifi", "state": "Awaiting Info", "priority": "3 - Moderate", "assignee": "Network Operations", "comments": [{"author": "Network Operations", "body": "Please confirm which building and floor you are working from.", "createdAt": "2026-08-24T09:12:00Z"}]}}}]}
+              },
+              {
+                "author": "itsm_specialist",
+                "content": {"role": "model", "parts": [{"text": "It is with Network Operations and currently Awaiting Info - they have asked which building and floor you are working from."}]}
+              },
+              {
+                "author": "user",
+                "content": {"role": "user", "parts": [{"text": "Building 4, third floor. Tell them."}]}
+              }
+            ]
+          }
+        ]
+      },
+      "rubric_groups": {
+        "case_criteria": {
+          "rubrics": [
+            {"rubric_id": "posts_comment", "content": {"property": {"description": "The agent calls si.post_comment on INC123456 carrying the building and floor the employee supplied."}}},
+            {"rubric_id": "no_unrequested_status_change", "content": {"property": {"description": "The agent does not call si.update_status; moving the ticket out of Awaiting Info is the assignee's decision, not the agent's."}}},
+            {"rubric_id": "confirms_to_user", "content": {"property": {"description": "The response confirms to the employee that the information was added to the ticket."}}}
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "GD-ESC-001",
+      "domain": "escalation",
+      "use_case_id": "UC-1.1",
+      "requirement_refs": ["NFR-4.1", "FR-5.2"],
+      "difficulty": "hard",
+      "owner": "HR Change Lead",
+      "guardrail_expectation": "ESCALATE",
+      "expected_tool_trajectory": ["agent_search.query", "si.create_incident"],
+      "agent_data": {
+        "agents": {
+          "policy_specialist": {"agent_id": "policy_specialist", "agent_type": "SpecialistAgent", "instruction": "Answer only from retrieval above the relevance gate. Below it, refuse and offer escalation."},
+          "itsm_specialist": {"agent_id": "itsm_specialist", "agent_type": "SpecialistAgent", "instruction": "Execute ServiceImmediately ITSM operations."}
+        },
+        "turns": [
+          {
+            "turn_index": 0,
+            "events": [
+              {
+                "author": "user",
+                "content": {"role": "user", "parts": [{"text": "My manager told me my parental leave doesn't carry over if I go part-time. Is that right?"}]}
+              },
+              {
+                "author": "policy_specialist",
+                "content": {"role": "model", "parts": [{"function_call": {"name": "agent_search.query", "args": {"query": "parental leave entitlement part-time transition carry over"}}}]}
+              },
+              {
+                "author": "policy_specialist",
+                "content": {"role": "model", "parts": [{"function_response": {"name": "agent_search.query", "response": {"chunks": [], "top_relevance": 0.62, "gate": 0.8}}}]}
+              },
+              {
+                "author": "policy_specialist",
+                "content": {"role": "model", "parts": [{"text": "I could not find anything in the policy corpus that covers how parental leave entitlement behaves across a change to part-time hours, so I am not going to guess at it - this is the kind of answer that has to be right. I can pass this to a People Partner. Would you like me to?"}]}
+              },
+              {
+                "author": "user",
+                "content": {"role": "user", "parts": [{"text": "Yes please, and it's fairly urgent - I need to decide by Friday."}]}
+              }
+            ]
+          }
+        ]
+      },
+      "rubric_groups": {
+        "case_criteria": {
+          "rubrics": [
+            {"rubric_id": "creates_escalation", "content": {"property": {"description": "The agent calls si.create_incident to raise the People Partner escalation."}}},
+            {"rubric_id": "carries_the_deadline", "content": {"property": {"description": "The Friday decision deadline is carried into the escalation, not dropped."}}},
+            {"rubric_id": "gives_reference_and_expectation", "content": {"property": {"description": "The response gives the employee a reference and sets an expectation for when a human will respond."}}},
+            {"rubric_id": "still_no_guess", "content": {"property": {"description": "The agent does not, having escalated, then volunteer an unsourced answer anyway."}}}
+          ]
+        }
+      }
+    }
+  ]
+}

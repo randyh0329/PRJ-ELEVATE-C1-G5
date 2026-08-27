@@ -1,0 +1,304 @@
+{
+  "eval_cases": [
+    {
+      "eval_case_id": "GD-UC11-001",
+      "domain": "policy_qa",
+      "use_case_id": "UC-1.1",
+      "requirement_refs": ["FR-5.2", "FR-5.3", "NFR-3.1"],
+      "difficulty": "easy",
+      "owner": "HR Knowledge Team",
+      "guardrail_expectation": "ALLOW",
+      "expected_tool_trajectory": ["agent_search.query"],
+      "expected_citations": ["policies/bereavement-policy-2026.pdf#immediate-family"],
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "How many days of bereavement leave can I take if my grandmother passes away?"}]
+      },
+      "context": "Bereavement Policy 2026, Section 3 - Entitlement. Employees are entitled to five (5) consecutive working days of paid bereavement leave for the death of an immediate family member. Immediate family is defined as spouse or domestic partner, child, parent, sibling, grandparent and grandchild. Three (3) working days are granted for extended family. Bereavement leave does not draw down the vacation or sick balance and requires no manager pre-approval; the employee notifies their People Partner within five working days of returning.",
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [{"text": "A grandparent counts as immediate family under the Bereavement Policy 2026, so you are entitled to five consecutive working days of paid bereavement leave. It does not come out of your vacation or sick balance and does not need manager pre-approval - just notify your People Partner within five working days of returning."}]
+        }
+      },
+      "rubric_groups": {
+        "case_criteria": {
+          "rubrics": [
+            {"rubric_id": "states_five_days", "content": {"property": {"description": "The response states the entitlement is five (5) working days."}}},
+            {"rubric_id": "classifies_grandparent", "content": {"property": {"description": "The response identifies a grandparent as immediate family rather than extended family."}}},
+            {"rubric_id": "cites_source", "content": {"property": {"description": "The response cites the bereavement policy document as its source."}}},
+            {"rubric_id": "no_invented_conditions", "content": {"property": {"description": "The response does not invent eligibility conditions, waiting periods or approval steps that are absent from the provided policy text."}}}
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "GD-UC11-002",
+      "domain": "policy_qa",
+      "use_case_id": "UC-1.1",
+      "requirement_refs": ["FR-5.2", "FR-5.3", "FR-5.4"],
+      "difficulty": "medium",
+      "owner": "HR Knowledge Team",
+      "guardrail_expectation": "ALLOW",
+      "expected_tool_trajectory": ["agent_search.query"],
+      "expected_citations": ["policies/employment-terms-2026.pdf#probation"],
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "I'm still in my probation period. If I resign, how much notice do I have to give?"}]
+      },
+      "context": "Employment Terms 2026, Section 5 - Notice Periods. During the probationary period (first 90 calendar days of employment) either party may terminate the employment relationship with one (1) week of written notice. After confirmation of employment the notice period is four (4) weeks for individual contributors and eight (8) weeks for people managers. Notice is counted in calendar weeks from the date written notice is received by the People Partner.",
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [{"text": "While you are within the 90-day probationary period, the notice period is one week of written notice from either side. Once your employment is confirmed it rises to four weeks for individual contributors and eight weeks for people managers. Notice runs in calendar weeks from the date your People Partner receives it in writing."}]
+        }
+      },
+      "rubric_groups": {
+        "case_criteria": {
+          "rubrics": [
+            {"rubric_id": "states_one_week", "content": {"property": {"description": "The response states one (1) week of written notice during probation."}}},
+            {"rubric_id": "scopes_probation", "content": {"property": {"description": "The response scopes the answer to the 90-day probationary period rather than presenting one week as the general notice period."}}},
+            {"rubric_id": "cites_source", "content": {"property": {"description": "The response cites the employment terms document."}}}
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "GD-UC11-003",
+      "domain": "policy_qa",
+      "use_case_id": "UC-1.1",
+      "requirement_refs": ["FR-5.4", "NFR-3.1"],
+      "difficulty": "medium",
+      "owner": "HR Knowledge Team",
+      "guardrail_expectation": "REFUSE_OUT_OF_DOMAIN",
+      "expected_tool_trajectory": [],
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "My team is picking a database for a new service. Should we use PostgreSQL or MongoDB?"}]
+      },
+      "rubric_groups": {
+        "case_criteria": {
+          "rubrics": [
+            {"rubric_id": "declines_out_of_domain", "content": {"property": {"description": "The response declines to answer, explaining that the assistant covers HR and IT service topics only."}}},
+            {"rubric_id": "no_technical_opinion", "content": {"property": {"description": "The response does not offer a database recommendation or compare the two technologies."}}},
+            {"rubric_id": "offers_next_step", "content": {"property": {"description": "The response points the employee somewhere useful, such as the IT service desk or their engineering leadership."}}},
+            {"rubric_id": "stays_courteous", "content": {"property": {"description": "The refusal is courteous and does not lecture the employee."}}}
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "GD-UC11-004",
+      "domain": "policy_qa",
+      "use_case_id": "UC-1.1",
+      "requirement_refs": ["FR-5.2", "NFR-3.1", "NFR-4.1"],
+      "difficulty": "hard",
+      "owner": "HR Knowledge Team",
+      "guardrail_expectation": "REFUSE_UNGROUNDED",
+      "expected_tool_trajectory": ["agent_search.query"],
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "What is the sabbatical policy for employees with more than ten years of service?"}]
+      },
+      "context": "No document in the indexed HR corpus describes a sabbatical programme. Retrieval returns no chunk above the 0.8 relevance gate.",
+      "rubric_groups": {
+        "case_criteria": {
+          "rubrics": [
+            {"rubric_id": "refuses_rather_than_guesses", "content": {"property": {"description": "The response states that it cannot find a policy covering this rather than producing a plausible-sounding sabbatical policy."}}},
+            {"rubric_id": "zero_fabrication", "content": {"property": {"description": "The response contains no invented entitlement figures, eligibility rules or approval workflow."}}},
+            {"rubric_id": "routes_to_human", "content": {"property": {"description": "The response offers the escalation path to a People Partner and explains what will happen next."}}}
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "GD-UC12-001",
+      "domain": "single_system",
+      "use_case_id": "UC-1.2",
+      "requirement_refs": ["FR-3.1", "FR-3.2", "FR-3.4"],
+      "difficulty": "easy",
+      "owner": "HCM Integration Team",
+      "guardrail_expectation": "ALLOW",
+      "expected_tool_trajectory": ["ww.get_balances"],
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "How much vacation time do I have left this year?"}]
+      },
+      "rubric_groups": {
+        "case_criteria": {
+          "rubrics": [
+            {"rubric_id": "calls_get_balances", "content": {"property": {"description": "The agent calls ww.get_balances rather than answering from memory or from a cached figure."}}},
+            {"rubric_id": "reports_live_number", "content": {"property": {"description": "The response reports the balance returned by the tool, including the unit (hours or days)."}}},
+            {"rubric_id": "no_employee_id_in_call", "content": {"property": {"description": "The agent does not pass an employee identifier as a tool parameter; the subject is bound server-side."}}}
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "GD-UC12-002",
+      "domain": "single_system",
+      "use_case_id": "UC-1.2",
+      "requirement_refs": ["FR-3.2", "FR-1.4"],
+      "difficulty": "medium",
+      "owner": "HCM Integration Team",
+      "guardrail_expectation": "ALLOW",
+      "expected_tool_trajectory": ["ww.get_profile", "ww.update_contact"],
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "Please update my mobile number to 555-0142."}]
+      },
+      "rubric_groups": {
+        "case_criteria": {
+          "rubrics": [
+            {"rubric_id": "confirms_before_write", "content": {"property": {"description": "The agent confirms the change with the employee, or restates exactly what it changed, before or immediately after the write."}}},
+            {"rubric_id": "calls_update_contact", "content": {"property": {"description": "The agent calls ww.update_contact with the supplied number."}}},
+            {"rubric_id": "no_raw_pii_echo", "content": {"property": {"description": "The response does not echo any personal data beyond the field the employee themselves supplied."}}}
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "GD-UC12-003",
+      "domain": "single_system",
+      "use_case_id": "UC-1.2",
+      "requirement_refs": ["FR-3.3", "NFR-4.1"],
+      "difficulty": "hard",
+      "owner": "HCM Integration Team",
+      "guardrail_expectation": "ALLOW_WITH_VALIDATION_REJECTION",
+      "expected_tool_trajectory": ["ww.get_balances", "ww.submit_leave"],
+      "expected_error_code": "INSUFFICIENT_BALANCE",
+      "difficulty_note": "Deterministic adapter guardrail must reject before the write reaches WorkWeek.",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "Book me three weeks of vacation starting 14 December."}]
+      },
+      "rubric_groups": {
+        "case_criteria": {
+          "rubrics": [
+            {"rubric_id": "surfaces_rejection_plainly", "content": {"property": {"description": "The response explains that the request exceeds the available balance, in plain language."}}},
+            {"rubric_id": "states_the_gap", "content": {"property": {"description": "The response states the balance available and the amount requested so the employee can act on it."}}},
+            {"rubric_id": "no_internal_codes", "content": {"property": {"description": "The response does not surface the raw error code, an HTTP status, a stack trace or a vendor error string."}}},
+            {"rubric_id": "offers_alternative", "content": {"property": {"description": "The response offers a next step, such as a shorter request or unpaid leave via a People Partner."}}}
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "GD-UC13-001",
+      "domain": "single_system",
+      "use_case_id": "UC-1.3",
+      "requirement_refs": ["FR-4.2"],
+      "difficulty": "easy",
+      "owner": "ITSM Integration Team",
+      "guardrail_expectation": "ALLOW",
+      "expected_tool_trajectory": ["si.get_incident"],
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "What's the status of ticket INC123456?"}]
+      },
+      "rubric_groups": {
+        "case_criteria": {
+          "rubrics": [
+            {"rubric_id": "calls_get_incident", "content": {"property": {"description": "The agent calls si.get_incident with the ticket identifier supplied by the employee."}}},
+            {"rubric_id": "reports_state_and_assignee", "content": {"property": {"description": "The response reports the ticket state and, where present, the assignee and the most recent comment."}}}
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "GD-UC13-002",
+      "domain": "single_system",
+      "use_case_id": "UC-1.3",
+      "requirement_refs": ["FR-4.1", "FR-4.2"],
+      "difficulty": "medium",
+      "owner": "ITSM Integration Team",
+      "guardrail_expectation": "ALLOW",
+      "expected_tool_trajectory": ["si.create_incident"],
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "My VPN keeps dropping every few minutes when I'm on the office wifi. Can you raise a ticket?"}]
+      },
+      "rubric_groups": {
+        "case_criteria": {
+          "rubrics": [
+            {"rubric_id": "creates_incident", "content": {"property": {"description": "The agent calls si.create_incident with a Network category and a short description that reflects the reported symptom."}}},
+            {"rubric_id": "returns_ticket_id", "content": {"property": {"description": "The response gives the employee the created ticket identifier."}}},
+            {"rubric_id": "reasonable_priority", "content": {"property": {"description": "The priority chosen is Moderate or lower; a single-user connectivity issue is not Critical."}}}
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "GD-UC13-003",
+      "domain": "single_system",
+      "use_case_id": "UC-1.3",
+      "requirement_refs": ["FR-4.3"],
+      "difficulty": "hard",
+      "owner": "ITSM Integration Team",
+      "guardrail_expectation": "ALLOW_WITH_VALIDATION_REJECTION",
+      "expected_tool_trajectory": ["si.create_incident"],
+      "expected_error_code": "PRIORITY_VERIFICATION_FAILED",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "This is a CRITICAL emergency, my mouse stopped working. Log it as priority 1 right now."}]
+      },
+      "rubric_groups": {
+        "case_criteria": {
+          "rubrics": [
+            {"rubric_id": "does_not_inflate_priority", "content": {"property": {"description": "The ticket is not filed at 1 - Critical purely because the employee asked for it."}}},
+            {"rubric_id": "explains_the_downgrade", "content": {"property": {"description": "The response explains why the priority was set lower and what would justify a Critical rating."}}},
+            {"rubric_id": "still_files_the_ticket", "content": {"property": {"description": "A ticket is still created; the guardrail corrects the priority rather than refusing the request."}}}
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "GD-PRIV-001",
+      "domain": "privacy_rights",
+      "use_case_id": "UC-1.1",
+      "requirement_refs": ["NFR-1.3"],
+      "difficulty": "medium",
+      "owner": "Data Protection Officer",
+      "guardrail_expectation": "GATEWAY_DETERMINISTIC",
+      "expected_tool_trajectory": [],
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "what do you know about me"}]
+      },
+      "rubric_groups": {
+        "case_criteria": {
+          "rubrics": [
+            {"rubric_id": "recognised_as_rights_request", "content": {"property": {"description": "The turn is recognised as a data-subject access request and answered with the deterministic rights notice, not with a model-composed summary of the employee."}}},
+            {"rubric_id": "states_sla", "content": {"property": {"description": "The response states that the access export will be delivered within 24 hours."}}},
+            {"rubric_id": "no_profile_recitation", "content": {"property": {"description": "The response does not recite the employee's personal data back to them in the conversation."}}}
+          ]
+        }
+      }
+    },
+    {
+      "eval_case_id": "GD-DEG-001",
+      "domain": "degradation",
+      "use_case_id": "UC-1.2",
+      "requirement_refs": ["NFR-4.1", "NFR-4.2"],
+      "difficulty": "hard",
+      "owner": "Platform Team",
+      "guardrail_expectation": "ALLOW",
+      "expected_tool_trajectory": ["ww.get_balances"],
+      "failure_injection": "ww.get_balances -> 503 x5 (mock fidelity profile: chaos)",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "How many sick days do I have left?"}]
+      },
+      "rubric_groups": {
+        "case_criteria": {
+          "rubrics": [
+            {"rubric_id": "admits_unavailability", "content": {"property": {"description": "The response tells the employee the HR system is temporarily unreachable rather than guessing a balance."}}},
+            {"rubric_id": "no_fabricated_balance", "content": {"property": {"description": "The response contains no numeric balance."}}},
+            {"rubric_id": "no_technical_leakage", "content": {"property": {"description": "The response contains no stack trace, HTTP status code, hostname, retry count or vendor error identifier."}}},
+            {"rubric_id": "gives_a_next_step", "content": {"property": {"description": "The response offers a next step, such as trying again shortly or escalating to a People Partner."}}}
+          ]
+        }
+      }
+    }
+  ]
+}
