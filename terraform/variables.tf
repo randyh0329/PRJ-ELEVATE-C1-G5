@@ -47,3 +47,10 @@ variable "container_image" {
   default     = "us-docker.pkg.dev/cloudrun/container/hello"
 }
 
+variable "invoker_user" {
+  description = "User or group account granted Cloud Run invoker permission (must belong to permitted customer domain)."
+  type        = string
+  default     = "user:romij@google.com"
+}
+
+

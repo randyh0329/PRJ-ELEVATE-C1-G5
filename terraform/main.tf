@@ -39,23 +39,8 @@ resource "google_project_service" "enabled_apis" {
 }
 
 # -----------------------------------------------------------------------------
-# 1.1 Organization Policy: Exempt Domain-Restricted Sharing (DRS) for Public Open
-# -----------------------------------------------------------------------------
-resource "google_project_organization_policy" "drs_policy" {
-  depends_on = [google_project_service.enabled_apis]
-  project    = var.project_id
-  constraint = "constraints/iam.allowedPolicyMemberDomains"
-
-  list_policy {
-    allow {
-      all = true
-    }
-  }
-}
-
-
-# -----------------------------------------------------------------------------
 # 2. Artifact Registry Docker Repository
+
 # -----------------------------------------------------------------------------
 resource "google_artifact_registry_repository" "docker_repo" {
   depends_on    = [google_project_service.enabled_apis]
@@ -285,15 +270,15 @@ resource "google_cloud_run_v2_service_iam_member" "deployer_invoker" {
   member   = "serviceAccount:${google_service_account.github_deployer_sa.email}"
 }
 
-# Allow public invocations (allUsers) once DRS is exempted
-resource "google_cloud_run_v2_service_iam_member" "public_invoker" {
-  depends_on = [google_project_organization_policy.drs_policy]
-  project    = var.project_id
-  location   = var.region
-  name       = google_cloud_run_v2_service.hr_agentic_service.name
-  role       = "roles/run.invoker"
-  member     = "allUsers"
+# Allow authenticated user account to invoke Cloud Run (Domain-Restricted Sharing compliant)
+resource "google_cloud_run_v2_service_iam_member" "user_invoker" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.hr_agentic_service.name
+  role     = "roles/run.invoker"
+  member   = var.invoker_user
 }
+
 
 
 
