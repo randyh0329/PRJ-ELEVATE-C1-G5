@@ -15,8 +15,9 @@ env:
   REGION: us-central1
   SERVICE_NAME: hr-agentic-service
   ARTIFACT_REPO: hr-agentic-repo
-  WIF_PROVIDER: projects/pe-group5/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider
+  WIF_PROVIDER: projects/549227441635/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider
   WIF_SERVICE_ACCOUNT: github-deployer-sa@pe-group5.iam.gserviceaccount.com
+
 
 jobs:
   test:
