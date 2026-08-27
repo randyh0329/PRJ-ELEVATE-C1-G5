@@ -16,6 +16,8 @@ from typing import Any, Dict, List, Optional
 from src.security.token_minter import CompositeTokenMinter
 from src.core.state import AgentState
 from src.integrations.workweek.client import WorkWeekClient, workweek_client
+from src.integrations.vertex.client import VertexGeminiClient, vertex_gemini_client
+from src.core.models.routing import WorkWeekToolSelection
 
 logger = logging.getLogger("agents.hcm")
 
@@ -90,8 +92,13 @@ class WorkWeekAutonomousSpecialist:
     Enforces Server-Side Subject Binding (SDD §4.1) so employee_id cannot be spoofed.
     """
 
-    def __init__(self, client: Optional[WorkWeekClient] = None):
+    def __init__(
+        self,
+        client: Optional[WorkWeekClient] = None,
+        llm_client: Optional[VertexGeminiClient] = None
+    ):
         self.client = client or workweek_client
+        self._llm = llm_client or vertex_gemini_client
 
     def execute_tool(
         self,
@@ -221,73 +228,53 @@ class WorkWeekAutonomousSpecialist:
     ) -> Dict[str, Any]:
         """
         Autonomous Agentic Plan & Execute loop for WorkWeek HCM.
-        Determines the appropriate tool, extracts parameters, executes tool,
-        and generates a helpful bilingual response.
+        Uses Gemini 3.7 Flash Function Calling to select the FastMCP tool and extract arguments,
+        executes the tool against WorkWeek FastMCP, and returns the response.
         """
         ref_date = reference_date or datetime.date.today()
-        p = prompt.strip().lower()
 
-        # ---------------------------------------------------------------------
-        # Plan Step 1: Cancellation Intent
-        # ---------------------------------------------------------------------
-        if any(k in p for k in ["취소", "cancel"]):
-            req_id_match = re.search(r'\b(\d{3,6})\b', p)
-            if req_id_match:
-                req_id = int(req_id_match.group(1))
-                tool_res = self.execute_tool("cancel_leave_request", {"request_id": req_id}, caller_id, ref_date)
-                if tool_res.get("status") == "SUCCESS":
-                    text = f"✅ **휴가 취소 완료**: 신청 번호 **#{req_id}**의 휴가 신청이 취소되었으며, 연차가 정상 환불되었습니다."
-                else:
-                    text = f"❌ **휴가 취소 실패**: 신청 번호 #{req_id}를 취소할 수 없습니다 ({tool_res.get('message')})."
-                return {
-                    "response_text": text,
-                    "action_performed": "CANCEL_LEAVE",
-                    "tool_called": "cancel_leave_request",
-                    "tool_result": tool_res,
-                    "transaction_reference": f"CANCEL-{req_id}"
-                }
+        # Step 1: Gemini Function Calling for FastMCP Tool Selection & Argument Extraction
+        selection = self._llm.select_workweek_tool(prompt)
+        tool_name = selection.tool_name
+        args = selection.arguments or {}
+
+        if tool_name == "none":
+            return {
+                "response_text": selection.direct_response or "How can I help you with your WorkWeek self-service today?",
+                "action_performed": "CONVERSATION",
+                "tool_called": "none",
+                "tool_result": {},
+                "transaction_reference": None
+            }
+
+        # Step 2: Execute selected tool against live FastMCP client
+        tool_res = self.execute_tool(tool_name, args, caller_id, ref_date)
+        if tool_res.get("status") == "ERROR":
+            return {
+                "response_text": f"❌ WorkWeek FastMCP 서비스 연결 오류: {tool_res.get('message')}. 개인 FastMCP 토큰을 확인해 주세요.",
+                "action_performed": "ERROR",
+                "tool_called": tool_name,
+                "tool_result": tool_res,
+                "transaction_reference": None
+            }
+
+        # Step 3: Format domain response based on executed tool
+        if tool_name == "cancel_leave_request":
+            req_id = args.get("request_id") or tool_res.get("request_id", "")
+            if tool_res.get("status") == "SUCCESS":
+                text = f"✅ **휴가 취소 완료**: 신청 번호 **#{req_id}**의 휴가 신청이 취소되었으며, 연차가 정상 환불되었습니다."
             else:
-                hist = self.execute_tool("get_leave_requests", {}, caller_id, ref_date)
-                requests = hist.get("requests", [])
-                if not requests:
-                    text = "현재 등록되어 있는 휴가 신청 내역이 없어 취소할 수 없습니다."
-                elif len(requests) == 1:
-                    single_id = requests[0].get("request_id")
-                    tool_res = self.execute_tool("cancel_leave_request", {"request_id": single_id}, caller_id, ref_date)
-                    text = f"✅ 등록되어 있던 **신청 번호 #{single_id}** ({requests[0].get('start_date')} ~ {requests[0].get('end_date')}, {requests[0].get('days')}일 {requests[0].get('leave_type')}) 휴가 신청이 취소 및 환불되었습니다."
-                    return {
-                        "response_text": text,
-                        "action_performed": "CANCEL_LEAVE",
-                        "tool_called": "cancel_leave_request",
-                        "tool_result": tool_res,
-                        "transaction_reference": f"CANCEL-{single_id}"
-                    }
-                else:
-                    items = "\n".join([f"- **#{r.get('request_id')}**: {r.get('start_date')} ~ {r.get('end_date')} ({r.get('days')}일, {r.get('leave_type')})" for r in requests])
-                    text = f"현재 등록된 휴가 신청 목록입니다:\n{items}\n\n취소하시려는 **신청 번호(예: #{requests[0].get('request_id')})**를 말씀해 주시면 즉시 취소해 드리겠습니다."
-                return {
-                    "response_text": text,
-                    "action_performed": "LIST_LEAVE_REQUESTS",
-                    "tool_called": "get_leave_requests",
-                    "tool_result": hist,
-                    "transaction_reference": None
-                }
+                text = f"❌ **휴가 취소 실패**: 신청 번호 #{req_id}를 취소할 수 없습니다 ({tool_res.get('message')})."
+            return {
+                "response_text": text,
+                "action_performed": "CANCEL_LEAVE",
+                "tool_called": "cancel_leave_request",
+                "tool_result": tool_res,
+                "transaction_reference": f"CANCEL-{req_id}" if req_id else None
+            }
 
-        # ---------------------------------------------------------------------
-        # Plan Step 2: Leave History / Requests List Intent
-        # ---------------------------------------------------------------------
-        if any(k in p for k in ["목록", "내역", "이력", "history", "requests", "list leaves", "show leaves", "신청한 휴가"]):
-            tool_res = self.execute_tool("get_leave_requests", {}, caller_id, ref_date)
-            if tool_res.get("status") == "ERROR":
-                return {
-                    "response_text": f"❌ WorkWeek FastMCP 서비스에 연결할 수 없습니다: {tool_res.get('message')}. 개인 FastMCP 토큰을 확인해 주세요.",
-                    "action_performed": "ERROR",
-                    "tool_called": "get_leave_requests",
-                    "tool_result": tool_res,
-                    "transaction_reference": None
-                }
+        elif tool_name == "get_leave_requests":
             requests = tool_res.get("requests", [])
-
             if not requests:
                 text = "현재 WorkWeek에 등록된 휴가 신청 내역이 없습니다."
             else:
@@ -301,29 +288,15 @@ class WorkWeekAutonomousSpecialist:
                 "transaction_reference": None
             }
 
-        # ---------------------------------------------------------------------
-        # Plan Step 3: Contact / Address / Phone Update Intent
-        # ---------------------------------------------------------------------
-        if any(k in p for k in ["변경", "업데이트", "바꿔", "update", "change"]) and any(k in p for k in ["주소", "연락처", "전화번호", "address", "phone"]):
-            new_addr = None
-            new_phone = None
-
-            phone_match = re.search(r'(\+?[0-9]{2,4}[- ]?[0-9]{3,4}[- ]?[0-9]{4})', prompt)
-            if phone_match:
-                new_phone = phone_match.group(1)
-
-            if "주소" in p or "address" in p:
-                new_addr = "Google Singapore Office, 80 Pasir Panjang Rd, Singapore"
-                if "싱가포르" in prompt or "singapore" in p:
-                    new_addr = "80 Pasir Panjang Rd, #03-01 Mapletree Business City, Singapore 117372"
-
-            tool_res = self.execute_tool("update_personal_info", {"home_address": new_addr, "phone_number": new_phone}, caller_id, ref_date)
+        elif tool_name == "update_personal_info":
             if tool_res.get("status") == "SUCCESS":
+                addr = args.get("home_address")
+                phone = args.get("phone_number")
                 parts = []
-                if new_addr:
-                    parts.append(f"주소: `{new_addr}`")
-                if new_phone:
-                    parts.append(f"연락처: `{new_phone}`")
+                if addr:
+                    parts.append(f"주소: `{addr}`")
+                if phone:
+                    parts.append(f"연락처: `{phone}`")
                 desc = ", ".join(parts) if parts else "연락처 정보"
                 text = f"✅ WorkWeek 개인정보가 성공적으로 업데이트되었습니다 ({desc})."
             else:
@@ -336,134 +309,47 @@ class WorkWeekAutonomousSpecialist:
                 "transaction_reference": None
             }
 
-        # ---------------------------------------------------------------------
-        # Plan Step 4: Specific Profile Inquiry (Manager, Department, Address, Phone)
-        # ---------------------------------------------------------------------
-        if "manager" in p or "매니저" in p or "관리자" in p:
-            tool_res = self.execute_tool("get_employee_profile", {"field": "manager"}, caller_id, ref_date)
-            if tool_res.get("status") == "ERROR":
-                return {
-                    "response_text": f"❌ WorkWeek FastMCP 서비스 연결 오류: {tool_res.get('message')}. 개인 FastMCP 토큰을 확인해 주세요.",
-                    "action_performed": "ERROR",
-                    "tool_called": "get_employee_profile",
-                    "tool_result": tool_res,
-                    "transaction_reference": None
-                }
-            mgr = tool_res.get("manager_id") or "N/A"
-            return {
-                "response_text": f"Your manager in WorkWeek is {mgr}.",
-                "action_performed": "CHECK_MANAGER",
-                "tool_called": "get_employee_profile",
-                "tool_result": tool_res,
-                "transaction_reference": None
-            }
-
-        if "department" in p or "부서" in p or "팀" in p:
-            tool_res = self.execute_tool("get_employee_profile", {"field": "department"}, caller_id, ref_date)
-            if tool_res.get("status") == "ERROR":
-                return {
-                    "response_text": f"❌ WorkWeek FastMCP 서비스 연결 오류: {tool_res.get('message')}. 개인 FastMCP 토큰을 확인해 주세요.",
-                    "action_performed": "ERROR",
-                    "tool_called": "get_employee_profile",
-                    "tool_result": tool_res,
-                    "transaction_reference": None
-                }
-            dept = tool_res.get("department") or "N/A"
-            return {
-                "response_text": f"Your department in WorkWeek is {dept}.",
-                "action_performed": "CHECK_DEPARTMENT",
-                "tool_called": "get_employee_profile",
-                "tool_result": tool_res,
-                "transaction_reference": None
-            }
-
-        if "phone" in p or "전화번호" in p or "연락처" in p:
-            tool_res = self.execute_tool("get_employee_profile", {"field": "phone"}, caller_id, ref_date)
-            if tool_res.get("status") == "ERROR":
-                return {
-                    "response_text": f"❌ WorkWeek FastMCP 서비스 연결 오류: {tool_res.get('message')}. 개인 FastMCP 토큰을 확인해 주세요.",
-                    "action_performed": "ERROR",
-                    "tool_called": "get_employee_profile",
-                    "tool_result": tool_res,
-                    "transaction_reference": None
-                }
-            phone = tool_res.get("phone_number") or "N/A"
-            return {
-                "response_text": f"Your contact phone number in WorkWeek is {phone}.",
-                "action_performed": "CHECK_PHONE",
-                "tool_called": "get_employee_profile",
-                "tool_result": tool_res,
-                "transaction_reference": None
-            }
-
-        if ("address" in p or "주소" in p) and not ("profile" in p or "job" in p or "프로필" in p):
-            tool_res = self.execute_tool("get_employee_profile", {"field": "address"}, caller_id, ref_date)
-            if tool_res.get("status") == "ERROR":
-                return {
-                    "response_text": f"❌ WorkWeek FastMCP 서비스 연결 오류: {tool_res.get('message')}. 개인 FastMCP 토큰을 확인해 주세요.",
-                    "action_performed": "ERROR",
-                    "tool_called": "get_employee_profile",
-                    "tool_result": tool_res,
-                    "transaction_reference": None
-                }
-            addr = tool_res.get("home_address") or "N/A"
-            return {
-                "response_text": f"Your registered address in WorkWeek is {addr}.",
-                "action_performed": "CHECK_ADDRESS",
-                "tool_called": "get_employee_profile",
-                "tool_result": tool_res,
-                "transaction_reference": None
-            }
-
-        if any(k in p for k in ["profile", "job", "who am i", "프로필", "직무"]):
-            tool_res = self.execute_tool("get_employee_profile", {"field": "all"}, caller_id, ref_date)
-            if tool_res.get("status") == "ERROR":
-                return {
-                    "response_text": f"❌ WorkWeek FastMCP 서비스 연결 오류: {tool_res.get('message')}. 개인 FastMCP 토큰을 확인해 주세요.",
-                    "action_performed": "ERROR",
-                    "tool_called": "get_employee_profile",
-                    "tool_result": tool_res,
-                    "transaction_reference": None
-                }
-            text = (
-                f"WorkWeek Profile for {tool_res.get('full_name')} ({tool_res.get('employee_id')}):\n"
-                f"- Job Title: {tool_res.get('job_title')}\n"
-                f"- Department / Office: {tool_res.get('department')}\n"
-                f"- Work Location: {tool_res.get('work_location_status')}\n"
-                f"- Registered Address: {tool_res.get('home_address')}\n"
-                f"- Contact Phone: {tool_res.get('phone_number')}\n"
-                f"- Email: {tool_res.get('email')}\n"
-                f"- Manager ID: {tool_res.get('manager_id')}"
-            )
+        elif tool_name == "get_employee_profile":
+            field = args.get("field", "all")
+            if field == "manager":
+                text = f"Your manager in WorkWeek is {tool_res.get('manager_id', 'N/A')}."
+                action = "CHECK_MANAGER"
+            elif field == "department":
+                text = f"Your department in WorkWeek is {tool_res.get('department', 'N/A')}."
+                action = "CHECK_DEPARTMENT"
+            elif field == "phone":
+                text = f"Your contact phone number in WorkWeek is {tool_res.get('phone_number', 'N/A')}."
+                action = "CHECK_PHONE"
+            elif field == "address":
+                text = f"Your registered address in WorkWeek is {tool_res.get('home_address', 'N/A')}."
+                action = "CHECK_ADDRESS"
+            else:
+                text = (
+                    f"WorkWeek Profile for {tool_res.get('full_name')} ({tool_res.get('employee_id')}):\n"
+                    f"- Job Title: {tool_res.get('job_title')}\n"
+                    f"- Department / Office: {tool_res.get('department')}\n"
+                    f"- Work Location: {tool_res.get('work_location_status')}\n"
+                    f"- Registered Address: {tool_res.get('home_address')}\n"
+                    f"- Contact Phone: {tool_res.get('phone_number')}\n"
+                    f"- Email: {tool_res.get('email')}\n"
+                    f"- Manager ID: {tool_res.get('manager_id')}"
+                )
+                action = "CHECK_PROFILE"
             return {
                 "response_text": text,
-                "action_performed": "CHECK_PROFILE",
+                "action_performed": action,
                 "tool_called": "get_employee_profile",
                 "tool_result": tool_res,
                 "transaction_reference": None
             }
 
-        # ---------------------------------------------------------------------
-        # Plan Step 5: Leave Balances Inquiry
-        # ---------------------------------------------------------------------
-        if any(k in p for k in ["balance", "잔여", "남았", "얼마나", "remaining", "check", "how many", "pto"]):
-            tool_res = self.execute_tool("get_employee_balances", {}, caller_id, ref_date)
-            if tool_res.get("status") == "ERROR":
-                return {
-                    "response_text": f"❌ WorkWeek FastMCP 서비스 연결 오류: {tool_res.get('message')}. 개인 FastMCP 토큰을 확인해 주세요.",
-                    "action_performed": "ERROR",
-                    "tool_called": "get_employee_balances",
-                    "tool_result": tool_res,
-                    "transaction_reference": None
-                }
+        elif tool_name == "get_employee_balances":
             vac = tool_res.get("vacation_remaining", 0.0)
             vac_acc = tool_res.get("vacation_accrued", 0.0)
             vac_used = tool_res.get("vacation_used", 0.0)
             sick = tool_res.get("sick_remaining", 0.0)
             sick_acc = tool_res.get("sick_accrued", 0.0)
             sick_used = tool_res.get("sick_used", 0.0)
-
-
             text = (
                 f"Your current WorkWeek leave balances are:\n"
                 f"- Vacation: {vac} days remaining ({vac_acc} accrued, {vac_used} used)\n"
@@ -477,58 +363,36 @@ class WorkWeekAutonomousSpecialist:
                 "transaction_reference": None
             }
 
-        # ---------------------------------------------------------------------
-        # Plan Step 6: Leave Submission Intent
-        # ---------------------------------------------------------------------
-        days = 2.0
-        if "1 day" in p or "one day" in p or "하루" in p or "1일" in p:
-            days = 1.0
-        elif "3 days" in p or "three days" in p or "3일" in p:
-            days = 3.0
-        elif "5 days" in p or "five days" in p or "5일" in p:
-            days = 5.0
-
-        days_ahead = 7 - ref_date.weekday()
-        if days_ahead <= 0:
-            days_ahead += 7
-        start_date = ref_date + datetime.timedelta(days=days_ahead + 3)
-        end_date = start_date + datetime.timedelta(days=int(days) - 1)
-
-        tool_res = self.execute_tool(
-            "request_time_off",
-            {
-                "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat(),
-                "leave_type": "Sick" if "sick" in p or "병가" in p else "Vacation",
-                "days": days
-            },
-            caller_id,
-            ref_date
-        )
-
-        if tool_res.get("status") == "SUCCESS":
-            req_id = tool_res.get("request_id", "WW-LV-NEW")
-            rem = tool_res.get("remaining_balance", 0.0)
-            text = (
-                f"Your vacation request for {days} days from {start_date.isoformat()} to {end_date.isoformat()} "
-                f"has been submitted in WorkWeek. Transaction Reference: [{req_id}]. "
-                f"Remaining balance: {rem} days."
-            )
+        elif tool_name == "request_time_off":
+            if tool_res.get("status") == "SUCCESS":
+                req_id = tool_res.get("request_id", "WW-LV-NEW")
+                rem = tool_res.get("remaining_balance", 0.0)
+                days_val = tool_res.get("days", args.get("days", 1.0))
+                s_date = tool_res.get("start_date")
+                e_date = tool_res.get("end_date")
+                text = (
+                    f"Your vacation request for {days_val} days from {s_date} to {e_date} "
+                    f"has been submitted in WorkWeek. Transaction Reference: [{req_id}]. "
+                    f"Remaining balance: {rem} days."
+                )
+            else:
+                text = f"Leave submission failed: {tool_res.get('message')}"
             return {
                 "response_text": text,
                 "action_performed": "SUBMIT_LEAVE",
                 "tool_called": "request_time_off",
                 "tool_result": tool_res,
-                "transaction_reference": req_id
+                "transaction_reference": tool_res.get("request_id")
             }
-        else:
-            return {
-                "response_text": f"Leave submission failed: {tool_res.get('message')}",
-                "action_performed": "SUBMIT_LEAVE",
-                "tool_called": "request_time_off",
-                "tool_result": tool_res,
-                "transaction_reference": None
-            }
+
+        return {
+            "response_text": "Processed WorkWeek request successfully.",
+            "action_performed": "UNKNOWN",
+            "tool_called": tool_name,
+            "tool_result": tool_res,
+            "transaction_reference": None
+        }
+
 
 
 workweek_autonomous_specialist = WorkWeekAutonomousSpecialist()

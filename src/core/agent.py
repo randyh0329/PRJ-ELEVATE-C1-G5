@@ -12,6 +12,8 @@ from src.integrations.workweek.client import WorkWeekClient, workweek_client
 from src.core.agents.hcm import workweek_autonomous_specialist
 from src.integrations.service_immediately.client import ServiceImmediatelyClient, service_immediately_client
 from src.telemetry.audit_logger import AuditLogger, audit_logger
+from src.integrations.vertex.client import VertexGeminiClient, vertex_gemini_client
+from src.core.models.routing import SupervisorRoutingDecision
 
 
 class AgentResponse(BaseModel):
@@ -37,7 +39,8 @@ class HREnterpriseAgent:
         sn_client: Optional[ServiceImmediatelyClient] = None,
         saga: Optional[SagaCoordinator] = None,
         sessions: Optional[SessionMemory] = None,
-        logger: Optional[AuditLogger] = None
+        logger: Optional[AuditLogger] = None,
+        router: Optional[VertexGeminiClient] = None
     ) -> None:
         self._dlp = dlp or dlp_redactor
         self._armor = armor or model_armor
@@ -47,6 +50,7 @@ class HREnterpriseAgent:
         self._saga = saga or saga_coordinator
         self._sessions = sessions or session_store
         self._logger = logger or audit_logger
+        self._router = router or vertex_gemini_client
 
     def process_message(
         self,
@@ -78,8 +82,9 @@ class HREnterpriseAgent:
                 processing_metadata={"dlp_ms": redaction_res.processing_time_ms, "armor_ms": armor_res.processing_time_ms}
             )
 
-        # --- STAGE 2: INTENT CLASSIFICATION ---
-        intent = self._classify_intent(sanitized_prompt)
+        # --- STAGE 2: INTENT CLASSIFICATION (Gemini 3.7 Flash Supervisor Router) ---
+        routing_decision = self._classify_intent(sanitized_prompt)
+        intent = routing_decision.intent
 
         # Record user turn in session memory
         self._sessions.get_or_create_session(sess_id, caller_employee_id)
@@ -99,6 +104,8 @@ class HREnterpriseAgent:
             response = self._handle_service_incident(caller_employee_id, sanitized_prompt)
         elif intent == "UC_1_1_POLICY_QA":
             response = self._handle_policy_qa(caller_employee_id, sanitized_prompt)
+        elif intent == "OUT_OF_DOMAIN":
+            response = self._handle_out_of_domain(caller_employee_id, sanitized_prompt)
         else:
             response = self._handle_general_or_fallback(caller_employee_id, sanitized_prompt)
 
@@ -106,52 +113,44 @@ class HREnterpriseAgent:
         self._sessions.add_message(sess_id, "assistant", response.response_text, response.citations)
         response.processing_metadata["dlp_ms"] = redaction_res.processing_time_ms
         response.processing_metadata["detected_spii"] = redaction_res.detected_types
+        response.processing_metadata["router_confidence"] = routing_decision.confidence
+        response.processing_metadata["router_reasoning"] = routing_decision.reasoning
 
         return response
 
-    def _classify_intent(self, prompt: str) -> str:
-        """Classify user intent into specific MVP 1 Use Cases."""
-        p = prompt.lower()
+    def _classify_intent(self, prompt: str) -> SupervisorRoutingDecision:
+        """
+        Classify user intent using Gemini 3.7 Flash Supervisor Router.
+        Compliant with SDD §3.1, §3.2 (FR-1.1, FR-2.1).
+        """
+        decision = self._router.route_intent(prompt)
+        self._logger.log_event(
+            caller_employee_id="SUPERVISOR",
+            action_type="SUPERVISOR_INTENT_ROUTING",
+            status="SUCCESS",
+            details={
+                "intent": decision.intent,
+                "target_agent": decision.target_agent,
+                "confidence": decision.confidence,
+                "reasoning": decision.reasoning,
+            }
+        )
+        return decision
 
-        # UC-2.1: Equipment Procurement (Remote eligibility + monitor/hardware order)
-        if ("remote" in p and ("monitor" in p or "hardware" in p or "equipment" in p)) or \
-           ("order" in p and "monitor" in p) or ("home office monitor" in p):
-            return "UC_2_1_EQUIPMENT_PROCUREMENT"
+    def _handle_out_of_domain(self, caller_id: str, prompt: str) -> AgentResponse:
+        """Domain Containment Refusal per SDD §5.5 & FR-5.4."""
+        self._logger.log_event(
+            caller_employee_id=caller_id,
+            action_type="DOMAIN_CONTAINMENT_REFUSAL",
+            status="REFUSED",
+            details={"prompt": prompt, "reason": "Out of domain request"}
+        )
+        return AgentResponse(
+            response_text="I can help with HR policies, WorkWeek leave & profile, and IT tickets. That question is outside what I can assist with.",
+            intent="OUT_OF_DOMAIN",
+            is_refusal=True
+        )
 
-        # UC-2.2: Medical Leave with Access Delegation
-        if ("medical leave" in p or "sick leave" in p or "short-term medical" in p or "mc" in p) and \
-           ("set it up" in p or "delegate" in p or "process" in p or "starting" in p or "submit" in p or "route" in p):
-            return "UC_2_2_MEDICAL_LEAVE_DELEGATION"
-
-        # UC-2.3: Relocation Allowance & Facilities Badge
-        if "relocation" in p or "relocating" in p or "transferring to the london" in p or "london office" in p or "building access" in p and "allowance" in p:
-            return "UC_2_3_RELOCATION_ALLOWANCE_BADGE"
-
-        # UC-1.1: Policy Q&A
-        if any(k in p for k in ["policy", "bereavement", "entitlement", "handbook", "rule", "규정", "핸드북", "지침"]):
-            return "UC_1_1_POLICY_QA"
-
-        # UC-1.2: WorkWeek Leave & Profile Self-Service
-        if any(k in p for k in [
-            "vacation", "time off", "time-off", "leave balance", "pto", "submit a leave",
-            "leave request", "leave history", "profile", "job", "who am i", "my info",
-            "my details", "address", "manager", "boss", "report to", "department", "team",
-            "email", "phone", "hire date", "contact", "cancel leave",
-            # Korean keywords
-            "휴가", "연차", "병가", "월차", "반차", "휴무", "잔여", "남았", "얼마나",
-            "매니저", "팀장", "관리자", "부서", "직무", "주소", "연락처", "전화번호",
-            "프로필", "취소", "신청한 휴가", "휴가 목록", "휴가 내역", "휴가 이력"
-        ]):
-            return "UC_1_2_WORKWEEK_LEAVE"
-
-        # UC-1.3: ServiceImmediately Incident Management
-        if any(k in p for k in [
-            "ticket", "vpn", "incident", "it helpdesk", "wifi", "dropping", "network",
-            "티켓", "장애", "네트워크", "와이파이", "헬프데스크", "고장"
-        ]):
-            return "UC_1_3_SERVICE_IMMEDIATELY_INCIDENT"
-
-        return "GENERAL_INQUIRY"
 
 
     # --- HANDLERS FOR SINGLE-DOMAIN USE CASES ---
