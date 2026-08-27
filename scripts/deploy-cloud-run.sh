@@ -22,11 +22,11 @@ echo "================================================================="
 
 # 1. Run local test validation
 echo "▶ Running test suite before deployment..."
-PYTHONPATH=HR-Agentic-Code python3 -m pytest HR-Agentic-Code/tests/ -q
+PYTHONPATH=. pytest tests/ -q
 
 # 2. Build and push container image using Cloud Build
 echo "▶ Submitting container build to Google Cloud Build..."
-gcloud builds submit HR-Agentic-Code \
+gcloud builds submit . \
   --tag "${IMAGE_TAG}" \
   --project "${PROJECT_ID}"
 
