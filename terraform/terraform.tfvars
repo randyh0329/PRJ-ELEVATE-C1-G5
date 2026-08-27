@@ -1,0 +1,5 @@
+project_id        = "pe-group5"
+region            = "us-central1"
+service_name      = "hr-agentic-service"
+artifact_repo_id  = "hr-agentic-repo"
+github_repository = "randyh0329/PRJ-ELEVATE-C1-G5"
