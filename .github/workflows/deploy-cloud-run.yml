@@ -1,0 +1,121 @@
+name: Build and Deploy to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'config/**'
+      - 'requirements.txt'
+      - 'Dockerfile'
+      - 'tests/**'
+      - 'terraform/**'
+      - '.github/workflows/deploy-cloud-run.yml'
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: pe-group5
+  REGION: us-central1
+  SERVICE_NAME: hr-agentic-service
+  ARTIFACT_REPO: hr-agentic-repo
+  WIF_PROVIDER: projects/549227441635/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider
+  WIF_SERVICE_ACCOUNT: github-deployer-sa@pe-group5.iam.gserviceaccount.com
+
+
+jobs:
+  test:
+    name: Run Unit & Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+          cache-dependency-path: 'requirements.txt'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Execute Pytest Test Suite
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest tests/ -v
+
+  build-and-deploy:
+    name: Build Container & Deploy to Cloud Run
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          token_format: 'access_token'
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and Push Docker Image
+        run: |
+          IMAGE_TAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME }}"
+          docker build -t ${IMAGE_TAG}:${{ github.sha }} -t ${IMAGE_TAG}:latest .
+          docker push ${IMAGE_TAG}:${{ github.sha }}
+          docker push ${IMAGE_TAG}:latest
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        run: |
+          IMAGE_TAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image "${IMAGE_TAG}" \
+            --region "${{ env.REGION }}" \
+            --platform managed \
+            --allow-unauthenticated \
+            --set-env-vars "SAAS_MCP_BASE_URL=https://mock-saas.aishprabhat.demo.altostrat.com,USE_LIVE_MCP=true,DEFAULT_CALLER_ID=EMP-509" \
+            --set-secrets "SAAS_MCP_CREDENTIAL=saas-mcp-token:latest" \
+            --quiet
+
+
+      - name: Verify Cloud Run Service Deployment
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --format 'value(status.url)')
+          LATEST_READY_REV=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --format 'value(status.latestReadyRevisionName)')
+          LATEST_CREATED_REV=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --format 'value(status.latestCreatedRevisionName)')
+
+          echo "================================================================="
+          echo "🚀 Cloud Run Service Deployment Verification"
+          echo "Service URL:             ${SERVICE_URL}"
+          echo "Latest Created Revision: ${LATEST_CREATED_REV}"
+          echo "Latest Ready Revision:   ${LATEST_READY_REV}"
+          echo "================================================================="
+
+          if [ -z "${LATEST_READY_REV}" ]; then
+            echo "❌ Error: Cloud Run service has no ready revisions."
+            exit 1
+          fi
+
+          echo "✅ Cloud Run revision ${LATEST_READY_REV} is ready and serving traffic!"
+
+
+
