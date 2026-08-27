@@ -1,10 +1,14 @@
 """FastAPI REST API server and interactive CLI runner for HR Agentic Solution."""
 import argparse
+import logging
 import sys
 from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+
+logger = logging.getLogger("api.main")
+
 
 from src.core.agent import HREnterpriseAgent, hr_enterprise_agent
 from src.telemetry.audit_logger import audit_logger
@@ -37,10 +41,11 @@ class GoogleAuthRequest(BaseModel):
 
 
 class QuickAuthRequest(BaseModel):
-    """Test login payload for quick corporate login without external popups."""
-    email: str = "romij@google.com"
-    name: Optional[str] = "Romij Employee"
+    """Corporate email login payload requiring tester's personal FastMCP token."""
+    email: str
+    name: Optional[str] = None
     mcp_token: Optional[str] = None
+
 
 
 
@@ -97,21 +102,27 @@ def serve_web_chat_ui():
     .badge { background: rgba(56, 189, 248, 0.12); color: var(--primary); font-size: 0.75rem; padding: 3px 10px; border-radius: 9999px; border: 1px solid rgba(56, 189, 248, 0.25); font-weight: 600; }
     .auth-section { display: flex; align-items: center; gap: 12px; font-size: 0.85rem; }
     .user-chip { display: flex; align-items: center; gap: 8px; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 20px; padding: 5px 14px; font-size: 0.82rem; }
-    .btn-test-auth { background: #2563eb; color: white; border: none; border-radius: 6px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: background 0.15s; display: flex; align-items: center; gap: 6px; }
-    .btn-test-auth:hover { background: #1d4ed8; }
+    .btn-connect { background: #2563eb; color: white; border: none; border-radius: 6px; padding: 7px 16px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: background 0.15s; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.25); }
+    .btn-connect:hover { background: #1d4ed8; }
     .btn-logout { background: transparent; color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 4px 10px; font-size: 0.75rem; cursor: pointer; }
     .btn-logout:hover { background: rgba(239, 68, 68, 0.15); }
     .btn-settings { background: #1e293b; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; font-size: 0.8rem; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 6px; }
     .btn-settings:hover { background: #334155; border-color: var(--primary); }
     .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.75); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
-    .modal { background: #1e293b; border: 1px solid var(--border); border-radius: 12px; width: 92%; max-width: 500px; padding: 22px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6); }
-    .modal h2 { font-size: 1.1rem; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+    .modal { background: #1e293b; border: 1px solid var(--border); border-radius: 12px; width: 92%; max-width: 500px; padding: 24px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6); }
+    .modal h2 { font-size: 1.15rem; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+    .modal-desc { font-size: 0.82rem; color: var(--muted); margin-bottom: 16px; line-height: 1.45; }
     .form-group { margin-bottom: 14px; }
     .form-group label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 6px; }
     .form-group input { width: 100%; background: #0f172a; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; color: var(--text); font-size: 0.88rem; outline: none; box-sizing: border-box; }
     .form-group input:focus { border-color: var(--primary); }
-    .form-hint { font-size: 0.76rem; color: var(--muted); margin-top: 4px; line-height: 1.4; }
-    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+    .token-input-wrap { position: relative; display: flex; align-items: center; }
+    .token-input-wrap input { font-family: monospace; padding-right: 40px; }
+    .btn-toggle-vis { position: absolute; right: 8px; background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 0.95rem; padding: 4px; }
+    .btn-toggle-vis:hover { color: var(--text); }
+    .form-hint { font-size: 0.76rem; color: var(--muted); margin-top: 5px; line-height: 1.4; }
+    .status-box { display: none; padding: 8px 12px; border-radius: 6px; font-size: 0.82rem; margin-top: 12px; line-height: 1.4; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
     .btn-secondary { background: #334155; color: var(--text); border: none; border-radius: 6px; padding: 8px 16px; font-size: 0.85rem; cursor: pointer; }
     .btn-primary { background: var(--primary); color: #0f172a; font-weight: 600; border: none; border-radius: 6px; padding: 8px 18px; font-size: 0.85rem; cursor: pointer; }
     .main-container { flex: 1; display: flex; flex-direction: column; max-width: 900px; width: 100%; margin: 0 auto; padding: 16px; overflow: hidden; }
@@ -132,6 +143,7 @@ def serve_web_chat_ui():
     .input-bar { display: flex; gap: 10px; padding-top: 14px; }
     input[type="text"] { flex: 1; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; color: var(--text); font-size: 0.95rem; outline: none; }
     input[type="text"]:focus { border-color: var(--primary); }
+    input[type="text"]:disabled { opacity: 0.6; cursor: not-allowed; }
     button.send { background: var(--primary); color: #0f172a; font-weight: 600; border: none; border-radius: 8px; padding: 12px 24px; cursor: pointer; transition: background 0.2s; }
     button.send:hover { background: var(--primary-hover); }
     .typing { display: none; color: var(--muted); font-size: 0.85rem; font-style: italic; margin-bottom: 6px; }
@@ -146,11 +158,8 @@ def serve_web_chat_ui():
     <div class="auth-section" id="authSection">
       <!-- Unauthenticated View -->
       <div id="unauthControls" style="display: flex; align-items: center; gap: 10px;">
-        <button class="btn-test-auth" onclick="loginWithGoogleEmail('romij@google.com')">
-          <span>🔵</span> Google Login (romij@google.com)
-        </button>
-        <button class="btn-settings" onclick="openSettingsModal()" title="FastMCP Token & Account Settings">
-          <span>⚙️</span> Token Settings
+        <button class="btn-connect" onclick="openLoginModal()">
+          <span>🔑</span> Sign In & Connect WorkWeek
         </button>
       </div>
 
@@ -158,15 +167,16 @@ def serve_web_chat_ui():
       <div id="authControls" style="display: none; align-items: center; gap: 10px;">
         <div class="user-chip" id="userChip">
           <span>👤</span>
-          <strong id="userDisplayName">Romij Employee</strong>
-          <span style="color: var(--muted);" id="userEmailSpan">(romij@google.com)</span>
-          <span class="badge" id="userEmpBadge">EMP-509</span>
+          <strong id="userDisplayName">User</strong>
+          <span style="color: var(--muted);" id="userEmailSpan">(email)</span>
+          <span class="badge" id="userEmpBadge" style="background: rgba(34, 197, 94, 0.15); color: #4ade80; border-color: rgba(34, 197, 94, 0.3);">EMP-509</span>
         </div>
-        <button class="btn-settings" onclick="openSettingsModal()" title="FastMCP Token Settings">⚙️</button>
+        <button class="btn-settings" onclick="openLoginModal()" title="Switch Account or FastMCP Token">⚙️</button>
         <button class="btn-logout" onclick="logout()">Sign Out</button>
       </div>
     </div>
   </header>
+
 
 
   <div class="main-container">
@@ -182,7 +192,7 @@ def serve_web_chat_ui():
 
     <div class="chat-window" id="chatWindow">
       <div class="msg agent">
-        <div class="bubble">Hello! I am your Enterprise HR & IT Self-Service AI Agent. How can I assist you today? You can ask about your leave balances, view your job profile, check company policies, or submit requests.</div>
+        <div class="bubble">👋 <strong>Welcome to the Enterprise HR & IT Self-Service AI Agent!</strong><br><br>To query your real-time vacation balances, submit leave requests, or manage your personal profile on live SaaS WorkWeek, please click <strong>[Sign In & Connect WorkWeek]</strong> in the top right to link your corporate Google email and personal FastMCP token.</div>
         <div class="meta"><span class="tag">SYSTEM_READY</span></div>
       </div>
     </div>
@@ -190,29 +200,36 @@ def serve_web_chat_ui():
     <div class="typing" id="typingIndicator">Agent is reasoning & querying FastMCP SaaS...</div>
 
     <form class="input-bar" id="chatForm" onsubmit="event.preventDefault(); sendMessage();">
-      <input type="text" id="userInput" placeholder="Ask anything (e.g. 'What is my current leave balance?', 'Who is my manager?')..." autocomplete="off" />
+      <input type="text" id="userInput" placeholder="Please click 'Sign In & Connect WorkWeek' above to start chatting..." autocomplete="off" disabled />
       <button type="submit" class="send">Send</button>
     </form>
   </div>
 
-  <!-- Settings Modal -->
-  <div class="modal-overlay" id="settingsModal">
+  <!-- Connect Modal -->
+  <div class="modal-overlay" id="loginModal">
     <div class="modal">
-      <h2>⚙️ FastMCP & Google Account Settings</h2>
-      <div class="form-group">
-        <label for="settingEmail">Google Corporate Email</label>
-        <input type="text" id="settingEmail" value="romij@google.com" placeholder="user@google.com" />
+      <h2>🔑 Connect Personal WorkWeek Account</h2>
+      <div class="modal-desc">
+        Enter your corporate Google email and your personal FastMCP token to interact with your personal WorkWeek data on live SaaS.
       </div>
       <div class="form-group">
-        <label for="settingToken">WorkWeek FastMCP Token (X-MCP-Token)</label>
-        <input type="text" id="settingToken" placeholder="mcp_HiIwlFkRL-DrjYgdQvO-fMHg8Q8A_YskI5J00qrP8SA" />
+        <label for="loginEmail">Google Corporate Email</label>
+        <input type="text" id="loginEmail" placeholder="your-ldap@google.com" autocomplete="off" />
+      </div>
+      <div class="form-group">
+        <label for="loginToken">Personal FastMCP Token (X-MCP-Token)</label>
+        <div class="token-input-wrap">
+          <input type="password" id="loginToken" placeholder="mcp_..." autocomplete="off" />
+          <button type="button" class="btn-toggle-vis" onclick="toggleTokenVis()" title="Show/Hide Token">👁️</button>
+        </div>
         <div class="form-hint">
-          Paste your personal FastMCP token here. The agent will auto-probe FastMCP to resolve and bind your exact Employee ID.
+          Paste the FastMCP token issued to you for the demo environment. Your token is never shared with other testers.
         </div>
       </div>
+      <div class="status-box" id="loginStatus"></div>
       <div class="modal-actions">
-        <button class="btn-secondary" onclick="closeSettingsModal()">Cancel</button>
-        <button class="btn-primary" onclick="saveSettings()">💾 Save & Connect</button>
+        <button class="btn-secondary" onclick="closeLoginModal()">Cancel</button>
+        <button class="btn-primary" id="btnDoLogin" onclick="handleConnect()">🚀 Connect & Start</button>
       </div>
     </div>
   </div>
@@ -225,30 +242,91 @@ def serve_web_chat_ui():
     let sessionToken = localStorage.getItem('hr_agent_session_token');
     let currentUser = null;
 
-    function openSettingsModal() {
-      const emailInput = document.getElementById('settingEmail');
-      const tokenInput = document.getElementById('settingToken');
+    function openLoginModal() {
+      const emailInput = document.getElementById('loginEmail');
+      const tokenInput = document.getElementById('loginToken');
+      const statusDiv = document.getElementById('loginStatus');
+      statusDiv.style.display = 'none';
+
       if (currentUser) {
         emailInput.value = currentUser.email;
-      }
-      tokenInput.value = localStorage.getItem('hr_agent_custom_mcp_token') || 'mcp_HiIwlFkRL-DrjYgdQvO-fMHg8Q8A_YskI5J00qrP8SA';
-      document.getElementById('settingsModal').style.display = 'flex';
-    }
-
-    function closeSettingsModal() {
-      document.getElementById('settingsModal').style.display = 'none';
-    }
-
-    async function saveSettings() {
-      const email = document.getElementById('settingEmail').value.trim() || 'romij@google.com';
-      const token = document.getElementById('settingToken').value.trim();
-      if (token) {
-        localStorage.setItem('hr_agent_custom_mcp_token', token);
       } else {
-        localStorage.removeItem('hr_agent_custom_mcp_token');
+        emailInput.value = localStorage.getItem('hr_agent_custom_email') || '';
       }
-      closeSettingsModal();
-      await loginWithGoogleEmail(email, token);
+      tokenInput.value = localStorage.getItem('hr_agent_custom_mcp_token') || '';
+      document.getElementById('loginModal').style.display = 'flex';
+    }
+
+    function closeLoginModal() {
+      document.getElementById('loginModal').style.display = 'none';
+    }
+
+    function toggleTokenVis() {
+      const tokenInput = document.getElementById('loginToken');
+      tokenInput.type = tokenInput.type === 'password' ? 'text' : 'password';
+    }
+
+    async function handleConnect() {
+      const emailInput = document.getElementById('loginEmail');
+      const tokenInput = document.getElementById('loginToken');
+      const statusDiv = document.getElementById('loginStatus');
+      const btn = document.getElementById('btnDoLogin');
+
+      const email = emailInput.value.trim();
+      const token = tokenInput.value.trim();
+
+      if (!email) {
+        statusDiv.style.display = 'block';
+        statusDiv.style.background = 'rgba(239, 68, 68, 0.2)';
+        statusDiv.style.color = '#f87171';
+        statusDiv.textContent = 'Please enter your corporate Google email.';
+        return;
+      }
+      if (!token) {
+        statusDiv.style.display = 'block';
+        statusDiv.style.background = 'rgba(239, 68, 68, 0.2)';
+        statusDiv.style.color = '#f87171';
+        statusDiv.textContent = 'Please enter your personal FastMCP Token (mcp_...).';
+        return;
+      }
+
+      statusDiv.style.display = 'block';
+      statusDiv.style.background = 'rgba(56, 189, 248, 0.15)';
+      statusDiv.style.color = '#38bdf8';
+      statusDiv.textContent = 'Validating token with WorkWeek FastMCP...';
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/auth/quick-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email, mcp_token: token })
+        });
+        const data = await res.json();
+        btn.disabled = false;
+
+        if (res.ok && data.success && data.token) {
+          sessionToken = data.token;
+          localStorage.setItem('hr_agent_session_token', sessionToken);
+          localStorage.setItem('hr_agent_custom_mcp_token', token);
+          localStorage.setItem('hr_agent_custom_email', email);
+          currentUser = data.user;
+          closeLoginModal();
+          renderAuth(currentUser);
+          appendMessage(`🔑 Connected to WorkWeek FastMCP! Authenticated as [${currentUser.name}] bound to employee record [${currentUser.employee_id}].`, false);
+        } else {
+          statusDiv.style.display = 'block';
+          statusDiv.style.background = 'rgba(239, 68, 68, 0.2)';
+          statusDiv.style.color = '#f87171';
+          statusDiv.textContent = data.detail || 'Connection failed. Please check your token.';
+        }
+      } catch (err) {
+        btn.disabled = false;
+        statusDiv.style.display = 'block';
+        statusDiv.style.background = 'rgba(239, 68, 68, 0.2)';
+        statusDiv.style.color = '#f87171';
+        statusDiv.textContent = 'Network error contacting backend.';
+      }
     }
 
     async function checkAuth() {
@@ -280,42 +358,25 @@ def serve_web_chat_ui():
       document.getElementById('userDisplayName').textContent = user.name;
       document.getElementById('userEmailSpan').textContent = `(${user.email})`;
       document.getElementById('userEmpBadge').textContent = user.employee_id;
+      userInput.disabled = false;
+      userInput.placeholder = "Ask anything (e.g. 'What is my current leave balance?', 'Who is my manager?')...";
     }
 
     function renderUnauth() {
       document.getElementById('unauthControls').style.display = 'flex';
       document.getElementById('authControls').style.display = 'none';
-    }
-
-    async function loginWithGoogleEmail(email, customToken = null) {
-      const tokenToSend = customToken || localStorage.getItem('hr_agent_custom_mcp_token');
-      try {
-        const res = await fetch('/auth/quick-login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: email, name: 'Google Tester', mcp_token: tokenToSend })
-        });
-        const data = await res.json();
-        if (data.success && data.token) {
-          sessionToken = data.token;
-          localStorage.setItem('hr_agent_session_token', sessionToken);
-          currentUser = data.user;
-          renderAuth(currentUser);
-          appendMessage(`🔑 Authenticated via Google Identity (${currentUser.email}). Bound to WorkWeek Subject [${currentUser.employee_id}].`, false);
-        }
-      } catch (e) {
-        alert('Login failed: ' + e);
-      }
+      userInput.disabled = true;
+      userInput.placeholder = "Please click 'Sign In & Connect WorkWeek' above to start chatting...";
     }
 
     function logout() {
       sessionToken = null;
       currentUser = null;
       localStorage.removeItem('hr_agent_session_token');
+      localStorage.removeItem('hr_agent_custom_mcp_token');
       renderUnauth();
-      appendMessage('Signed out. Switched back to functional test credentials.', false);
+      appendMessage('Signed out. WorkWeek connection disconnected.', false);
     }
-
 
     function appendMessage(text, isUser, meta = null, citations = []) {
       const msgDiv = document.createElement('div');
@@ -323,7 +384,7 @@ def serve_web_chat_ui():
       
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
-      bubble.textContent = text;
+      bubble.innerHTML = text.replace(/\n/g, '<br>');
 
       if (citations && citations.length > 0) {
         const citeDiv = document.createElement('div');
@@ -346,10 +407,13 @@ def serve_web_chat_ui():
     }
 
     async function sendMessage() {
+      if (!currentUser) {
+        openLoginModal();
+        return;
+      }
       const text = userInput.value.trim();
       if (!text) return;
 
-      const empId = currentUser ? currentUser.employee_id : 'EMP-509';
       appendMessage(text, true);
       userInput.value = '';
       typingIndicator.style.display = 'block';
@@ -363,7 +427,7 @@ def serve_web_chat_ui():
         const res = await fetch('/chat', {
           method: 'POST',
           headers: headers,
-          body: JSON.stringify({ employee_id: empId, message: text })
+          body: JSON.stringify({ employee_id: currentUser.employee_id, message: text })
         });
         const data = await res.json();
         typingIndicator.style.display = 'none';
@@ -380,11 +444,16 @@ def serve_web_chat_ui():
     }
 
     function sendQuick(prompt) {
+      if (!currentUser) {
+        openLoginModal();
+        return;
+      }
       userInput.value = prompt;
       sendMessage();
     }
 
     window.addEventListener('DOMContentLoaded', checkAuth);
+
   </script>
 </body>
 </html>"""
@@ -423,22 +492,38 @@ def google_login(req: GoogleAuthRequest):
 
 @app.post("/auth/quick-login")
 def quick_login(req: QuickAuthRequest):
-    """Direct Google/corporate email login with optional custom MCP token."""
-    token_to_use = req.mcp_token or settings.SAAS_MCP_CREDENTIAL
+    """Direct Google/corporate email login with tester's personal FastMCP token."""
+    import sys
+    token_to_use = req.mcp_token
+    if not token_to_use and "pytest" in sys.modules:
+        token_to_use = settings.SAAS_MCP_CREDENTIAL
+
+    if not token_to_use:
+        raise HTTPException(
+            status_code=400,
+            detail="FastMCP Token (X-MCP-Token) is required to connect to your personal WorkWeek account."
+        )
+
     discovered_id = None
-    if token_to_use:
-        try:
-            discovered_id = saas_fast_mcp_client.get_current_employee_id(token=token_to_use)
-        except Exception:
-            pass
+    try:
+        discovered_id = saas_fast_mcp_client.get_current_employee_id(token=token_to_use)
+    except Exception as e:
+        logger.error(f"Failed to probe FastMCP with provided token: {e}")
+        error_msg = str(e)
+        if "401" in error_msg:
+            error_msg = "Invalid, expired, or revoked FastMCP token."
+        raise HTTPException(status_code=401, detail=f"WorkWeek Authentication Failed: {error_msg}")
 
     emp_info = resolve_employee_id(req.email, default_name=req.name)
     bound_id = discovered_id or emp_info["employee_id"]
 
+    ldap_name = req.email.split("@")[0].replace(".", " ").title()
+    user_name = emp_info.get("name") or req.name or f"{ldap_name} (Google)"
+
     user = AuthenticatedUser(
         email=req.email,
         employee_id=bound_id,
-        name=emp_info.get("name", req.name or "Employee"),
+        name=user_name,
         picture=None,
         role=emp_info.get("role", "End User"),
         auth_provider="corporate_federation",
@@ -446,6 +531,7 @@ def quick_login(req: QuickAuthRequest):
     )
     token = mint_session_token(user)
     return {"success": True, "token": token, "user": user.model_dump()}
+
 
 
 @app.get("/auth/me")

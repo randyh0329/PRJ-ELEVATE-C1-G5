@@ -104,17 +104,31 @@ def test_chat_with_cloud_run_iap_header(client):
 
 def test_quick_login_with_custom_mcp_token(client):
     """Verify /auth/quick-login accepts and preserves custom MCP token."""
+    from config.settings import get_settings
+    valid_token = get_settings().SAAS_MCP_CREDENTIAL
+
     login_resp = client.post(
         "/auth/quick-login",
-        json={"email": "teammate@google.com", "mcp_token": "mcp_custom_token_12345"}
+        json={"email": "teammate@google.com", "mcp_token": valid_token}
     )
     assert login_resp.status_code == 200
     data = login_resp.json()
     assert data["success"] is True
-    assert data["user"]["mcp_token"] == "mcp_custom_token_12345"
+    assert data["user"]["mcp_token"] == valid_token
 
     token = data["token"]
     me_resp = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert me_resp.status_code == 200
-    assert me_resp.json()["user"]["mcp_token"] == "mcp_custom_token_12345"
+    assert me_resp.json()["user"]["mcp_token"] == valid_token
+
+
+def test_quick_login_with_invalid_token_rejects(client):
+    """Verify /auth/quick-login rejects invalid token with 401."""
+    login_resp = client.post(
+        "/auth/quick-login",
+        json={"email": "teammate@google.com", "mcp_token": "invalid_fake_token"}
+    )
+    assert login_resp.status_code == 401
+    assert "WorkWeek Authentication Failed" in login_resp.json()["detail"]
+
 

@@ -194,7 +194,10 @@ class SaaSFastMCPClient:
                 return discovered
         except Exception as e:
             logger.warning(f"Unable to fetch employee id from session: {e}")
+            if token:
+                raise
         return "EMP-509"
+
 
 
     def get_employee_balances(self, employee_id: str) -> Dict[str, float]:
