@@ -10,12 +10,13 @@
 | :---- | :---- |
 | **Project Name** | HR Agentic Solution (MVP 1) |
 | **Document ID** | SDD-ELEVATE-C1-G5-MVP1 |
-| **Version** | 1.7 |
+| **Version** | 2.2 |
 | **Date** | 2026-08-26 |
+| **Last Updated** | 2026-08-26 |
 | **Author(s)** | CJ / Romi Jung / Elevate C1-G5 Architecture Team |
 | **Document Owner** | Cloud Architecture & Modernization Specialist Team |
 | **Reviewers** | Alex Rivera (IT Director), Maria Santos (Data Protection Officer), HR Business Sponsor, InfoSec |
-| **Status** | Approved Final Architecture / Branch reconciliation complete (WAF + CE-Skills + Next '26 branding merged with evaluator rounds 4-7) |
+| **Status** | **Approved - Implementation Baseline v2.2.** Branch reconciliation complete (WAF + CE-Skills + Next '26 branding merged with evaluator rounds 4-9); all twelve canonical SDD sections populated; no open blocking items. Changes from this point are change-controlled against §10.1 DEC-01 - DEC-24 rather than revision rounds. |
 | **Target Audience** | Enterprise Architects, Application Modernization Leads, AI Engineers, IT Director, Data Protection Officer, HR Business Sponsors |
 | **Source Requirements** | `HR Agentic Solution BRD.md` (FR-1.1 - FR-5.5, NFR-1.1 - NFR-4.3, UC-1.1 - UC-2.3) |
 | **Target Cloud Platform** | Google Cloud Platform (Tiered Gemini 3.7 Flash + Gemini 3.1 Pro on Gemini Enterprise Agent Platform / Vertex AI, Agent Search [formerly Vertex AI Search], Google ADK & Agent Platform Runtime [formerly Reasoning Engine], Model Armor, Cloud Run Multi-Region, Cloud Firestore, Cloud Tasks, Sensitive Data Protection) |
@@ -33,6 +34,10 @@
 | **1.5** | 2026-08-25 | Elevate C1-G5 Architecture Team | **Evaluator feedback round 4** (run `sdd-20260825-ce39a6`). Re-architected the §4.3 safety chain from five sequential stages to three concurrency groups: design budget falls from **280 ms / 20 ms headroom to 120 ms / 180 ms headroom**, with per-stage hard deadlines that fail closed so network jitter cannot cascade into a turn timeout. Added **§7.5 Observability, Alerting & Operational Runbook** enumerating 20 concrete alert policies with thresholds, windows, severities and automated responses (including gateway and backend 5xx spike triggers), multi-window burn-rate alerting, and three structured log payload schemas. Added **adaptive concurrency control (AIMD)** to §5.2 so throughput safety no longer depends on vendor-confirmed rate limits - **closes OPEN-01 as DEC-08**. Selected Cloud Identity groups as the entitlement source of truth behind a swappable provider interface - **closes OPEN-03 as DEC-09**, so the restricted corpus ships in MVP. Added **§4.8 Credential & Entitlement Revocation Mid-Session and Mid-Saga**; formalised the §4.7 revocation SLAs as numbered, measured, alert-backed commitments (SLA-01 - SLA-06); added an explicit **consent-withdrawal** workflow distinct from Art. 17 erasure, and made masked-PII audit-log retention and stale-embedding purge explicit in §4.6.<br><br>**Evaluator feedback round 5** (run `sdd-20260825-6f9866`, both personas *pass*). Added **§1.5 Reviewer's Index** mapping recurring review questions to the answering section, after round 5 reported throttling (§5.2), revocation (§4.8) and 5xx fallback (§5.5) as absent when all three were present - a discoverability failure in a 1,900-line document. Added a **dead-letter queue strategy** (§5.2) covering poison-payload classification, 14-day retention, compensation-class routing and safe replay. Added **§5.6 Mock Service Fidelity & Production Cutover Plan** with latency and fault injection requirements and a six-stage shadow-to-canary cutover, so mock-based MVP delivery stops deferring integration risk. Added **SLA-07/SLA-08** and a named operational workflow for policy publication, with immediate exclusion of superseded documents so the failure mode is "no answer" rather than "wrong answer". Added **§6.5 price sensitivity and automated Catalog API verification** - **closes OPEN-02 as DEC-10**. **Closes OPEN-04 as DEC-11** with a documented rubric re-keying procedure. §10.2 now holds no delivery-blocking items; residual uncertainty is carried in §8.1 assumptions and §8.3 risks.<br><br>**Evaluator feedback round 6** (run `sdd-20260825-a78dec`). Added **§9.5 Performance Profiling & Latency Validation Plan** - environment, OpenTelemetry instrumentation, five load profiles (baseline / peak / stress / soak / cascade), captured metrics, pass-fail gates and a pre-decided five-step remediation ladder - plus a **timeout-cascade and bulkhead analysis** in §4.3 that states the honest 350 ms worst case rather than hiding it. Added a concrete **`fidelity-profile.yaml` mock configuration schema** with CI schema validation and four profile tiers (§5.6), replacing prose fidelity requirements. Added **§5.7 Human Escalation, Warm Handoff & Asynchronous Notification**: six escalation triggers, a de-identified context package so employees never repeat themselves, and guaranteed out-of-band notification with an itemised partial-completion summary for the UC-2.2 case. Added **queue depth ceilings, a per-user in-flight cap and a 30-minute task staleness bound** to §5.2, so a late HR write is never executed silently. Added **§6.6 business-case robustness**: break-even at a 0.19% deflection rate, a plan to re-derive the baseline from live ITSM data at Phase 1, and replacement of projection by measurement post-launch. Alert catalogue extended to 20 policies (`ALRT-17` notification failure, `ALRT-18` queue depth, `ALRT-19` stale-intent discards) |
 | **1.6** | 2026-08-26 | CJ / Romi Jung / Elevate C1-G5 Architecture Team | **Branch reconciliation - `main` merged into the evaluator-feedback line.** Two revision streams had diverged from v1.4 and were producing contradictory section numbering and duplicate decision IDs. This revision merges them into one document, with no content dropped from either side. Brought in from `main`: (1) **§1.3.1 Google Cloud Next '26 branding & taxonomy alignment** mapping official Gemini Enterprise Agent Platform (GEAP) product names to the legacy names customers still use, plus the corresponding wording in §1.4 and §3.2; (2) **§4.9 three-way IAM service-account isolation** (`sa-gateway`, `sa-agent-core`, `sa-integrations`) with prohibited-permission columns, no-static-key enforcement and CMEK; (3) **§5.8 advanced resilience patterns** - downstream circuit breaker, Firestore idempotency locks, Cloud Run cold-start elimination; (4) **§6.7 Vertex AI Context Caching** reducing platform run cost from ~$510.30 to ~$416.70/month and TTFT from ~1,050 ms to ~520 ms; (5) **§7.6 two-stage delivery pipeline** and the deterministic mock server with `POST /api/test/reset-state`. `main`'s DEC-08 - DEC-11 collided with different decisions of the same number on the evaluator line and are **re-keyed to DEC-12 - DEC-15**; the merge map is recorded in §10.1. Sections added on `main` are appended within their parent chapter so every existing cross-reference in this document remains valid. |
 | **1.7** | 2026-08-26 | CJ / Elevate C1-G5 Architecture Team | **Evaluator feedback round 7** (run `sdd-20260826-8b2dea`, both personas *Customer Happy*). Four of the six persona reflections in this round - unconfirmed backend rate limits, the 280 ms / 20 ms safety headroom, deferred SLO alert thresholds, and the open entitlement source of truth - were raised against the `main` revision and were already closed on the evaluator line by DEC-08, the §4.3 concurrency rework, §7.5 and DEC-09 respectively; the v1.6 merge above is what makes those answers visible in a single document, and §1.5 now indexes each one. Two reflections were genuinely new, both from the Data Protection Officer, and are answered by new material: **§4.10 Immutable Multi-Region Enforcement of the Pre-LLM De-identification Template** - template version pinning by hash, an org-policy and VPC-SC deny perimeter, startup and per-call template-digest verification that fails closed, CI drift detection across both regions, and a quarterly cross-region equivalence proof (**DEC-16**); and **§4.11 Audit Log Partitioning & the Zero-Raw-PII Guarantee in Saga Compensation** - a four-zone log partitioning model, the `saga_compensation_event` schema with a field-level allow-list, sink-level exclusion filters, a continuous DLP re-inspection job over the audit dataset, and a CI test that fails the build if any compensation payload serialises an unmasked value (**DEC-17**). SLO-06 (zero raw-SPII in persistent storage) and alerts `ALRT-20` - `ALRT-22` added to §7.5; risk register extended with RSK-11 (infoType coverage completeness) and RSK-12 (future compensation-payload regression). |
+| **1.8** | 2026-08-26 | CJ / Elevate C1-G5 Architecture Team | **Evaluator feedback round 8** (weighted 4.91, *strong pass*). Closes the three scored gaps and both top recommendations, none of which required re-architecture - all three were places where a number or a protocol was implied but never written down. (1) **Problem definition**: §1.1 now carries an **eight-category FY26 ticket baseline** that reconciles to the 15,000/month figure the whole business case rests on, with per-category MTTR producing a blended **4.2 h** rather than an asserted one, and an addressable-envelope calculation showing the 40% deflection target claims **78% of a 51.2% envelope** instead of appearing from nowhere; plus a **four-segment user population** (knowledge workers, frontline, people managers, contractors) with the contractor exclusion stated as a design consequence - no HCM record means nothing to bind a subject assertion to (ASM-09). (2) **High-availability data layer**: new **§2.2.1 Firestore Replication Topology** states the `nam5` configuration explicitly - two read-write replicas and one witness, synchronous Paxos majority quorum, strongly consistent reads, the zone-loss and region-loss failure modes with their user-visible effect, why "dual-region" is not a Firestore location class and where dual-region *is* used (the GCS export bucket), and the `google_firestore_database` / `google_firestore_field` / `google_firestore_backup_schedule` Terraform that pins location, PITR, delete protection and CMEK (**DEC-19**). (3) **Adoption and trust**: new **§9.6 Adoption, Trust Calibration & Change Management** - an appeal protocol for employees who contest an automated policy refusal (2-business-day adjudication, corpus correction inside the SLA-07 window, every contested case becoming a golden-set entry), countermeasures for over-trust and under-trust as separate failure modes, ten adoption metrics with 6-month targets, and a four-wave gated rollout with explicit change-management commitments (**DEC-18**, which also records that live warm transfer stays out of MVP under CON-03). §5.7 gains two escalation triggers and points at the appeal path; risk register extended with **RSK-13 - RSK-16** (low adoption, automation bias, trust collapse, workforce-reduction perception); §9.4 gains UAT trust scenarios; Appendix B gains five plain-language terms; Appendix C gains supplementary dimension 30. |
+| **2.0** | 2026-08-26 | CJ / Elevate C1-G5 Architecture Team | **Implementation baseline - major version.** Released as **2.0** rather than 1.9 because this revision adds eleven new sections, completes every section of the canonical SDD template for the first time, and changes the document's role: it is no longer an evaluator-feedback line but the artefact an implementation team is expected to build from. Content changes below are **evaluator feedback round 9**. Round 8 closed the last *content* gaps; this revision closes the remaining **structural** and **internal-consistency** ones, which were the only things still costing marks. Nothing was re-architected. **(1) Problem definition:** §1.1 gains an explicit **Current State** flow showing how a Tier 1 request is handled today and what is deliberately *not* being replaced, a one-paragraph restatement of the problem for a non-specialist, and a three-driver **Why Now** with the cost of deferral quantified at ~$333k/quarter. New **§1.6 Success Metrics** consolidates criteria previously scattered across §1.1, §9.1 and §9.6.3 into **SM-01 - SM-18**, split into launch gates and post-launch outcome metrics, each with a measurement method, timeline and owner - and states the **failure conditions in advance**. **(2) Architecture:** new **§3.2.1 Deployable Component Register** (responsibility, explicit *non*-responsibility, technology, inbound interface, outbound dependencies, owner, failure behaviour) and new **§4.6.0 Logical Data Model** with an ER diagram naming the system of record for every entity - making explicit that the agent stores no employee identifier in the clear and owns no HR data. **(3) NFRs:** new **§2.3** derives expected load from the §1.1 baseline (60,000 turns/mo -> ~3.2 concurrent turns at 1x peak via Little's Law -> a 25-turn design point), states per-layer capacity limits and the 10x answer, and indexes all five NFR categories in one table. **(4) Risk:** §8.3 is re-categorised into **technical / operational / organisational** with a **named owner on every risk**; **RSK-17** records the accepted overnight cold-start posture; new **§8.4 Dependency Register** (DEP-01 - DEP-09) with fallbacks that preserve the schedule; new **§8.5 Known Unknowns** (UNK-01 - UNK-06), each with a scheduled experiment and a **pre-decided rule for every possible answer**. **(5) Feasibility:** new **§7.7** states **6.25 FTE across nine roles**, per-role failure impact, an **18% central schedule reserve** with a named draw-down trigger, the §7.4 critical path (now marked on the Gantt, with Phase 0 and Phase 5 added), and a fixed descope order in which **nothing in §4 is descopable**; **§7.7.3 costs and sequences the post-MVP roadmap as P6.1 - P6.7** (~32 engineering weeks), closing the Appendix C.2 dimension-11 weakness. New **§5.9** defines API versioning, an enumerated breaking-change list and a 90-day deprecation window. New **§10.3 Open Questions** (OQ-01 - OQ-06) records genuinely undecided non-blocking items with owners, due dates and a **default that ships if unanswered**. **(6) Consistency:** fixed the DLP stage deadline (§4.10 said 40 ms, §4.3 says **150 ms**); replaced the unsupported "eleven infoTypes" with a **canonical counting rule** - seven §4.4 element classes enforced by twelve §4.5 infoTypes, nine Google built-in plus **three enterprise custom detectors now written into the template**; corrected the §4.1 JWT example from `hcm-1.3.0` to `hcm-1.4.0`; corrected "six escalation triggers" to **eight** in §1.2 and §1.5; corrected "all nine operations mandated" to eight mandated plus the compensator; **extended `min-instances: 1` to both regions**, which the §2.2 active-active RTO < 30 s claim requires and the previous single-region wording contradicted; reconciled the §6.7 uncached ~1,050 ms TTFT against the §9.1 avg < 1.0 s target explicitly; re-ordered the ALRT catalogue; repaired the broken §10.1 table split before DEC-18; refreshed the stale Appendix C counts. New decisions **DEC-20** (resourcing and descope order), **DEC-21** (costed post-MVP roadmap), **DEC-22** (API lifecycle). |
+| **2.1** | 2026-08-26 | CJ / Elevate C1-G5 Architecture Team | **Stakeholder persona review round 10** (run `sdd-20260826-f0f0de`, both personas *Customer Happy*). Four of the eight reflections were already answered - bounded revocation propagation (SLA-01 - SLA-04), stale-embedding eviction for Art. 17 (§4.6 step 4, SLA-04, `ALRT-15`), raw-PII masking in LLM prompt payloads (§4.4, §4.5, §4.10) and the live-warm-transfer exclusion (DEC-18, P6.6) - and are indexed in §1.5 rather than rewritten. **Four were genuinely new and are closed here.** **(1) The escalation channel had no fallback of its own.** The §5.7 ladder terminated in a ServiceImmediately ticket, so an ITSM outage at the moment an employee asked for a human produced the worst available outcome: a promise with nothing behind it. New **§5.7 degraded escalation ladder** - a write-ahead `escalation_outbox` document, immediate out-of-band email to the DEP-08 receiver carrying the same surrogate-only context package, automatic reconciled drain when the breaker closes, and a **P1 page (`ALRT-23`) plus a service-desk phone number surfaced to the employee** if both channels fail. Two matching rows added to the §5.5 matrix, including notification-channel failure. **(2) Transparency obligations were satisfied in design but never surfaced to the employee.** New **§4.12** specifies the first-session privacy notice, the standing header disclosure, the pre-write and pre-escalation inline notices, and **five keyword rights entry points** (`privacy`, `what do you know about me`, `forget me`, `stop storing my conversations`, `human`) handled deterministically at the gateway and **never routed through the LLM**, so a rights request cannot be misclassified or hallucinated. The `forget me` flow confirms scope explicitly, because an employee asking an HR assistant to forget them may believe they are erasing their HR record - and §4.6.0 says they are not. **(3) RSK-17 was justified on aggregate overnight volume and did not address shift workers.** Now reconciled against the §1.1 frontline segment directly: 30% of headcount but 18% of volume, clustering at changeover *inside* the warm window for MVP-1 sites, with the non-US case tracked by OQ-06 and a cold start stated as a one-off slow greeting rather than a per-turn penalty. **(4) Peak-traffic validation against mocks.** §5.6 Stage 1 now states that shadow runs at live production concurrency and therefore measures the vendors under the real arrival distribution, while §9.5 validates our own code paths under injected fault - with UNK-03 as the decision rule joining them. New **DEC-23** (in-conversation transparency and rights entry points); alert catalogue extended to **24** policies. |
+| **2.2** | 2026-08-26 | CJ / Elevate C1-G5 Architecture Team | **Round-10 'Critical Gaps & Risks' follow-up.** The run's four summary gaps - mock backends, no live warm transfer, English/text-only, and overnight scale-to-zero - are all **documented, deliberate constraints** (CON-01, CON-03, CON-04, RSK-17) with stated rationale, triggers and post-MVP steps (P6.1, P6.6, P6.7, OQ-06); they are correctly reported as the residual risk of the chosen scope and none of them is an undocumented gap. Re-reading them did, however, surface one thing that **was** genuinely missing. **CON-04 stated only a technical consequence** - *no translation layer, no speech services* - and said nothing about which employees are affected, and **the document had no accessibility requirement anywhere**: no WCAG target, no screen-reader consideration for an SSE-streamed interface, and no assistive-technology users in the §9.4 UAT cohort. For an interface intended for the entire workforce that is a real omission, and in several jurisdictions a legal one. Closed here: CON-04 now states its **population consequence** (advantageous for deaf and hard-of-hearing employees, exclusionary for non-English-first and low-literacy employees concentrated in the frontline segment); new **DEC-24** makes **WCAG 2.2 AA a launch gate** verified by a blocking axe-core scan *and* two assistive-technology users in UAT, with the specific requirement that SSE token streaming must not regress screen-reader usability; **§2.3.3** gains an Accessibility category; **§9.4** gains the participants and the exit criterion; new **RSK-18** names the real exposure - *differential service by language and ability*, where the best-served population gets faster and everyone else stays where they were - with four controls that do not require lifting CON-04, including the commitment that **the human queue is not reduced for any segment during MVP 1**; new **UNK-07** sizes the excluded population from HRIS before the Wave 3 gate, with a decision rule that pulls P6.7 ahead of P6.3 and P6.4 if it exceeds 15% of ticket volume. |
 
 ---
 
@@ -42,6 +47,51 @@
 
 ### **The Enterprise Challenge**
 Modern enterprises face immense operational drag within internal support organizations. Over 40% of all incoming HR and IT helpdesk tickets represent routine Tier 1 inquiries - such as leave policy clarifications, PTO accrual lookups, contact updates, and ticket status inquiries. Employees face severe friction navigating siloed, complex legacy UIs across disparate Human Capital Management (HCM - WorkWeek) and IT Service Management (ITSM - ServiceImmediately) systems, while human HR/IT specialists spend hundreds of hours per month on repetitive data entry.
+
+**Stated as a single paragraph a non-specialist can repeat:** *An employee who wants to know how much bereavement leave they are entitled to, or whether their laptop ticket has moved, has no way to find out except to raise a ticket and wait an average of 4.2 hours. 15,000 such requests arrive every month, 93% of them answerable from documents and systems the enterprise already owns. Each one costs $18.50 in specialist time, and the specialists doing the answering are the same people who should be handling the cases that genuinely need judgement. Employees rate the experience 61% satisfied.*
+
+### **Current State - How a Tier 1 Request Is Handled Today**
+
+Nothing about the present process is broken in an obvious way; it is simply serialised through a human for requests that do not need one. That is precisely what makes it expensive.
+
+```mermaid
+flowchart TD
+    E["Employee has a question<br/>e.g. 'How much bereavement leave do I get?'"] --> T1{"Do they know<br/>where to look?"}
+    T1 -->|"No - the common case"| Ticket["Raises a helpdesk ticket<br/>(portal or email)"]
+    T1 -->|"Yes"| Portal["Logs into WorkWeek or the<br/>policy intranet directly"]
+    Portal --> Nav{"Can they find it<br/>in the legacy UI?"}
+    Nav -->|"No - abandons"| Ticket
+    Nav -->|"Yes"| Done1["Self-served<br/>(the minority path today)"]
+
+    Ticket --> Queue["Queued in ServiceImmediately<br/>Wait: 4.2 h blended MTTR"]
+    Queue --> Spec["HR or IT specialist picks it up"]
+    Spec --> Look["Specialist looks up the same<br/>policy document or WorkWeek record"]
+    Look --> Multi{"Does it span<br/>HR and IT?"}
+    Multi -->|"Yes - 5% of volume"| Coord["Manual coordination across<br/>two systems and two queues<br/>MTTR 9.4 h"]
+    Multi -->|"No"| Reply["Specialist replies; may<br/>re-key data into WorkWeek"]
+    Coord --> Reply
+    Reply --> Done2["Resolved<br/>Cost: $18.50 - CSAT 61%"]
+
+    style Queue fill:#ffe0e0
+    style Coord fill:#ffe0e0
+    style Done2 fill:#ffe0e0
+```
+
+**What already exists and is not being replaced.** WorkWeek (HCM) and ServiceImmediately (ITSM) remain the systems of record and are unchanged by this design. The HR policy corpus already exists as governed documents. The helpdesk queues, their staffing and their escalation conventions all remain in place - §5.7 routes *into* them rather than around them. **This design adds a front door; it does not replace a back office.** That is a deliberate constraint, and it is why the change is additive rather than a migration.
+
+**Where the cost actually sits.** The specialist in the diagram is not doing skilled work in the shaded path - they are performing a lookup the employee could have performed, in a UI the employee could not navigate. The 4.2-hour MTTR is almost entirely queue time, not work time. Removing the queue for the automatable 51.2% is therefore worth far more to the employee (hours → seconds) than it is to the specialist (minutes saved per ticket), which is why §1.1's value case leads with deflection and CSAT rather than headcount.
+
+### **Why Now**
+
+Three things are true simultaneously in FY26 that were not true when this problem was last assessed. None alone would justify the investment; together they make deferral the more expensive option.
+
+| # | Driver | Evidence | Why It Makes *Now* the Right Time |
+| :--- | :--- | :--- | :--- |
+| **1** | **The volume is growing, and the cost with it** | FY26 Tier 1 volume of 15,000/month is up materially against a helpdesk headcount that is flat, and the blended MTTR has moved to 4.2 h (§1.1 baseline) | The gap is widening on its own. Every quarter of deferral is ~$333k of avoided-labour value not captured (3 x $110,490, §6.2), against a build cost of roughly one quarter of a 6.25-FTE team |
+| **2** | **Grounded retrieval is now reliable enough to be trusted with policy** | The dual-gate design in §3.3 Path 1 - retrieval relevance >= 0.8 **and** groundedness >= 0.85 with resolvable citations - is measurable and enforceable today; §9.1 gates on 0% policy hallucination | This is the change that matters most. An HR agent that *might* invent a leave entitlement is a liability, not an asset. The reason this was not built two years ago is that refuse-rather-than-guess could not be *verified*, only hoped for. It can now be gated in CI (§9.3) |
+| **3** | **The enterprise safety and governance primitives are managed services, not bespoke builds** | Model Armor, Sensitive Data Protection, VPC-SC and CMEK are consumed as configuration in §4, not engineered (§4.5 template, §4.9 IAM topology) | The §4 control set would have been the majority of the build effort previously. It is now ~1.0 FTE of a 6.25-FTE team over 13 weeks, which is what brings the whole programme inside a single quarter |
+
+**The cost of waiting, stated plainly.** The alternative to building is not "no cost" - it is continuing to pay $111,000/month in avoided-labour terms for work that does not require a human, while employee CSAT stays at 61%. §6.6 shows the business case survives even if the baseline is substantially wrong: break-even sits at a **0.19% deflection rate** against a 40% target, a margin of more than 200x. There is no plausible version of the baseline in which this investment does not return.
 
 ### **The Business Metaphor: The Enterprise 5-Star Concierge (For Non-Technical Sponsors)**
 To intuitively understand this architecture without getting lost in technical jargon, imagine the solution as a **World-Class Digital Concierge Desk** stationed at the entrance of our enterprise:
@@ -68,11 +118,44 @@ graph TD
 
 ### **Quantitative Business Value & Return on Investment (ROI)**
 
-> **Baseline provenance:** volumes, MTTR, cost-per-contact and CSAT are drawn from the FY26 internal helpdesk operations baseline supplied with the BRD. They are re-validated at UAT exit (§9.4) before the post-MVP business case is signed.
+> **Baseline provenance:** volumes, MTTR, cost-per-contact and CSAT are drawn from the FY26 internal helpdesk operations baseline supplied with the BRD. They are re-validated at UAT exit (§9.4) before the post-MVP business case is signed. **§6.6 addresses how much the baseline can be wrong** (break-even sits at a 0.19% deflection rate) and how it is re-derived from live ITSM data at Phase 1; the tables immediately below address the different question of **what the baseline is made of**, because the deflection target depends on composition rather than on the aggregate.
+
+#### **FY26 Historical Baseline - Ticket Volume by Category**
+
+The 15,000/month figure is an aggregate, and the categories inside it differ sharply in how automatable they are. Decomposing it is what turns the >= 40% target from an assertion into a derivation.
+
+| # | Ticket Category (FY26 helpdesk taxonomy) | Mapped Use Case | Volume / mo | % of Total | Avg MTTR | MVP-1 Addressable? | Assumed Deflection Rate | Deflected / mo |
+| :-- | :--- | :--- | ---: | ---: | ---: | :--- | ---: | ---: |
+| 1 | Policy & entitlement questions (leave rules, bereavement, expense, probation) | UC-1.1 | 4,800 | 32.0% | 4.6 h | **Yes** - fully self-service | 65% | 3,120 |
+| 2 | PTO / leave balance and accrual lookups | UC-1.2 | 2,550 | 17.0% | 2.8 h | **Yes** - fully self-service | 70% | 1,785 |
+| 3 | Leave requests, amendments and cancellations | UC-1.2 | 1,650 | 11.0% | 5.6 h | **Partial** - agent files; the manager still adjudicates (DEC-02) | 35% | 578 |
+| 4 | Employee contact / personal detail updates | UC-1.2 (FR-3.2) | 900 | 6.0% | 2.0 h | **Yes** - fully self-service | 60% | 540 |
+| 5 | IT ticket status chase-ups and comment adds | UC-1.3 | 1,950 | 13.0% | 1.2 h | **Yes** - fully self-service | 60% | 1,170 |
+| 6 | New IT incident logging (laptop, access, network) | UC-1.3 | 1,350 | 9.0% | 6.8 h | **Partial** - structured intake only; the fix is human | 25% | 338 |
+| 7 | Cross-system requests (equipment, medical leave, relocation) | UC-2.1 - UC-2.3 | 750 | 5.0% | 9.4 h | **Partial** - orchestration and filing only | 20% | 150 |
+| 8 | Payroll, compensation, benefits enrolment, performance | *Out of scope (§1.2)* | 1,050 | 7.0% | 4.0 h | **No** - excluded by CON-06 | 0% | 0 |
+| | **Total** | | **15,000** | **100%** | **4.2 h** (blended) | | | **7,681 (51.2%)** |
+
+**How the 40% target follows from this table.** The technically addressable envelope is **7,681 inquiries/month (51.2%)**. MVP 1 commits to **6,000/month (40%)** - about 78% of that envelope - holding the remaining ~22% as allowance for first-pass containment failure, the frontline adoption lag described below, and the 6-month ramp in BRD Objective 1. The 40% target is therefore a **discounted floor derived from composition**, not a round number chosen for the business case.
+
+*Reconciliation:* the per-category MTTR figures, weighted by volume, reconcile to the 4.2 h blended MTTR in the ROI matrix below - 63,030 ticket-hours / 15,000 tickets = **4.20 h**. The $18.50 cost-per-contact remains a blended figure; the helpdesk cost model is not activity-based, so it is not re-derived per category here. The Phase 1 ITSM extract in §6.6 re-derives **this table**, not merely the headline number, and any category whose real share differs by more than 5 percentage points is flagged in the deployment record.
+
+#### **Baseline User Population & Segments**
+
+Deflection is not uniform across the workforce, and the segment that files the most tickets is not the one that is hardest to reach.
+
+| Segment | Headcount | % of Headcount | % of Ticket Volume | Primary Access Pattern | MVP-1 Coverage |
+| :--- | ---: | ---: | ---: | :--- | :--- |
+| **Knowledge workers** (corporate, engineering, finance) | 7,200 | 60% | 71% | Desktop browser on the corporate network (ASM-07) | **In scope** - primary MVP audience, highest deflection potential |
+| **Frontline / shift workers** (operations, field, retail) | 3,600 | 30% | 18% | Shared kiosk or mobile, short sessions between shifts | **In scope, but under-indexed today** - the responsive UI works; adoption is the constraint, not capability (RSK-13, §9.6) |
+| **People managers** | 900 | 7.5% | 8% | Desktop; queries mix own-record and team-context questions | **Partially in scope** - own-record self-service only; team and approval queries are refused and routed (FR-1.5, DEC-02) |
+| **Contractors / agency staff** | 300 | 2.5% | 3% | Desktop, no HCM personnel record | **Out of scope** - no WorkWeek record to bind a subject assertion to (§4.1); routed to the human queue (§5.7) |
+
+> **Why this belongs in a design document and not only in a business case.** Two design consequences fall directly out of the segment table. First, the 40% target is reachable from the knowledge-worker segment alone, so the MVP does **not** depend on solving frontline adoption - that is upside, tracked in §9.6 rather than assumed here. Second, managers and contractors generate **11% of volume that the agent must decline cleanly and route**, which is why domain containment (FR-5.4) and the §5.7 escalation path are MVP-1 scope rather than post-MVP polish. A design that deflects 40% and strands the other 11% has not succeeded.
 
 | Business Metric | Baseline (Manual Operations) | Target with HR Agent (MVP 1) | Tangible Enterprise Impact |
 | :--- | :--- | :--- | :--- |
-| **Tier 1 Ticket Volume** | 15,000 inquiries / month | <= 9,000 inquiries / month reaching a human | **40% Inquiry Deflection** within 6 months (BRD Objective 1) |
+| **Tier 1 Ticket Volume** | 15,000 inquiries / month (composition itemised above) | <= 9,000 inquiries / month reaching a human | **40% Inquiry Deflection** within 6 months (BRD Objective 1) |
 | **Mean Time to Resolution (MTTR)** | 4.2 hours average turnaround | **< 45 seconds conversational turnaround** | ~99% reduction in employee wait time for deflected inquiries |
 | **Operational Cost per Interaction** | ~$18.50 (human agent labour) | **~$0.034 (fully-loaded platform cost, §6)** | **~$110,490 net monthly operational saving** |
 | **Policy Compliance & Citation** | Variable (human memory errors) | **>= 95% grounded accuracy, 0% policy hallucination** | Fewer labour disputes from incorrect leave rules (NFR-3.1) |
@@ -85,6 +168,7 @@ graph TD
 | Dimension | In-Scope (MVP 1) | Out of Scope (MVP 1 / Post-MVP) |
 | :--- | :--- | :--- |
 | **Conversational Interface** | Web-based responsive chat UI with streaming Server-Sent Events (SSE) and citation deep links | Native Slack / Teams / Workspace Chat integrations |
+| **Human Escalation & Appeal** | Eight-trigger warm handoff into ServiceImmediately carrying a de-identified context package (§5.7); a contest control on every answer with a 2-business-day HR Knowledge Team review and a corpus-correction loop (§9.6) | **Live** agent chat / warm transfer inside the same session, queue-wait and presence display, co-browsing (post-MVP, CON-03, DEC-18) |
 | **Knowledge Domain** | Curated static HR policy documents (PDF/Text) stored in Google Cloud Storage | Dynamic HR intranet wikis, unstructured SharePoint crawls, external web search |
 | **HCM Integration** | WorkWeek read (Profile, PTO balances) and write (Contact update, Leave request, Leave cancellation) | Payroll processing, Compensation, Benefits enrolment, Performance reviews |
 | **ITSM Integration** | ServiceImmediately read (Ticket details, comment timeline) and write (Create, comment, status transition) | Change Management, Hardware Asset Tracking, CMDB updates |
@@ -92,7 +176,7 @@ graph TD
 | **Identity & Access** | Single-tenant functional test credentials; composite delegated authorization with server-side subject binding (§4.1) | Enterprise IdP federation (Okta / Microsoft Entra ID SSO), Active Directory |
 | **Backend Systems** | Purpose-built **mock** WorkWeek and ServiceImmediately services behind the same adapter contracts as production | Connection to live production HCM/ITSM tenants |
 | **Languages** | English only | Multi-lingual support |
-| **Modality** | Text-based conversation | Voice / IVR telephony integration |
+| **Modality** | Text-based conversation, **conforming to WCAG 2.2 AA** (DEC-24) | Voice / IVR telephony integration |
 
 ## **1.3. Target Architecture Overview**
 
@@ -195,17 +279,21 @@ This document is long because the subject matter is. To keep it navigable for a 
 | What are the API throttling thresholds and backoff strategy? | **§5.2** | 50 rps WorkWeek / 40 rps ServiceImmediately seeds, exponential backoff 1 s - 60 s, plus AIMD adaptive concurrency that self-calibrates |
 | What happens to payloads that fail permanently? | **§5.2 (DLQ strategy)** | Classified, retained 14 days, replayable; consequential payloads always reach a human, never silently dropped |
 | How much work can pile up in the queue, and for how long? | **§5.2** | Soft warning at 1,000, hard ceiling at 5,000, and a 30-minute staleness bound - a late write is never executed silently |
-| How does an employee reach a human? | **§5.7** | Six escalation triggers; warm handoff via an ITSM ticket carrying a de-identified context package |
+| How does an employee reach a human? | **§5.7** | Eight escalation triggers (§5.7 table); warm handoff via an ITSM ticket carrying a de-identified context package |
 | How is someone told when something fails after they close the chat? | **§5.7** | Out-of-band email plus ticket, with an itemised partial-completion summary; delivery is retried and alerted |
 | Is the 120 ms latency budget actually proven? | **§9.5** | Not yet - it is a design estimate. §9.5 is the profiling plan that measures it on production-identical infrastructure, with pass/fail gates and a pre-decided remediation ladder |
 | Can a slow dependency cascade into an outage? | **§4.3** | Bulkheads, no in-chain retries, absolute deadlines and admission control; bounded 350 ms worst case, stated openly |
 | What if the FY26 ROI baseline is wrong? | **§6.6** | Break-even is a 0.19% deflection rate; the baseline is re-derived from live ITSM data in Phase 1 and replaced by measurement post-launch |
+| Where does the 40% deflection number actually come from? | **§1.1** | An 8-category decomposition of the 15,000/month baseline giving a 51.2% addressable envelope; 40% is that envelope discounted for ramp-up, not a round number |
+| How is the session and Saga state replicated, and what survives a region loss? | **§2.2.1** | Firestore `nam5`: two read-write replicas plus a witness across three US regions, majority Paxos, strongly consistent reads in both compute regions; RPO 0 with a per-failure-mode table |
+| What happens when an employee thinks the agent got their entitlement wrong? | **§9.6** | A contest control on every answer, human review within 2 business days, and a corpus correction live in <= 15 min. The agent never adjudicates an entitlement, so a refusal is never a denial |
+| What if employees simply do not use it? | **§9.6**, **RSK-13** | Segment-phased rollout with per-wave gates and 10 tracked adoption metrics; the 40% target is reachable from the knowledge-worker segment alone |
 | How are the mocks kept honest? | **§5.6** | A versioned `fidelity-profile.yaml` with a CI-enforced schema, re-calibrated against production at the shadow stage |
 | How fast is a revoked session actually killed? | **§4.7 (SLA-01)**, **§4.8**, **Path 7** | Under 5 s, enforced on every turn; 120 s credential TTL means there is no long-lived token to strand |
 | What happens if a backend returns 5xx or times out mid-transaction? | **§5.5**, **§5.2** | Queue-and-confirm with idempotency keys; user gets a plain-language message; no stack traces |
 | Will an accepted medical leave be auto-cancelled if a later step fails? | **§5.4**, **§4.8** | No. `HUMAN_CONSEQUENTIAL` steps are never automatically reversed |
 | How quickly do policy changes reach the knowledge base? | **§4.6 (SLA-07)**, **DEC-01** | Under 15 min routine, under 5 min emergency, event-driven not scheduled |
-| What is alerted on, and at what threshold? | **§7.5** | 6 SLOs, 23 alert policies with thresholds, windows, severities and automated responses |
+| What is alerted on, and at what threshold? | **§7.5** | 6 SLOs, 24 alert policies with thresholds, windows, severities and automated responses |
 | Is the safety scanning going to blow the latency budget? | **§4.3** | 120 ms p95 design budget against a 300 ms ceiling; per-stage deadlines fail closed |
 | How is PII kept out of the model and the logs? | **§4.4**, **§4.5** | DLP de-identification before the prompt; surrogates in logs; re-identification only inside the trust boundary |
 | Can the de-identification step be bypassed, disabled, or drift between regions? | **§4.10** | No. The template is pinned by SHA-256 digest, verified at startup and on every call, protected by org policy and a VPC-SC perimeter, and drift-checked in CI against both regions - a mismatch fails closed rather than passing raw text |
@@ -215,9 +303,51 @@ This document is long because the subject matter is. To keep it navigable for a 
 | How are duplicate submissions prevented? | **§5.8.2** | Deterministic idempotency key and an atomic Firestore lock; a completed key replays the stored reference ID instead of re-calling the backend |
 | What does it actually cost after optimisation? | **§6.7** | ~$416.70/month with context caching against a ~$510.30 uncached planning figure; §6.5 and §6.6 stay on the conservative uncached number |
 | What about erasure and consent withdrawal? | **§4.6** | Art. 17 purge with receipt; Art. 7(3) withdrawal with ephemeral mode; stale embeddings evicted |
+| What is the employee actually *told*, and how do they exercise their rights? | **§4.12** | First-session privacy notice with retention periods; standing header disclosure; five keyword rights entry points handled deterministically at the gateway, never by the model (DEC-23) |
+| Who does this system *not* serve, and what is being done about it? | **CON-04**, **RSK-18**, **UNK-07**, **DEC-24** | English-only text is stated with its population consequence, not just its technical one; accessibility is a WCAG 2.2 AA launch gate with assistive-technology users in UAT; the excluded share is sized from HRIS before Wave 3, with a decision rule that can pull P6.7 forward |
+| What happens if the escalation path itself is down? | **§5.7**, **§5.5** | Write-ahead `escalation_outbox`, immediate email to the DEP-08 receiver, reconciled drain on breaker close, and a P1 page (`ALRT-23`) plus a phone number if both channels fail - the escalation is never silently queued |
 | How do we get from mock services to the real HCM and ITSM? | **§5.6** | Contract-identical mocks with fault and latency injection, then shadow, canary and cutover |
 | What does it cost, and how sensitive is that? | **§6** | ~$510/month at 15,000 inquiries; sensitivity analysis in §6.5 |
-| What is not yet decided? | **§10.2** | Nothing that blocks delivery; residual uncertainty is recorded as assumptions (§8.1) and risks (§8.3) |
+| What is not yet decided? | **§10.2**, **§10.3**, **§8.5** | Nothing blocks delivery. Non-blocking open questions are itemised with owners and due dates in §10.3; questions requiring an experiment are in §8.5 |
+| Who is required to build this, and is the timeline credible? | **§7.7** | 6.25 FTE across nine roles over 13 weeks, including an 18% central schedule reserve and a named descope order |
+| What does the post-MVP roadmap cost? | **§7.7.3** | P6.1-P6.7 costed and sequenced: ~32 engineering weeks, ~two quarters at 2.5 FTE |
+| How do we know if this succeeded? | **§1.6** | One consolidated success-metrics table: metric, target, measurement method, timeline, owner |
+
+## **1.6. Success Metrics - Consolidated Definition of Done**
+
+Success criteria for this programme are stated in three different registers elsewhere in the document, for three different audiences: business outcomes in §1.1, engineering quality gates in §9.1, and adoption signals in §9.6.3. **This section is the single consolidated view**, so that no reader has to assemble it themselves and no metric can quietly lack a measurement method or a date.
+
+The distinction that governs the table: a **launch gate** must be met before MVP 1 ships and is measured in CI or UAT; an **outcome metric** can only be measured in production against real employees and is assessed on a stated post-launch date. Conflating the two is how programmes declare success on the day they ship.
+
+### **1.6.1. Launch Gates - must pass before MVP 1 is released**
+
+| # | Metric | Target | Measurement Method | Timeline | Owner |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **SM-01** | Policy grounding accuracy | **>= 95%**, with **0%** policy hallucination | Vertex AI Gen AI Evaluation, `gemini-3.1-pro` as judge, over the 150-prompt golden set (§9.2); blocking CI gate (§9.3) | Phase 4 exit | ML/Eval Engineer |
+| **SM-02** | Guardrail robustness | **100%** of adversarial vectors blocked; **< 1%** false positives | 100-vector red-team suite, separate corpus from the golden set (§9.1) | Phase 4 exit | Security Architect |
+| **SM-03** | Transaction integrity | **100%** correct writes, **0** unauthorised writes | Integration suite diffing mock backend state before and after each run (§9.1) | Phase 4 exit | Backend Tech Lead |
+| **SM-04** | Cross-user data isolation | **0** successful cross-user reads | Adversarial suite attempting to induce another employee's record (§9.1, FR-1.5) | Phase 4 exit | Security Architect |
+| **SM-05** | Safety-chain overhead | **p95 < 300 ms** (CON-05); design budget 120 ms | Cloud Trace p95 across §9.5 peak and stress profiles; per-stage OpenTelemetry spans (UNK-01) | Phase 3 exit | Lead Architect |
+| **SM-06** | Conversational turnaround | **p95 < 10 s** end to end; **TTFT avg < 1.0 s** | §9.5 load profiles under the 1x peak concurrency model of §2.3 | Phase 3 exit | Lead Architect |
+| **SM-07** | Saga compensation correctness | Correct class applied on **every** forced-failure branch; **0** auto-reversals of `HUMAN_CONSEQUENTIAL` steps | Trajectory tests per Saga with fault injection at each step (§9.1, §5.4) | Phase 3 exit | Backend Tech Lead |
+| **SM-08** | Zero raw PII in persistent stores | **0** findings | Daily Sensitive Data Protection re-inspection over `audit_archive` and `ops_telemetry` for all twelve §4.5 infoTypes; CI bypass test (§4.10 E6, §4.11) | Phase 3 exit, then continuous | DPO / Security Architect |
+| **SM-09** | UAT sign-off | All §9.4 scenarios passed and signed | Stakeholder UAT with HR, IT and DPO representation | Phase 4 exit | Executive Sponsor (HR) |
+
+### **1.6.2. Outcome Metrics - measured in production after launch**
+
+| # | Metric | Baseline | Target | Measurement Method | Timeline | Owner |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **SM-10** | **Tier 1 inquiry deflection** | 15,000/month reaching a human | **<= 9,000/month (40% deflection)** | ITSM ticket volume in the deflectable categories of the §1.1 table, against a matched control cohort (§9.6.3, UNK-02) | **6 months post-launch**; first reading at Wave 1 + 4 weeks | HR Change Lead |
+| **SM-11** | Employee-perceived resolution time | 4.2 h blended MTTR | **< 45 s** conversational turnaround on deflected inquiries | Cloud Trace turn duration, filtered to sessions closed without escalation | 1 month post-launch | SRE Lead |
+| **SM-12** | Cost per interaction | ~$18.50 | **<= $0.034** | §6.2 actual billing / measured inquiry volume, reported monthly | 3 months post-launch | Lead Architect |
+| **SM-13** | Employee CSAT | 61% | **>= 88%** | In-session thumb rating plus the quarterly helpdesk CSAT survey, reported separately (an in-session rating over-samples satisfied users) | 6 months post-launch | HR Change Lead |
+| **SM-14** | Weekly active users | 0 | **>= 35%** of the knowledge-worker segment by month 6 | Distinct authenticated sessions per week, segmented per §1.1 (§9.6.3) | Weekly from Wave 1 | HR Change Lead |
+| **SM-15** | Repeat-use rate (the trust proxy) | n/a | **>= 60%** of first-time users return within 30 days | Session cohort analysis (§9.6.3) - the leading indicator for RSK-13 and RSK-15 | Weekly from Wave 1 | HR Change Lead |
+| **SM-16** | Escalation health | n/a | **< 15%** of sessions escalate; **100%** of escalations receive a human response within SLA | §5.7 trigger counts vs. ITSM response times; a *rising* rate means the corpus has a gap, not that the agent is broken | Weekly from Wave 1 | HR Operations Lead |
+| **SM-17** | Contested-answer rate and resolution | n/a | **< 2%** of answers contested; **100%** adjudicated within 2 business days (§9.6.1) | HR Knowledge Team review queue; every contested case becomes a golden-set entry | Weekly from Wave 1 | HR Knowledge Team Lead |
+| **SM-18** | Availability | n/a | **>= 99.9%** monthly (NFR-2.2, SLO-01) | Cloud Monitoring SLO with multi-window burn-rate alerting (§7.5) | Monthly from launch | SRE Lead |
+
+**What failure looks like, stated in advance.** MVP 1 is judged **unsuccessful** if, at 6 months, deflection is below 15% (SM-10) *or* grounding accuracy has regressed below 95% in production sampling (SM-01) *or* the contested-answer rate exceeds 5% (SM-17). Each has a pre-decided response in §8.5 rather than a review to be convened after the fact. Declaring the failure conditions before launch is what makes the success conditions meaningful.
 
 ---
 
@@ -266,6 +396,173 @@ flowchart LR
 | **Failover Drill Cadence** | **Quarterly** | Region evacuation game-day; RTO measured and recorded as a DR runbook exit criterion |
 
 > **Correction note (v1.4):** earlier revisions described a "max acceptable replication lag < 150 ms" with "bounded asynchronous follower reads." That characterisation applies to Cloud Spanner stale reads, not Firestore. Firestore `nam5` acknowledges a write only after synchronous quorum replication, so committed-write lag is zero by construction; the 150 ms figure is retained above but re-labelled as what it actually is - a cross-region read *latency* budget.
+
+### **2.2.1. Firestore Replication Topology (the state layer behind the 99.9% SLA)**
+
+RPO = 0 is only as strong as the replication topology underneath it, so the topology is stated explicitly rather than left implied by the location string `nam5`. Everything the session layer, the Saga ledger (§4.6) and the idempotency locks (§5.8.2) depend on is a property of this table.
+
+```mermaid
+flowchart TB
+    subgraph Compute["Application tier - active-active Cloud Run"]
+        CRC["Orchestrator + adapters<br>us-central1"]
+        CRE["Orchestrator + adapters<br>us-east4"]
+    end
+
+    subgraph NAM5["Cloud Firestore multi-region location 'nam5' (United States)"]
+        RW1[("Read-write replica<br>US region A<br>serves reads and writes")]
+        RW2[("Read-write replica<br>US region B<br>serves reads and writes")]
+        WIT[("Witness replica<br>US region C<br>votes in the quorum,<br>holds no servable data")]
+    end
+
+    CRC -->|"strongly consistent read / write"| NAM5
+    CRE -->|"strongly consistent read / write"| NAM5
+
+    RW1 <-->|"synchronous Paxos"| RW2
+    RW1 <-->|"synchronous Paxos"| WIT
+    RW2 <-->|"synchronous Paxos"| WIT
+
+    NAM5 -->|"continuous"| PITR[("Point-in-time recovery<br>7-day rolling window")]
+    NAM5 -->|"daily scheduled export"| DRBucket[("Dual-region GCS bucket<br>us-central1 + us-east1<br>35-day retention, CMEK")]
+```
+
+| Topology Property | Value / Behaviour | Why it is this way |
+| :--- | :--- | :--- |
+| **Location class** | **Multi-region**, location ID `nam5` (United States) | A regional database would place the entire session and Saga ledger inside one region's failure domain, which cannot support a 99.9% SLA beneath an active-active compute tier |
+| **Replica composition** | **Two read-write replicas in geographically separated US regions, plus one witness replica in a third US region.** The witness votes in the write quorum but stores no servable data | Three voters give a majority that survives the loss of any one region, at the storage cost of two full copies rather than three |
+| **Write path** | A write is acknowledged only once durably committed to a **majority (2 of 3)** of replicas via synchronous Paxos | This is what makes **RPO = 0** a property of the platform rather than of application retry logic |
+| **Read path** | **Strongly consistent from either read-write replica.** No eventual-consistency or stale-follower read path is used or exposed | Both Cloud Run regions read identical committed state, so a mid-conversation failover cannot show a stale PTO balance or replay a completed Saga step. The §5.8.2 idempotency lock depends on this - an atomic lock over an eventually-consistent read would not prevent duplicate submissions |
+| **Compute-to-data affinity** | Compute runs in `us-central1` and `us-east4`; both sit inside the `nam5` continental footprint | Keeps quorum reads intra-US and inside the p99 < 150 ms cross-region read budget above |
+| **Exact replica region IDs** | **Google-managed and subject to change**; the authoritative list is the Firestore locations reference. This design depends on the *guarantee* - 2 RW + 1 witness, majority quorum, strong reads - not on a hard-coded region list | Pinning behaviour to an undocumented region list would create a false dependency. The composition is re-verified at each quarterly DR drill and recorded in the runbook |
+| **Data residency** | US only. If EU residency becomes a requirement the equivalent location is `eur3`, and that is a **create-time, immutable** choice requiring a new database and a migration - not a config flip | Called out because it is the one property of this layer that cannot be changed later without a data migration |
+| **Encryption & protection** | CMEK via Cloud KMS (per DEC-12); `DELETE_PROTECTION_ENABLED`; TTL policies per §4.6 | Replication faithfully copies a malicious or accidental delete, so protection has to sit above replication |
+
+#### **Replication failure modes and what actually happens**
+
+| Failure | Effect on the service | Data loss |
+| :--- | :--- | :--- |
+| Single **zone** failure inside a replica region | None - Firestore replicates across zones within each region | None |
+| Loss of **one read-write replica region** | Serving continues from the surviving read-write replica; quorum is held by the survivor plus the witness, so writes continue to be acknowledged | **None (RPO = 0)** |
+| Loss of the **witness region** | Serving continues from the two read-write replicas, which still form a majority | None |
+| Loss of **two of three** replica regions | The database becomes unavailable for writes rather than serving divergent state; the agent degrades to the §5.5 read-only path and the §5.7 escalation route | None - unavailability, not loss |
+| **Logical** corruption (a bad deploy writes malformed Saga state) | Replication copies the corruption faithfully to every replica | Recovered via **PITR** inside the 7-day window |
+| Accidental database deletion | Blocked by `DELETE_PROTECTION_ENABLED`; if forced, restored from the daily dual-region export | Bounded by the export interval (24 h) |
+
+#### **Location-class decision: multi-region vs dual-region vs regional**
+
+| Option | Availability posture | Verdict for MVP 1 |
+| :--- | :--- | :--- |
+| **Firestore regional** (e.g. `us-central1`) | Zonal redundancy only; a regional outage takes the whole state layer down | **Rejected** - incompatible with active-active compute and the 99.9% SLA |
+| **Firestore multi-region `nam5`** | 2 RW + 1 witness across three US regions, synchronous quorum, strong reads | **Chosen** |
+| **"Dual-region"** | Firestore does **not** offer a dual-region location class - the choice space is regional or multi-region (`nam5` / `eur3`). Dual-region is a Cloud Storage and Spanner concept | **Not applicable to Firestore**, and the distinction is worth recording because reviewers reasonably ask for it. It *is* used deliberately one layer out: the DR export bucket is a dual-region GCS bucket (`us-central1` + `us-east1`), so a backup never shares a failure domain with a single Firestore replica region |
+| **Cloud Spanner dual-region / multi-region** | Stronger horizontal scale and SQL semantics | **Deferred** - over-provisioned for MVP volumes; retained as the §2.1 production upgrade path. Spanner is also where *bounded stale reads* would genuinely apply, which is the origin of the v1.4 correction note above |
+
+#### **Terraform declaration (module `modules/storage`, §7.1)**
+
+The topology is asserted in code, so the nightly drift plan (§7.1) fails if anyone changes it in the console.
+
+```hcl
+resource "google_firestore_database" "agent_state" {
+  project     = var.project_id
+  name        = "(default)"
+  location_id = "nam5"            # US multi-region: 2 read-write replicas + 1 witness
+  type        = "FIRESTORE_NATIVE"
+
+  concurrency_mode                  = "OPTIMISTIC"
+  app_engine_integration_mode       = "DISABLED"
+  point_in_time_recovery_enablement = "POINT_IN_TIME_RECOVERY_ENABLED"  # 7-day PITR
+  delete_protection_state           = "DELETE_PROTECTION_ENABLED"
+
+  cmek_config {
+    kms_key_name = var.firestore_cmek_key  # multi-region KMS key matching nam5 (DEC-12)
+  }
+}
+
+# NFR-1.3: platform-enforced 30-day session expiry (see §4.6)
+resource "google_firestore_field" "session_ttl" {
+  project    = var.project_id
+  database   = google_firestore_database.agent_state.name
+  collection = "sessions"
+  field      = "expireAt"
+  ttl_config {}
+}
+
+# Logical-corruption and accidental-delete cover; replication alone does not provide this
+resource "google_firestore_backup_schedule" "daily" {
+  project   = var.project_id
+  database  = google_firestore_database.agent_state.name
+  retention = "3024000s" # 35 days
+  daily_recurrence {}
+}
+```
+
+> **Verified, not asserted.** RPO = 0 and RTO < 30 s are treated as claims to be measured. The quarterly region-evacuation game-day evacuates one Cloud Run region, confirms that strongly consistent reads continue from the survivor, and records the observed failover time as a DR runbook exit criterion; a synthetic probe measures cross-region read latency continuously and alerts at 150 ms (§7.5).
+
+## **2.3. Consolidated Non-Functional Requirements & Capacity Model**
+
+The individual NFR controls are specified in depth in the sections that own them - security in §4, throughput in §5.2, performance in §4.3 and §9.5, cost in §6, reliability in §7.5. **This section is the single index across all five categories**, plus the load derivation that the scalability and performance numbers depend on. It adds one thing that exists nowhere else in the document: an explicit derivation of *expected load*, without which "scalable" is an adjective rather than an engineering claim.
+
+### **2.3.1. Load Derivation - Where the Concurrency Numbers Come From**
+
+Every capacity number in this document traces back to the §1.1 baseline through the arithmetic below. It is shown rather than asserted so that a reviewer can re-run it against a different baseline.
+
+| Step | Derivation | Value |
+| :--- | :--- | ---: |
+| Monthly inquiries reaching the agent | §1.1 baseline (the agent sees all traffic, deflected or not) | **15,000 / month** |
+| Conversational turns per inquiry | §6.1 basis of estimate (avg 4 turns/session) | **4** |
+| Monthly model turns | 15,000 x 4 | **60,000 / month** |
+| Working days per month | Standard | **22** |
+| Turns per working day | 60,000 / 22 | **2,727 / day** |
+| Concentration into the working window | 07:00-20:00 UTC, with observed helpdesk traffic ~70% concentrated in a 4-hour peak band | **1,909 turns in 4 h** |
+| Mean turns/second in the peak band | 1,909 / 14,400 s | **0.13 turns/s** |
+| Peak-second burst factor | Poisson arrival, 99th percentile at this rate | **x 4** |
+| **Peak arrival rate** | | **~0.53 turns/s** |
+| Mean turn duration (held connection, SSE) | §9.1 target: < 10 s p95, ~6 s mean | **~6 s** |
+| **1x peak concurrency** (Little's Law: L = λW) | 0.53 x 6 | **~3.2 concurrent turns** |
+| **Design point (§9.5 "peak" profile)** | 1x peak with a safety factor of ~8 applied for day-one uncertainty | **25 concurrent turns** |
+| **Stress profile** | 4x the design point - the point at which the §5.2 AIMD limiter and §5.8.1 breaker must both engage cleanly | **100 concurrent turns** |
+
+**Why the safety factor is 8 and not 2.** The honest position is that the arrival distribution of a system nobody has used yet is unknown (UNK-02). An 8x factor costs nothing at design time - Cloud Run scales horizontally and the §6.2 estimate is driven by tokens, not by instance count - whereas discovering a 3x under-estimate in production costs an incident. The design point is deliberately over-provisioned; the *cost* model is deliberately not.
+
+### **2.3.2. Scaling Strategy and Capacity Limits**
+
+| Layer | Scaling Mechanism | Capacity Limit (MVP 1) | What Happens at the Limit | Headroom to 10x |
+| :--- | :--- | :--- | :--- | :--- |
+| **Global ALB + Cloud Armor** | Google-managed anycast | Effectively unbounded at this scale | n/a | No change |
+| **Cloud Run (`api-gateway`, `agent-core`)** | Horizontal autoscale, `min-instances: 1` per region (§5.8.3), `max-instances: 50` per region | 100 instances x 80 concurrent requests = 8,000 in-flight | Requests queue at the LB; `ALRT-18` fires on queue depth | Raise `max-instances`; a Terraform variable, not a redesign |
+| **Vertex AI (Gemini)** | Managed, quota-bounded (DEP-02) | 1.2M input tok/min assumed | §5.2 AIMD limiter halves concurrency on 429 and recovers additively; user sees queued acknowledgement, never an error | Quota increase request; the binding constraint at 10x |
+| **Agent Search** | Managed | ~12,500 queries/month at MVP | Query-level throttling; grounded answers degrade to refusal, never to ungrounded generation | Linear cost, no architectural change |
+| **Cloud Firestore `nam5`** | Managed, auto-sharded | ~2M ops/month; 10k writes/s per database | Hot-key contention on `sagas` is the theoretical limit; session IDs are randomly distributed so no sequential-key hotspot exists | 5,000x headroom on writes |
+| **Cloud Tasks** | Managed queue | Dispatch capped at 90% of the backend ceiling (§5.2); per-user in-flight cap | Queue depth ceiling reached → new intents rejected with a clear message and a 30-min staleness bound, never silently held | Raise dispatch rate as backend ceilings rise |
+| **WorkWeek / ServiceImmediately** | **Not ours to scale** | Vendor rate limits (DEP-04) | **This is the real capacity ceiling.** §5.2's AIMD limiter and §5.8.1's breaker exist precisely because this layer cannot be scaled by us, only respected | Requires vendor negotiation - flagged in P6.4 |
+
+**The 10x question answered directly.** At 150,000 inquiries/month the architecture does not change: §6.3 prices it at ~$4,060/month, Cloud Run scales horizontally on a variable, and Firestore has five orders of magnitude of headroom. The two things that *do* change are Vertex AI quota (DEP-02) and the downstream vendor rate limits (DEP-04) - neither of which is an architectural problem, both of which are procurement lead times. That is why **P6.4 in §7.7.3 is estimated at 2 weeks of tuning rather than a re-architecture**, and it is the single most important consequence of the queue-and-shed design in §5.2.
+
+### **2.3.3. NFR Index - All Five Categories, One View**
+
+| Category | Requirement | Target | Owning Section | How It Is Verified |
+| :--- | :--- | :--- | :--- | :--- |
+| **Security** | Authentication & subject binding | `employee_id` never a model or tool parameter; server-bound `sub` in a 120 s RS256 assertion | **§4.1** | SM-04 adversarial isolation suite; `jti` replay test |
+| **Security** | Authorisation | Per-call scope intersection; three-account IAM isolation with enumerated prohibited permissions | **§4.2**, **§4.9** | IAM policy diff in CI; SM-04 |
+| **Security** | Data protection in transit & at rest | TLS 1.3; CMEK on every persistent store; VPC-SC perimeter | **§4.9**, **§4.10** | Terraform policy tests; perimeter drift check |
+| **Security** | Threat model - prompt injection & exfiltration | Model Armor in/out; DLP pre-LLM de-identification; structural defence (RSK-04) | **§4.3**, **§4.4** | SM-02 100-vector red-team suite, 100% block required |
+| **Security** | PII handling | Seven §4.4 element classes via twelve §4.5 infoTypes; zero raw PII in any persistent store | **§4.4**-**§4.5**, **§4.11** | SM-08 daily DLP re-inspection + CI bypass test |
+| **Privacy** | Retention & erasure | 30-day Firestore TTL; Art. 17 purge with receipt; Art. 7(3) ephemeral mode | **§4.6** | Purge receipt audit; TTL config test |
+| **Scalability** | Expected load | 60,000 turns/month; ~3.2 concurrent turns at 1x peak; 25-turn design point | **§2.3.1** | §9.5 peak profile |
+| **Scalability** | Capacity limits & 10x | No re-architecture to 150k/month; ~$4,060/month | **§2.3.2**, **§6.3** | §9.5 stress profile at 100 concurrent turns |
+| **Scalability** | Throughput safety | AIMD adaptive concurrency at 90% of backend ceiling; per-user in-flight cap | **§5.2** | §9.5 cascade profile; `ALRT-18` |
+| **Reliability** | Availability | **99.9%** monthly (NFR-2.2) | **§2.2**, **SLO-01** | Cloud Monitoring SLO, multi-window burn-rate alerting |
+| **Reliability** | RPO / RTO | **RPO = 0**, **RTO < 30 s** in the warm window (RSK-17 outside it) | **§2.2** | Quarterly region-evacuation game day |
+| **Reliability** | Failure isolation | Circuit breaker 5 failures/30 s, 60 s cooldown; bulkheads; fail-closed safety deadlines | **§5.8.1**, **§4.3** | Forced-failure trajectory tests |
+| **Reliability** | Transactional correctness | Saga ledger; four compensation classes; idempotency locks | **§5.4**, **§5.8.2** | SM-03, SM-07 |
+| **Performance** | End-to-end turn latency | **p95 < 10 s** (NFR-2.1) | **§9.1**, **§9.5** | Cloud Trace p95, hard gate |
+| **Performance** | Time to first token | **avg < 1.0 s**, **p95 < 1.5 s** | **§6.7**, **§9.1** | §9.5 load profiles |
+| **Performance** | Safety-chain budget | **p95 < 300 ms** ceiling (CON-05); **120 ms** design budget, 180 ms headroom | **§4.3** | SM-05; `ALRT-04` warns at 240 ms |
+| **Performance** | Cold start | Eliminated in the warm window via `min-instances: 1` in both regions | **§5.8.3** | Synthetic probe p95 |
+| **Accessibility** | Conformance | **WCAG 2.2 AA** on the chat surface: keyboard-only operation, screen-reader announcement of streamed tokens and of every refusal, visible focus, 4.5:1 contrast, no reliance on colour alone, and no time-limited interaction | **§9.4**, DEC-24 | Automated axe-core scan in CI as a blocking gate, plus manual assistive-technology testing with two users in UAT |
+| **Accessibility** | Plain-language floor | Refusal, escalation and privacy text held at a reading level appropriate to the whole workforce, not to head-office readers | **§4.12**, **§9.6.2** | Technical Writer review (§7.7.1); verbatim comprehension feedback captured in UAT |
+| **Cost** | Run rate | **~$510/month** at 15,000 inquiries (~$416.70 with context caching) | **§6.2**, **§6.7** | Actual billing vs. estimate, monthly (SM-12) |
+| **Cost** | Unit economics | **$0.034 / inquiry** vs. $18.50 human baseline | **§6.2** | SM-12 |
+| **Cost** | Cost control | Budget alerts at 50/80/100% of $750; 12,000-token per-turn ceiling | **§6.4** | Budget alert policy in Terraform |
 
 ---
 
@@ -323,6 +620,24 @@ Every agent and every tool is declared in a version-controlled registry (`config
 
 Registry entries carry `owner`, `semver`, `created_at`, `last_reviewed_at`, `prompt_file_sha256` and `model_id`. The registry is diffed in CI; any change requires the §9.3 eval gate to pass and is recorded in the ADR log (§7.2).
 
+### **3.2.1. Deployable Component Register - Responsibilities, Interfaces and Failure Behaviour**
+
+The registry above governs *agents*. This table governs *deployable components*: what each one is responsible for, what it explicitly is **not** responsible for, the interface it exposes, the technology it runs on, who owns it, and - the column that most component tables omit - how it behaves when it fails. An engineer should be able to pick one row and implement it without needing to infer a boundary.
+
+| Component | Responsibility | Explicitly NOT Responsible For | Technology | Inbound Interface | Outbound Dependencies | Owner | Behaviour on Failure |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **`api-gateway`** | Session validation, subject binding from the authenticated session, pre-LLM DLP de-identification, Model Armor inbound scan, SSE stream fan-out to the client | Any business logic; any model call; any backend API call | Cloud Run (Python, FastAPI), 2 regions, `min-instances: 1` | HTTPS/SSE via Global ALB; `POST /api/v1/chat`, `GET /api/v1/stream/{sessionId}` (§5.1) | Cloud DLP, Model Armor, Firestore (`sessions`), `agent-core` | Platform Team | **Fails closed.** A DLP or Model Armor error or deadline breach refuses the turn (§4.3 E7). It never forwards unscanned text - availability is never traded for safety |
+| **`agent-core`** | LangGraph `StateGraph` execution: supervisor routing, specialist nodes, Saga coordination, state persistence, Model Armor outbound scan | Direct backend HTTP calls; credential minting; PII re-identification | Cloud Run (Python, LangGraph), 2 regions, `min-instances: 1` | Internal gRPC/HTTP from `api-gateway` only (`roles/run.invoker` scoped) | Vertex AI, Agent Search, Firestore (`sessions`, `messages`, `sagas`), Cloud Tasks, `integration-adapters` | Platform Team | Node-level exception → Saga ledger records the step as `FAILED` and the §5.4 compensation class decides the response. A model timeout degrades to the §5.5 fallback message, never to a fabricated answer |
+| **`integration-adapters`** | WorkWeek and ServiceImmediately HTTP calls, request/response schema validation, idempotency locking, circuit breaking, credential exchange via `signJwt` | Deciding *whether* an action is authorised (that is §4.2); conversational phrasing | Cloud Run (Python), 2 regions | Internal HTTP from `agent-core` only | Secret Manager, IAM Credentials API (`signJwt`), WorkWeek, ServiceImmediately | Integration Team | Circuit breaker opens after 5 failures/30 s and fails fast in < 5 ms (§5.8.1); mutating calls route to Cloud Tasks for retry; `HUMAN_CONSEQUENTIAL` steps never auto-reverse (§5.4) |
+| **`policy-ingestion`** | Eventarc-triggered chunking, embedding and incremental import of the HR corpus; immediate `stale` flagging of superseded versions; canary verification probe | Serving queries at runtime | Cloud Function (Python), Eventarc trigger on `object.finalize` | GCS `object.finalize` event | Agent Search import API, GCS policy bucket | HR Knowledge Team + Platform | Probe failure raises `ALRT-16`. Critically, the **stale flag applies at t+10 s regardless of import success**, so the failure mode is "no answer" rather than "repealed policy quoted" (SLA-07) |
+| **Agent Search datastore** | ACL-filtered grounded retrieval with resolvable citations | Generation of any kind | Google-managed (Vertex AI Agent Search) | Query API from `agent-core` | GCS corpus, Cloud Identity groups (DEC-09) | HR Knowledge Team | Retrieval below the 0.8 relevance gate → the agent refuses and cites nothing, rather than generating ungrounded text (§3.3 Path 1) |
+| **Cloud Firestore `nam5`** | Session, message, Saga-ledger, idempotency-lock and token-cache state; 30-day TTL; RPO = 0 via synchronous Paxos quorum | Analytical querying; long-term audit retention (that is BigQuery) | Google-managed, multi-region `nam5`, CMEK | Firestore SDK from `api-gateway`, `agent-core`, `integration-adapters` | Cloud KMS | Platform Team | Regional loss is transparent - strongly consistent reads continue from the survivor. A write failure aborts the turn before any backend call, so no orphaned external state is created |
+| **Cloud Tasks queues** | Deferred and rate-limited execution of mutating backend calls at 90% of the backend ceiling; per-user in-flight cap; 30-minute staleness bound | Read-only operations (those are synchronous) | Google-managed | Enqueue from `agent-core` | `integration-adapters` | Platform Team | Poison payloads route to the DLQ with a classified reason after 14 days' retention; a task for a revoked principal is discarded with `PRINCIPAL_REVOKED`, never retried (§4.8) |
+| **BigQuery audit dataset** | Z1 `ops_telemetry` and Z2 `audit_archive`; 365-day partitioned retention; daily DLP re-inspection target | Holding any raw PII - by construction, not by policy | Google-managed, CMEK, partitioned | Log sink from Cloud Logging | Cloud KMS | DPO / Platform | Sink exclusion filters drop non-conforming records **before** they land; a finding quarantines the partition and pages the DPO (`ALRT-21`) |
+| **`mock-backends`** | Contract-identical WorkWeek/ServiceImmediately stand-ins with configurable latency and fault injection (§5.6) | Existing in production - the image is built without them | Cloud Run, non-production projects only | Same OpenAPI 3.0 contracts as the real backends (§5.1) | None | Integration Team | A CI test asserts `404` for the reset endpoint against staging and production URLs; a reachable mock in production would be a data-destruction primitive |
+
+**The boundary that matters most.** `agent-core` cannot make an outbound HTTP call to a backend, and `integration-adapters` cannot make a decision. That separation is what makes the §4.2 authorisation model enforceable: the component that *decides* holds no credentials, and the component that *holds credentials* makes no decisions. It is enforced structurally by the §4.9 service-account topology, not by convention.
+
 ## **3.3. End-to-End Sequence Diagrams**
 
 All six BRD use cases are represented, plus the credential-revocation path.
@@ -342,7 +657,7 @@ sequenceDiagram
 
     User->>UI: What is the bereavement leave policy?
     UI->>GW: POST /v1/chat/stream (session cookie, SSE)
-    GW->>GW: Bind employee_id from session; mint composite token
+    GW->>GW: Bind employee_id from session, then mint composite token
     GW->>DLP: Pre-LLM de-identify PII
     DLP-->>GW: Sanitised prompt + ephemeral surrogate map
     GW->>Armor: SanitizeUserPrompt
@@ -619,7 +934,7 @@ flowchart LR
   "sid": "session-uuid-v4",
   "tid": "turn-000317",
   "trace": "projects/prj-elevate-c1-g5/traces/9f2c...",
-  "agent": "hcm-1.3.0",
+  "agent": "hcm-1.4.0",
   "model_id": "gemini-3.7-flash@<pinned>",
   "scope": ["ww.balances.read", "ww.leaves.write"],
   "jti": "b1f0c8de-...",
@@ -734,6 +1049,8 @@ Explicit data-protection boundaries between conversational transcripts, external
 
 Crypto-deterministic surrogates are stable within a session, so the model can reason about "the same person" across turns without ever seeing the real value. The surrogate map is held in memory for the turn and never persisted.
 
+**Canonical counting rule (used consistently throughout this document).** The table above defines **seven PII data-element classes**. Those seven classes are enforced by the **twelve infoType detectors** of the §4.5 template - **nine Google built-in** (`US_SOCIAL_SECURITY_NUMBER`, `CREDIT_CARD_NUMBER`, `BANK_ACCOUNT_NUMBER`, `IBAN_CODE`, `PASSPORT`, `PERSON_NAME`, `PHONE_NUMBER`, `EMAIL_ADDRESS`, `STREET_ADDRESS`) plus **three enterprise custom** (`ELEVATE_EMPLOYEE_ID`, `ELEVATE_BADGE_NUMBER`, `ELEVATE_CASE_ID`). Wherever this document says *"the seven §4.4 element classes"* it means the business categories; wherever it says *"the twelve §4.5 infoTypes"* it means the detectors that implement them. The two numbers are not in conflict and are never used interchangeably.
+
 ## **4.5. Cloud DLP De-identification Configuration Template**
 
 ```json
@@ -774,6 +1091,24 @@ Crypto-deterministic surrogates are stable within a session, so the model can re
                 "surrogateInfoType": { "name": "PSEUDONYM" }
               }
             }
+          },
+          {
+            "infoTypes": [
+              { "name": "ELEVATE_EMPLOYEE_ID" },
+              { "name": "ELEVATE_BADGE_NUMBER" },
+              { "name": "ELEVATE_CASE_ID" }
+            ],
+            "primitiveTransformation": {
+              "cryptoDeterministicConfig": {
+                "cryptoKey": {
+                  "kmsWrapped": {
+                    "wrappedKey": "CiQA...",
+                    "cryptoKeyName": "projects/prj-elevate-c1-g5/locations/global/keyRings/hr-agent-kr/cryptoKeys/dlp-surrogate-key"
+                  }
+                },
+                "surrogateInfoType": { "name": "PSEUDONYM" }
+              }
+            }
           }
         ]
       }
@@ -782,9 +1117,95 @@ Crypto-deterministic surrogates are stable within a session, so the model can re
 }
 ```
 
+The three `ELEVATE_*` detectors are **custom infoTypes** defined in the same Terraform module as regex dictionaries (`ELEVATE_EMPLOYEE_ID`: `\bE\d{7}\b`; `ELEVATE_BADGE_NUMBER`: `\bBDG-\d{6}\b`; `ELEVATE_CASE_ID`: `\b(SI|WW)-\d{4}-\d{6}\b`), each with `likelihood: VERY_LIKELY`. They exist because Google's built-in library has no detector for an enterprise-internal identifier, and RSK-11 rates an un-detected internal identifier reaching the model as the most likely residual leakage path. Nine built-in plus three custom is the **twelve infoTypes** referenced elsewhere in this document.
+
 An `inspectTemplate` with `minLikelihood: LIKELY` and `includeQuote: false` pairs with the above. Both templates are managed in Terraform (`modules/security`) so that a change is reviewable, versioned and re-deployable rather than a console edit.
 
-## **4.6. Firestore Schemas, 30-Day Lifecycle & Right to be Forgotten (NFR-1.3)**
+## **4.6. Data Model: Entities, Firestore Schemas, 30-Day Lifecycle & Right to be Forgotten (NFR-1.3)**
+
+### **4.6.0. Logical Data Model - Entities, Ownership and Relationships**
+
+Before the physical schemas, the logical model. The single most important property of this data model is **what this system does not own**: `Employee`, `LeaveRequest` and `Incident` are systems of record held in WorkWeek and ServiceImmediately, and the agent holds only *references* to them. It owns conversational state and nothing else. That is why an Art. 17 erasure (§4.6) can be satisfied completely by purging this system's own stores without any call to a backend - and why a Saga ledger records a `leaveId`, never a copy of the leave.
+
+```mermaid
+erDiagram
+    SESSION ||--o{ MESSAGE : "contains"
+    SESSION ||--o{ SAGA : "may initiate"
+    SESSION ||--o| TOKEN_CACHE : "holds one per scope"
+    SAGA   ||--|{ SAGA_STEP : "sequences"
+    SAGA_STEP ||--o| LOCK : "guarded by"
+    SAGA_STEP }o--o| LEAVE_REQUEST_REF : "references"
+    SAGA_STEP }o--o| INCIDENT_REF : "references"
+    MESSAGE }o--o{ CITATION : "grounds"
+    CITATION }o--|| POLICY_DOCUMENT : "resolves to"
+    EMPLOYEE ||--o{ SESSION : "authenticates"
+
+    EMPLOYEE {
+        string employee_id PK "SYSTEM OF RECORD: WorkWeek. Never stored in the clear here; enters as a salted hash or a signed sub claim only"
+        string entitlements "Derived per turn from Cloud Identity (DEC-09); never persisted"
+    }
+    SESSION {
+        string session_id PK "Random; no employee identifier derivable from it"
+        string subject_hash "Salted SHA-256 of employee_id"
+        string status "ACTIVE | REVOKED | CLOSED"
+        timestamp expireAt "Native Firestore TTL - 30 days (NFR-1.3)"
+    }
+    MESSAGE {
+        string message_id PK
+        string role "user | assistant | tool"
+        string content "PII-masked per 4.4 before persistence"
+        string model_id "Pinned version, recorded per turn (RSK-09)"
+    }
+    SAGA {
+        string saga_id PK
+        string use_case "UC-2.1 | UC-2.2 | UC-2.3"
+        string status "RUNNING | COMPLETED | COMPENSATED | HALTED_FOR_HUMAN"
+    }
+    SAGA_STEP {
+        int seq PK
+        string tool_name
+        string compensation_class "READ_ONLY | REVERSIBLE_SAFE | ANCILLARY | HUMAN_CONSEQUENTIAL"
+        string external_ref "leaveId or ticketId - a reference, never a payload copy"
+        string status "PENDING | EXECUTED | COMPENSATED | FLAGGED_FOR_HUMAN"
+    }
+    LOCK {
+        string idempotency_key PK "sha256(employee_id + action + params + 10-min window)"
+        string status "ACQUIRED | COMPLETED"
+        timestamp ttl "10 minutes"
+    }
+    TOKEN_CACHE {
+        string scope_key PK
+        string assertion "RS256, 120 s TTL - never cached across turns"
+    }
+    POLICY_DOCUMENT {
+        string doc_id PK "SYSTEM OF RECORD: governed GCS bucket"
+        string version
+        bool stale "Set at t+10s on supersession - the SLA-07 control"
+    }
+    LEAVE_REQUEST_REF {
+        string leaveId PK "SYSTEM OF RECORD: WorkWeek. Reference only"
+    }
+    INCIDENT_REF {
+        string ticketId PK "SYSTEM OF RECORD: ServiceImmediately. Reference only"
+    }
+```
+
+| Entity | System of Record | Stored Here? | Lifecycle | Contains PII? |
+| :--- | :--- | :--- | :--- | :--- |
+| `Employee` | **WorkWeek** | **No** - only a salted `subject_hash` and a per-turn signed `sub` claim | n/a (external) | Yes, externally; **never here in the clear** |
+| `Session` | This system | Yes, Firestore | Created on auth; 30-day native TTL; purged on Art. 17 request | Masked only |
+| `Message` | This system | Yes, Firestore | Follows the parent session's TTL; masked per §4.4 before write | Masked only (surrogates) |
+| `Saga` / `SagaStep` | This system | Yes, Firestore | Retained for the transaction trace; step payloads are field-level allow-listed (§4.11) | **No** - references and surrogates only |
+| `Lock` | This system | Yes, Firestore | 10-minute TTL; Z3 transient store | No - digest only |
+| `TokenCache` | This system | Yes, Firestore | 120-second TTL; never spans turns | No |
+| `PolicyDocument` | **Governed GCS bucket** | Index only (Agent Search) | Versioned; superseded versions flagged `stale` at t+10 s | No |
+| `LeaveRequest` | **WorkWeek** | **Reference only** (`leaveId`) | Owned externally; the agent files and reads, never mirrors | Yes, externally |
+| `Incident` | **ServiceImmediately** | **Reference only** (`ticketId`) | Owned externally | Yes, externally |
+| Audit records | This system | BigQuery Z1/Z2, 365-day partitions | Survive session TTL deliberately - an audit trail that expires with the thing it audits is not an audit trail | **No** - masked, allow-listed |
+
+**The one asymmetry worth calling out.** Audit records (365 days) outlive sessions (30 days) on purpose. §4.6's Art. 17 workflow therefore purges conversational state in full but retains the *masked* audit record, which is lawful under the compliance-obligation basis and is stated explicitly to the employee in the erasure receipt. A design that silently deleted audit trails on request would fail an audit; one that silently retained identifiable data would fail the GDPR request. The masked-retention split is how both hold.
+
+### **4.6.1. Physical Schemas**
 
 ### **Collection: `sessions`**
 ```json
@@ -1023,8 +1444,8 @@ graph LR
 | **E3** | **A single architectural chokepoint** | De-identification is not a function that call sites remember to call. It is FastAPI middleware in the gateway service, positioned before any router that can reach the agent core, and `sa-agent-core` has no network path to Vertex AI except through it (§4.9). There is exactly one edge into the model, and the middleware sits on it. | Application architecture + VPC-SC |
 | **E4** | **Startup and per-call digest verification** | On container start each gateway revision fetches the live template, recomputes the digest, and compares it to `dlp-template-digest`. **Mismatch aborts startup** - the revision never receives traffic, and Cloud Run holds the previous healthy revision. At request time the DLP response's `templateVersion` is compared against the pinned value; a mismatch rejects the turn with `503 SAFETY_CONFIG_UNVERIFIED` and fires `ALRT-20`. | Runtime, both regions |
 | **E5** | **Cross-region equivalence proof in CI** | A pipeline stage reads the deployed template from **both** `us-central1` and `us-east4`, canonicalises and hashes each, and asserts digest equality with each other and with the repository's committed fixture. Any inequality fails the build and blocks promotion. The same job runs hourly as a Cloud Scheduler drift probe against live production, because drift can also arrive after deploy. | CI/CD + hourly probe |
-| **E6** | **Bypass test in the golden suite** | A CI test posts a payload containing every one of the eleven §4.4 infoTypes and asserts on the captured Vertex AI request body that **zero raw values** survive. A second test injects a synthetic call site that attempts to reach the model client directly and asserts that it is refused at the VPC-SC perimeter. Both are blocking gates in §9.3. | CI/CD |
-| **E7** | **Fail-closed, with no availability override** | If the DLP API errors or breaches its 40 ms stage deadline, the turn is **refused**, not forwarded (§4.3). There is no configuration flag, environment variable, or feature toggle that converts this to fail-open - the code path does not exist, and a CI test asserts its absence. Break-glass requires two-person InfoSec authorisation, is time-boxed, and is itself audited. | §4.3 safety chain |
+| **E6** | **Bypass test in the golden suite** | A CI test posts a payload containing every one of the twelve §4.5 infoTypes (§4.4 canonical counting rule) and asserts on the captured Vertex AI request body that **zero raw values** survive. A second test injects a synthetic call site that attempts to reach the model client directly and asserts that it is refused at the VPC-SC perimeter. Both are blocking gates in §9.3. | CI/CD |
+| **E7** | **Fail-closed, with no availability override** | If the DLP API errors or breaches its **150 ms** stage deadline (§4.3), the turn is **refused**, not forwarded. There is no configuration flag, environment variable, or feature toggle that converts this to fail-open - the code path does not exist, and a CI test asserts its absence. Break-glass requires two-person InfoSec authorisation, is time-boxed, and is itself audited. | §4.3 safety chain |
 
 ```mermaid
 flowchart LR
@@ -1107,12 +1528,42 @@ Three fields carry the design:
 | :--- | :--- | :--- |
 | **Build time** | CI test `test_compensation_emits_no_raw_pii` drives all six use cases to failure in every compensation class, captures every emitted log line, and runs the §4.5 `inspectTemplate` at `minLikelihood: POSSIBLE` over the captured output. **Any finding fails the build.** A second test asserts `extra="forbid"` on the emitter model, so a future field cannot be added without review. | Build fails; merge blocked |
 | **Write time** | The log router applies **sink exclusion filters** (`logName=~"compensation" AND jsonPayload.field_values:*`) so a non-conforming record is dropped at the sink rather than landing in the audit dataset. Structured emission is the only write path; direct `logger.info(payload)` calls are blocked by a lint rule and a pre-commit hook. | Record dropped, `ALRT-21` raised |
-| **Rest** | A daily **Sensitive Data Protection inspection job** scans the previous partition of `audit_archive` and `ops_telemetry` for all eleven §4.4 infoTypes. Findings are written to Security Command Center. | `ALRT-21` (P1), DPO notified, partition quarantined |
+| **Rest** | A daily **Sensitive Data Protection inspection job** scans the previous partition of `audit_archive` and `ops_telemetry` for all twelve §4.5 infoTypes. Findings are written to Security Command Center. | `ALRT-21` (P1), DPO notified, partition quarantined |
 | **Read time** | Z2 and Z4 are separate datasets with separate CMEK keys and disjoint reader sets. Any query against Z4 is logged to Z4 itself. | Access denied; attempt audited |
 
 **SLO-06** makes this measurable rather than aspirational: *zero* raw-SPII findings in any persistent store, measured by the daily DLP re-inspection job over a 30-day rolling window. Unlike the other five SLOs it has no error budget - a single finding is a P1 incident with a DPO-reviewed post-mortem, because a partial compliance guarantee is not one.
 
 > **DEC-17** records this as a finalised decision. It is deliberately verified by *observation of the output* rather than by inspection of the code: the daily DLP job would catch a leak introduced by a future change that no reviewer anticipated, which a code-review control cannot promise.
+
+## **4.12. User-Facing Transparency: In-Conversation Privacy Notice & Rights Entry Points**
+
+§4.4 through §4.11 describe what the system does with personal data. This section describes what the **employee is told** about it, and how they act on it without leaving the conversation. The distinction matters legally: GDPR Art. 12-14 transparency obligations are not discharged by a correct back-end design, and a rights workflow that exists only in the HR portal is a right the employee has to go looking for.
+
+### **What the employee is shown, and when**
+
+| Trigger | Surface | Content | Why here |
+| :--- | :--- | :--- | :--- |
+| **First session, before the first turn is accepted** | Blocking one-time notice, acknowledged with a single action | Who operates the assistant; that it is an automated system and not a person (§9.6.2); the three data categories processed (identity, conversation content, transaction records); the **30-day** conversation retention and the **365-day** pseudonymised audit retention (§4.6); the legal basis; and a link to the full HR privacy notice | Consent and transparency belong before processing, not in a footer |
+| **Every session thereafter** | Persistent header line, not a modal | *"Automated HR assistant. Conversations are kept for 30 days. Type `privacy` for your options."* | Standing disclosure without a consent-fatigue dialog on every visit |
+| **Before the first transactional write of a session** | Inline, in the confirmation step | What will be written, to which system of record (§4.6.0), and that the write is attributable to the employee - not to the agent | The employee should know a real HR record is about to change |
+| **On any refusal or block** | Inline | That a safety or grounding control fired, and the §9.6.1 appeal path | A refusal without an explanation reads as a malfunction (RSK-15) |
+| **On escalation** | Inline | Exactly which fields leave the conversation in the §5.7 context package, and that transcript content is transferred as **surrogates, not raw values** | Handoff is a disclosure to a new human recipient |
+
+### **Rights exercised from inside the conversation**
+
+The employee types a keyword; the agent responds with a deterministic, non-model-generated flow. **None of these paths is routed through the LLM** - they are gateway-level handlers, so a rights request cannot be misclassified, refused by a guardrail, or hallucinated.
+
+| Keyword | Right | Handler | Backing workflow | Commitment |
+| :--- | :--- | :--- | :--- | :--- |
+| `privacy` | Art. 12-14 transparency | Returns the notice above plus the current session's retention clock | §4.6 | Immediate |
+| `what do you know about me` | Art. 15 access | Generates a scoped export of this employee's conversation records and the pseudonymised audit index | §4.6 | < 24 h, delivered to the corporate address |
+| `forget me` | Art. 17 erasure | Confirms scope explicitly (conversation history only - **not** the WorkWeek or ServiceImmediately systems of record, which the agent does not own), then invokes the purge with receipt | §4.6, **SLA-06** | **< 24 h**, signed receipt |
+| `stop storing my conversations` | Art. 7(3) consent withdrawal | Sets `consent_state = WITHDRAWN`, purges history, switches the session to ephemeral mode | §4.6, **SLA-05** | Next turn; history gone **< 60 min** |
+| `human` | n/a | The §5.7 escalation ladder | §5.7 | Always honoured immediately |
+
+**The scope confirmation on `forget me` is deliberate and is a design position.** An employee who asks an HR assistant to forget them may believe they are erasing their HR record. They are not, and the agent must say so plainly rather than issue a receipt that overstates what happened - §4.6.0 names WorkWeek and ServiceImmediately as the systems of record, and erasure there is an HR process this agent cannot and must not perform. Issuing a technically accurate receipt for a request the employee misunderstood would be the more dangerous failure.
+
+**Verification.** The notice text and each keyword handler are covered by the §9.4 UAT scenarios with DPO representation, and the keyword handlers have contract tests asserting they never reach the model (an LLM-generated erasure confirmation would be an unbacked promise). DEP-07 DPO sign-off covers this section alongside §4.4-§4.6.
 
 ---
 
@@ -1120,7 +1571,7 @@ Three fields carry the design:
 
 ## **5.1. Tool Specifications (OpenAPI 3.0)**
 
-All nine operations mandated by FR-3.2 and FR-4.2, plus the leave-cancellation compensator. Note that no operation accepts an employee identifier as a parameter - the subject comes from the signed assertion (§4.1), which is why the WorkWeek paths are `/me/`.
+All **eight** operations mandated by FR-3.2 and FR-4.2, plus the leave-cancellation compensator - **nine tool operations in total**. Note that no operation accepts an employee identifier as a parameter - the subject comes from the signed assertion (§4.1), which is why the WorkWeek paths are `/me/`.
 
 ```yaml
 openapi: 3.0.3
@@ -1655,6 +2106,8 @@ No branch exposes a stack trace, internal hostname, or vendor error code to the 
 | **Ungrounded answer or dead citation** | Groundedness < 0.85 or citation fails to resolve | Refuse rather than assert (FR-5.2, FR-5.4) | *"I could not find that in the official policy documents, so I would rather not guess. Here is the HR Portal link."* |
 | **Credential revoked or expired** | 401 from adapter, or session `REVOKED` | Invalidate token cache; terminate session | *"Your access was updated. Please refresh and sign in again."* |
 | **Out-of-domain request** | Supervisor domain classification (FR-5.4) | No tool call; no model generation on the topic | *"I can help with HR policies, WorkWeek and IT tickets. That one is outside what I can assist with."* |
+| **Escalation channel unavailable** - the §5.7 ladder fires while ServiceImmediately is `OPEN` on the breaker (§5.8.1) or rejecting ticket creation | Ticket-create call fails after the §5.2 retry budget, **or** the breaker is already `OPEN` when the escalation is requested | **Degraded escalation ladder (§5.7)** - the handoff is written to the durable `escalation_outbox` Firestore collection, an out-of-band email is sent immediately to the named HR/IT queue receiver (DEP-08) carrying the same de-identified context package, and the outbox is drained to ServiceImmediately when the breaker closes. **The escalation is never dropped and never silently queued.** `ALRT-23` fires at P1 | *"I cannot reach the ticketing system right now, so I have sent your request straight to the HR team by email and copied you. Your reference is `ESC-<id>`. If you need someone immediately, the service desk line is <number>."* |
+| **Notification channel unavailable** - a queued write resolves but the ITSM notification engine cannot deliver | Notification Cloud Task exhausts its retry policy | Fall back to the secondary channel (direct SMTP relay); if both fail, the outcome is surfaced in-conversation on the employee's next session and a P2 ITSM ticket is raised for manual contact. `ALRT-17` fires | *(next session)* *"While you were away, your leave request completed successfully - reference `LR-<id>`."* |
 
 ## **5.6. Mock Service Fidelity & Production Cutover Plan**
 
@@ -1755,6 +2208,7 @@ flowchart LR
 | :--- | :--- | :--- |
 | 0 - Contract parity | The §5.1 contract suite passes identically against the mock and the vendor sandbox | Any schema divergence |
 | 1 - Shadow | < 1% response divergence over 3 days; observed p95 latency within the §9.1 budget | Divergence > 1%, or latency outside budget |
+| *Note on Stage 1* | The shadow stage mirrors **live production traffic at live production concurrency**, so it measures real end-to-end latency and synchronisation delay against the real backends under the actual arrival distribution - not against the §2.3.1 model of it. This is the answer to "mocks cannot validate peak behaviour": they cannot, and they are not asked to. §9.5 uses mocks to validate *our* code paths under injected latency and faults; Stage 1 validates the *vendors* under real load; UNK-03 states the decision rule that connects the two. | n/a |
 | 2 - Read cutover | 5 business days with no SLO-01 or SLO-02 regression | Any P1 alert attributable to the backend |
 | 3 - Canary writes | 100% write reconciliation for the cohort over 3 days | **Any** write mismatch - zero tolerance, these are real HR records |
 | 4 - Progressive rollout | 100% of cohorts, error budget intact | SLO burn-rate alert (`ALRT-12`) or `ALRT-02` |
@@ -1778,8 +2232,12 @@ Live agent chat is outside MVP scope (CON-03 limits integrations to WorkWeek, Se
 | Clarification loop | Deterministic | 2 clarification turns without resolving intent |
 | Transactional intent while a backend is in read-only mode | Deterministic | Offered proactively rather than after the employee discovers the failure |
 | Sensitive-topic classification | Policy | Grievance, harassment, accommodation and similar categories escalate on the **first** turn - the agent acknowledges and routes; it does not attempt advice |
+| Guardrail false positive | Deterministic | A Model Armor `BLOCK` on a turn the supervisor classified as in-domain and benign. The employee sees a neutral message and an offer of a person - never an accusation of attacking the system. The event is tagged `SUSPECTED_FALSE_POSITIVE` and feeds the weekly InfoSec review and the §9.1 false-positive threshold |
+| Out-of-population caller | Deterministic | A contractor with no HCM record, or a manager asking a team-context question (§1.1 segments, FR-1.5). The decline states the reason and routes; it is never a silent failure |
 
-The last row is deliberate and is a design position, not a limitation: some conversations should never be handled by an assistant, and detecting them early is more valuable than answering them well.
+The sensitive-topic row is deliberate and is a design position, not a limitation: some conversations should never be handled by an assistant, and detecting them early is more valuable than answering them well. The guardrail false-positive row exists because a wrongly-blocked legitimate request is the single interaction most likely to end an employee's willingness to try again (RSK-15, §9.6).
+
+**A refusal is not the end of the path.** Escalation covers *the agent cannot help*. The adjacent case - *the agent answered, and the employee believes the answer is wrong* - is a trust event rather than a routing event, and is handled by the appeal protocol in **§9.6.1**.
 
 **The handoff carries a context package** so the employee is not asked to start over:
 
@@ -1794,6 +2252,22 @@ The last row is deliberate and is a design position, not a limitation: some conv
 | `escalation_reason` | The trigger above that fired | Feeds the §9.1 escalation-rate metric |
 
 The employee receives the ticket number, the queue it entered, and the expected response time drawn from the ITSM SLA - not a dead-end apology. **Escalation rate is tracked as a product metric, not a failure metric**: a rising rate in a category is the signal that tells the team what to build next.
+
+### **When the Escalation Channel Itself Is Unavailable**
+
+Every escalation ladder has the same structural weakness: it terminates in a system that can also fail. If ServiceImmediately is unreachable at the moment an employee asks for a human, an unqualified escalation design produces the worst possible outcome - the employee is told help is coming and nothing is created. The §5.5 queue-and-retry behaviour that is correct for a *leave submission* is wrong here, because the employee has already reached the point of needing a person.
+
+The escalation path therefore has its own fallback, independent of the transactional path:
+
+| Order | Path | Condition | Durability | Employee sees |
+| :--- | :--- | :--- | :--- | :--- |
+| **1** | ServiceImmediately ticket (the normal path) | Breaker `CLOSED` and the create call succeeds | ITSM record | Ticket number, queue, expected response time |
+| **2** | **Durable outbox + immediate email** | Create fails after the §5.2 retry budget, **or** the breaker (§5.8.1) is already `OPEN` when the escalation fires | `escalation_outbox` Firestore document, written **before** the email is attempted, with the same de-identified context package (surrogates, never raw values) | Email reference `ESC-<id>`, the receiving queue, and the service-desk phone number |
+| **3** | **Human-visible dead letter** | Both the ticket and the email fail | Outbox document flagged `UNDELIVERED`; `ALRT-23` pages HR Operations at **P1** | *"I could not reach the team electronically. Please call the service desk on <number> - I have given you reference `ESC-<id>` to quote."* |
+
+**Three properties make this a fallback rather than a hope.** First, the outbox write happens *before* delivery is attempted, so a crash between the two cannot lose the escalation - the same write-ahead discipline the Saga ledger uses (§5.4). Second, the outbox is drained automatically when the breaker closes, and a drained item is reconciled against ITSM so the employee does not receive two tickets - the §5.8.2 idempotency key covers this. Third, **failure is always visible to a human**: path 3 pages rather than logs, because an undelivered escalation is precisely the failure that must never be discovered from a metric a week later.
+
+**The honest limit.** None of this creates a live human. It guarantees that a request for one is durably recorded, delivered by at least one channel, and audibly failed if it is not - which is the strongest guarantee available while live warm transfer remains out of scope under CON-03 (DEC-18, P6.6). The phone number in path 3 is the acknowledgement that a chat interface cannot be the only route to a person.
 
 ### **Asynchronous and Partial-Failure Notification**
 
@@ -1844,9 +2318,26 @@ To ensure strict transaction correctness (BRD §7) and eliminate duplicate trans
 
 ### **5.8.3. Cloud Run Cold-Start Elimination (`min-instances: 1`)**
 To satisfy NFR-2.1 (< 10 s conversational turnaround and average TTFT < 1.0 s), default serverless scale-to-zero is eliminated on mission-critical paths:
-- In the primary serving region (`us-central1`), Cloud Run services for `api-gateway` and `agent-core` maintain **`min-instances: 1`** during business hours (07:00-20:00 UTC).
+- Cloud Run services for `api-gateway` and `agent-core` maintain **`min-instances: 1` in *both* regions** (`us-central1` and `us-east4`) during business hours (07:00-20:00 UTC), and `min-instances: 0` outside them.
+- **Why both regions, not just the primary.** §2.2 commits to **RTO < 30 s** on an active-active topology. A warm pool in only one region would make that claim false: the Global External ALB would shed traffic to a scale-to-zero secondary and the first failover request would pay the full 6.8 s cold start, blowing both the RTO and NFR-2.1. Warming both regions is what makes failover *capacity shedding* rather than a cold start, exactly as §2.2 asserts. The two statements are deliberately consistent; this line is the implementation of that claim.
 - Pre-warmed instances maintain warm Python runtime environments, established TLS handshakes, and pre-allocated gRPC channels to Vertex AI and Firestore, reducing p95 initial latency from **6.8 seconds down to 0.85 seconds**.
-- The warm pool is costed in the §6.2 Cloud Run line and is the largest single lever on the fixed cost floor (§6.4 control 5).
+- **Cost of the second warm pool.** Two services x two regions x 13 warm hours x ~22 working days is the §6.2 Cloud Run line; the secondary-region half of it is **~$41/month**, which §6.4 control 5 treats as a reliability premium rather than a candidate for optimisation. Outside business hours both regions scale to zero and DR falls back to a cold-start RTO of ~7 s, which is a deliberate, recorded acceptance (**RSK-17**) because overnight traffic is under 2% of daily volume and the 99.9% NFR-2.2 budget is measured over the whole month.
+
+## **5.9. API Versioning, Compatibility & Deprecation Policy**
+
+Three distinct contracts in this design are versioned, and conflating them is a common source of integration breakage. Each has a different owner, a different compatibility promise, and a different deprecation clock.
+
+| Contract | Versioning Scheme | Owner | Compatibility Promise | Deprecation Policy |
+| :--- | :--- | :--- | :--- | :--- |
+| **Client-facing chat API** (`/api/v1/chat`, `/api/v1/stream/{sessionId}`) | **URI major version** (`/api/v1/`), with the full semver in the OpenAPI `info.version` and echoed in an `X-API-Version` response header | Platform Team | **Additive-only within a major.** New optional request fields and new response fields may be added at any time; no field is removed, renamed or narrowed in type, and no default behaviour changes | A new major runs **in parallel with the previous one for 90 days minimum**, both served by the same Cloud Run revision behind path routing. Deprecation is announced with a `Sunset` header (RFC 8594) and a `Deprecation` header from day one of the overlap |
+| **Backend tool contracts** (WorkWeek, ServiceImmediately - §5.1) | Semver on the OpenAPI documents; **we are the consumer, not the publisher** | HCM / ITSM Integration Teams (DEP-04) | None we control. This is precisely why the adapter layer exists: a breaking backend change is absorbed in `integration-adapters` and never propagates to `agent-core` | Contract tests run against the published spec in CI (§7.2). A spec change that breaks a test fails the build **before** it reaches an employee, which converts a production incident into a red pipeline |
+| **Agent & tool registry** (`config/registry.yaml` - §3.2) | Semver per agent (`hcm-1.4.0`), pinned model IDs, `prompt_file_sha256` | Per-agent owner in the registry | **Minor** = prompt or tool-allowlist change; **major** = a change to the agent's observable behaviour or authority | Any change - minor or major - must pass the full §9.3 eval gate and is recorded in the ADR log. There is no deprecation window because there is no external consumer; the registry is the runtime |
+
+**Breaking-change definition, so it cannot be argued about later.** Within a major version of the client API, all of the following are breaking and therefore prohibited: removing or renaming a field; changing a field's type or nullability; adding a required request field; changing an enum's meaning or removing a value; changing an HTTP status code for an existing condition; and changing the SSE event-name vocabulary. Adding an optional request field, adding a response field, adding an enum value **that clients are contractually required to tolerate**, and adding a new endpoint are all non-breaking.
+
+**Why `/v1` in the path rather than header negotiation.** Header-based versioning is cleaner in principle and worse in practice for a browser-delivered SSE endpoint: it is invisible in logs, invisible in Cloud Armor rules, and cannot be routed on by the Global External ALB without a custom header match. Path versioning costs one URI segment and buys per-version routing, per-version rate limiting and per-version metrics for free. This is a deliberate trade, not a default.
+
+**MVP 1 status.** Only `v1` exists. This policy is written now, before there is a second version, because a versioning policy authored after the first breaking change is a post-hoc justification rather than a contract.
 
 ---
 
@@ -2002,6 +2493,8 @@ graph TD
 
 *Performance Benefit: In addition to cost reduction, eliminating redundant prefill computation reduces TTFT latency from ~1,050 ms down to **~520 ms**, cutting initial wait time in half. The `cached_tokens` field already present on `llm_execution_event` (§7.5) is what makes the realised hit rate measurable rather than assumed.*
 
+> **How this reconciles with the TTFT targets in §9.1 and SLO-02.** The targets are **avg < 1.0 s and p95 < 1.5 s**. The uncached ~1,050 ms figure sits marginally *above* the average target and comfortably inside the p95 one; the cached ~520 ms sits well inside both. This is deliberate and worth stating plainly rather than leaving a reader to spot the tension: **the average TTFT target depends on a healthy cache hit rate, the p95 target does not.** A cache hit rate above ~35% - the design expectation is 70%+, since system prompts and tool schemas are identical across every turn - satisfies the average target. If the measured hit rate falls below that, SLO-02 (p95 < 1.5 s) still holds and the average target is missed, which is a variance to record rather than an outage. `ALRT-06` tracks TTFT p95, and the `cached_tokens` field makes the hit rate the first thing to check when it fires. Cost planning throughout §6 deliberately stays on the uncached basis; only the latency discussion here uses the cached figure, and only where it is labelled as such.
+
 > **Which number to plan against.** §6.2, §6.3, §6.5 and §6.6 all remain stated on the **uncached ~$510.30** basis, and that is deliberate. Cache hit rate depends on traffic continuity: outside business hours, or after a prompt-template change invalidates the prefix, turns fall back to full-price prefill. Budgeting, the price-sensitivity table and the break-even analysis therefore use the conservative figure, and the ~$416.70 achieved with caching is treated as realised upside rather than a planning assumption. Both figures are far inside the $750 budget alert threshold (§6.4), so nothing downstream turns on the choice.
 
 ---
@@ -2017,7 +2510,7 @@ graph TD
         M2["modules/iam: least-privilege service accounts, Workload Identity"]
         M3["modules/vertex_ai: Agent Search datastore, Model Armor templates and floor settings"]
         M4["modules/cloud_run: multi-region gateway, orchestrator, adapters"]
-        M5["modules/storage: Firestore nam5, GCS policy buckets, BigQuery datasets"]
+        M5["modules/storage: Firestore nam5 with TTL and backup schedule (§2.2.1 HCL),<br>GCS policy buckets, dual-region DR export bucket, BigQuery datasets"]
         M6["modules/resilience: Cloud Tasks queues, Pub/Sub DLQ, Eventarc triggers"]
         M7["modules/security: DLP inspect and de-identify templates, KMS, Secret Manager"]
         M8["modules/observability: dashboards, SLOs, alert policies, log sinks"]
@@ -2071,24 +2564,33 @@ flowchart LR
 gantt
     title MVP 1 Phased Delivery Roadmap
     dateFormat  YYYY-MM-DD
+    section Phase 0 Enablement
+    GCP project, quota, VPC-SC perimeter (DEP-01, DEP-02) :crit, p0_1, 2026-08-25, 1w
     section Phase 1 Foundation
-    Terraform IaC and multi-region GCP setup   :p1_1, 2026-09-01, 1w
-    HR policy ingestion into Agent Search      :p1_2, after p1_1, 1w
+    Terraform IaC and multi-region GCP setup   :crit, p1_1, after p0_1, 1w
+    HR policy ingestion into Agent Search      :crit, p1_2, after p1_1, 1w
     section Phase 2 Agent Core
-    Supervisor and LangGraph engine            :p2_1, after p1_2, 2w
-    WorkWeek and ServiceImmediately adapters   :p2_2, 2026-09-15, 2w
-    Deterministic validation and Cloud Tasks   :p2_3, after p2_2, 1w
+    Supervisor and LangGraph engine            :crit, p2_1, after p1_2, 2w
+    WorkWeek and ServiceImmediately adapters   :p2_2, 2026-09-08, 2w
+    Deterministic validation and Cloud Tasks   :crit, p2_3, after p2_1 p2_2, 1w
     section Phase 3 Governance and Security
-    Composite token auth and revocation        :p3_1, after p2_3, 1w
-    DLP de-id, Model Armor in and out          :p3_2, after p3_1, 1w
-    Safety latency tuning to under 300ms       :p3_3, after p3_2, 3d
+    Composite token auth and revocation        :crit, p3_1, after p2_3, 1w
+    DLP de-id, Model Armor in and out          :crit, p3_2, after p3_1, 1w
+    Safety latency tuning to under 300ms       :crit, p3_3, after p3_2, 3d
     Saga compensation classification hardening :p3_4, after p3_3, 4d
     section Phase 4 Verification and UAT
-    Golden dataset build and automated eval    :p4_1, after p3_4, 1w
-    Stakeholder UAT and executive signoff      :p4_2, after p4_1, 1w
+    Golden dataset build and automated eval    :crit, p4_1, after p3_4, 1w
+    Stakeholder UAT and executive signoff      :crit, p4_2, after p4_1, 1w
+    section Schedule Buffer
+    Contingency reserve (see 7.7)              :milestone, buf, after p4_2, 0d
+    Reserve                                    :buf1, after p4_2, 2w
+    section Phase 5 Production Cutover
+    Shadow, canary and wave rollout (5.6, 9.6.4) :p5_1, after buf1, 4w
 ```
 
-**Phase exit criteria.** Phase 3 does not exit until measured p95 safety overhead is below 300 ms (NFR-2.1) and all four compensation classes have passing tests. Phase 4 does not exit until the §9.1 thresholds are met on the golden set and the §9.4 UAT scenarios are signed off.
+**Phase exit criteria.** Phase 0 does not exit until a Terraform `plan` runs clean against the real project. Phase 1 does not exit until a canary policy question returns a resolvable citation. Phase 2 does not exit until every §5.1 operation passes its contract test against the mock. Phase 3 does not exit until measured p95 safety overhead is below 300 ms (NFR-2.1) and all four compensation classes have passing tests. Phase 4 does not exit until the §9.1 thresholds are met on the golden set and the §9.4 UAT scenarios are signed off. Phase 5 is the §5.6 six-stage cutover gated by the §9.6.4 wave criteria; it is shown for sequencing and is contingent on DEP-04.
+
+**Critical path (marked `crit` above):** DEP-01 → IaC → corpus ingestion → supervisor engine → auth → safety chain → latency tuning → eval → UAT. The adapters (`p2_2`) deliberately start on a fixed date in parallel rather than after the engine, because the OpenAPI contracts in §5.1 are frozen and the adapter team is not blocked by orchestration work. That parallelism is the single largest schedule saving in the plan and is the reason the adapter track has ~1 week of float while the engine track has none.
 
 ## **7.5. Observability, Alerting & Operational Runbook**
 
@@ -2129,13 +2631,14 @@ Severity routing: **P1** pages the on-call engineer immediately (PagerDuty); **P
 | **ALRT-13** | **Compliance job failure** - retention-conformance job, consent-withdrawal purge (SLA-05), or Art. 17 erasure (SLA-06) fails or exceeds its SLA | Any occurrence | per-run | **P2** | DPO notified automatically; erasure-receipt issuance blocked rather than falsely issued |
 | **ALRT-14** | **Revocation propagation breach** - session invalidation (SLA-01) or downstream OAuth revocation (SLA-02) exceeds target, or the webhook returns non-200 | Any occurrence | per-event | **P1** | Break-glass global session flush available to the on-call; security incident opened |
 | **ALRT-15** | Entitlement ACL sync or stale-embedding eviction lag (SLA-03, SLA-04) | **> 15 min** | 15 min | **P2** | Forced full datastore re-sync. Query-time filtering keeps confidentiality intact meanwhile (§4.7) |
+| **ALRT-16** | **Policy publication pipeline** - ingestion exceeds SLA-07/SLA-08, or the post-import verification probe fails | > 15 min routine / > 5 min emergency, or probe failure | per-run | **P2** (P1 on the emergency path) | Automatic retry of the incremental import; HR Policy Owner notified. Superseded content stays excluded throughout (§4.6) |
 | **ALRT-17** | **Notification delivery failure** - an out-of-band notification (§5.7) exhausts its retries | Any occurrence | per-event | **P2** | Escalated to HR Operations for manual contact. A failed notification about a failed transaction must never be silent |
 | **ALRT-18** | Backend queue soft-depth warning | **> 1,000 tasks** | 5 min | **P2** | Adaptive limiter stops probing upward; degraded state surfaced on the dashboard before the 5,000 hard ceiling is reached |
 | **ALRT-19** | Tasks discarded on the staleness bound (`STALE_INTENT`) | **> 10 in 15 min** | 15 min | **P2** | Indicates a backlog that outlived its usefulness; read-only mode is asserted for that backend and affected employees are notified (§5.7) |
-| **ALRT-16** | **Policy publication pipeline** - ingestion exceeds SLA-07/SLA-08, or the post-import verification probe fails | > 15 min routine / > 5 min emergency, or probe failure | per-run | **P2** (P1 on the emergency path) | Automatic retry of the incremental import; HR Policy Owner notified. Superseded content stays excluded throughout (§4.6) |
 | **ALRT-20** *(new in v1.7)* | **DLP template digest mismatch or cross-region drift** - a startup verification failure, a per-call `templateVersion` mismatch, or an hourly drift probe finding unequal digests between `us-central1` and `us-east4` (§4.10 E4/E5) | Any occurrence | per-event / hourly | **P1** | Affected revision refuses traffic and Cloud Run holds the last verified revision; the region is drained from the ALB if both revisions fail. Turns are refused, never served unscanned. DPO and InfoSec notified |
-| **ALRT-21** *(new in v1.7)* | **Raw-SPII detected in a persistent store** - the daily DLP re-inspection job finds any of the eleven §4.4 infoTypes in `audit_archive` or `ops_telemetry`, or the sink exclusion filter drops a non-conforming compensation record (§4.11) | **Any occurrence** (SLO-06 has no error budget) | daily / per-event | **P1** | Affected partition quarantined - reader IAM revoked pending review; finding written to Security Command Center; DPO paged; mandatory post-mortem before the partition is released or purged |
+| **ALRT-21** *(new in v1.7)* | **Raw-SPII detected in a persistent store** - the daily DLP re-inspection job finds any of the twelve §4.5 infoTypes in `audit_archive` or `ops_telemetry`, or the sink exclusion filter drops a non-conforming compensation record (§4.11) | **Any occurrence** (SLO-06 has no error budget) | daily / per-event | **P1** | Affected partition quarantined - reader IAM revoked pending review; finding written to Security Command Center; DPO paged; mandatory post-mortem before the partition is released or purged |
 | **ALRT-22** *(new in v1.7)* | **Downstream circuit breaker OPEN** - a WorkWeek or ServiceImmediately breaker trips (§5.8.1) | Any transition to `OPEN` | per-event | **P2** | Adaptive limiter driven to its floor; the affected tool is marked degraded so the supervisor stops routing to it; escalates to **P1** if the breaker fails to close within 15 minutes |
+| **ALRT-23** *(new in v2.1)* | **Escalation undelivered** - a §5.7 escalation reached neither ServiceImmediately nor email, or an `escalation_outbox` document has been `UNDELIVERED` for more than 5 minutes | Any occurrence | per-event | **P1** | Pages HR Operations directly, not the engineering rota. No automated response - an undelivered request for a human requires a human. Outbox contents are surfaced in the on-call runbook with the reference the employee was given |
 
 **Deliberately absent: an alert on "model quality."** Groundedness and accuracy are measured offline against the golden set in CI (§9.3), not sampled in production, because a per-turn LLM-as-a-Judge call would add cost and latency to the critical path for a signal that moves on the timescale of deploys rather than minutes.
 
@@ -2261,6 +2764,57 @@ To guarantee reproducible integration testing and prevent state pollution across
    - Invoked automatically in CI/CD before running the 150-prompt golden evaluation dataset (§9.2), guaranteeing 100% deterministic test execution.
    - **The endpoint does not exist in production.** It is compiled only under the `MOCK_BUILD` flag, the production container image is built without it, and a CI test asserts a `404` against the staging and production adapter URLs - a test-only reset endpoint reachable in production would be an unauthenticated data-destruction primitive.
 
+## **7.7. Resourcing, Schedule Buffer & Feasibility Analysis**
+
+A roadmap without a team behind it is a wish. This section states who is required, for how long, what happens when a role is unfilled, and why the schedule is believed to be achievable rather than merely desirable.
+
+### **7.7.1. Team Composition**
+
+| Role | FTE | Phases Engaged | Core Responsibilities | Critical Skills | If Unfilled |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Lead Architect** | 0.5 | 0-5 | Owns §2-§5 design integrity, arbitrates DEC-* changes, owns UNK-01 and UNK-06 | LangGraph/agent orchestration, GCP architecture, latency budgeting | **Hard blocker.** No substitution; this role owns the coherence the rest of the plan assumes |
+| **Backend / Agent Engineer** | 2.0 | 1-4 | Supervisor and specialist nodes, Saga engine and ledger, Cloud Tasks, resilience patterns (§5.8) | Python, async, LangGraph `StateGraph`, distributed transactions | 1.0 FTE is survivable at the cost of ~3 weeks; below that the critical path breaks and Phase 5 slips a quarter |
+| **Integration Engineer** | 1.0 | 2, 5 | WorkWeek and ServiceImmediately adapters, OpenAPI contract tests, mock fidelity (§5.6), owns UNK-03 | REST integration, contract testing, OpenAPI 3.0 | Absorbed by a Backend Engineer at the cost of the adapter track's ~1 week of float, putting `p2_2` on the critical path |
+| **Security / Platform Engineer** | 1.0 | 0-3 | Terraform (§7.1), VPC-SC, service-account topology (§4.9), DLP and Model Armor wiring, IAM | Terraform, GCP org policy, VPC-SC, Cloud KMS | **Hard blocker for Phase 0 and Phase 3.** The §4 controls are not a feature an application engineer can add later |
+| **ML / Evaluation Engineer** | 0.5 | 2-4 | Golden dataset (§9.2), eval harness (§9.3), red-team suite, prompt and routing tuning, owns UNK-04 | Vertex AI Gen AI Evaluation, prompt engineering, adversarial testing | Phase 4 cannot be gated on evidence; the 95% grounding claim becomes an assertion. Not substitutable by a general engineer |
+| **SRE** | 0.25 | 3-5 | §7.5 alert policies and SLO wiring, load profiles (§9.5), on-call runbook, owns RSK-17 | Cloud Monitoring, OpenTelemetry, burn-rate alerting | Alerting ships as dashboards with no paging - the exact failure §7.5 was written to prevent |
+| **HR Knowledge SME** | 0.5 | 1, 4, 5 | Corpus curation (DEP-03), golden-set answer keys, contested-answer adjudication (§9.6.1) | HR policy domain, statutory leave rules | Grounding cannot be validated - there is no source of truth to grade against |
+| **HR Change Lead** | 0.25 | 4-5 | Wave plan, champions, comms, adoption measurement (§9.6.3), owns UNK-02, RSK-13, RSK-14 | Change management, internal comms | RSK-13 goes unmitigated; the system works and nobody uses it |
+| **Technical Writer** | 0.25 | 4-5 | Capability card, refusal-language review (§9.6.2), runbook prose | Plain-language technical writing | Absorbed by the Lead Architect at a quality cost |
+| **Total** | **6.25 FTE** | | Peak concurrent load falls in Phase 2-3 (5.75 FTE); Phase 0 needs only 1.5 | | |
+
+**Non-headcount resources.** One GCP project per environment (dev, staging, prod) with the DEP-01 org-policy exceptions; ~$510/month of infrastructure at MVP scale (§6.2), rising to ~$4,060/month only at the 10x enterprise volume of §6.3; Vertex AI quota per DEP-02; and named receivers in the existing HR and IT queues per DEP-08 - the last being a claim on *other* teams' capacity, which is why it is tracked as a dependency rather than assumed.
+
+### **7.7.2. Schedule Buffer and Why the Timeline Is Believed**
+
+The §7.4 critical path is **11 weeks of committed work** (Phase 0 through Phase 4) against a **13-week** plan. The 2-week reserve is **~18% contingency**, held centrally rather than padded into individual tasks, because task-level padding is invisible and gets consumed silently while a central reserve has to be spent deliberately.
+
+| Estimate Basis | Detail |
+| :--- | :--- |
+| **What the estimate is grounded in** | Phases 0-2 are conventional GCP and Python work with well-understood durations. Phase 3 is the least certain, which is why the reserve exists and why UNK-01 has a pre-decided remediation ladder rather than an open-ended tuning window |
+| **Where the reserve is expected to be spent** | Most likely on Phase 3 latency tuning (UNK-01) or on a Phase 4 grounding shortfall requiring corpus work. Both have bounded, pre-agreed responses, so the reserve buys iterations of a known procedure rather than an unbounded investigation |
+| **Trigger to draw on the reserve** | Any phase exceeding its planned duration by more than 3 days. Drawing is a decision recorded by the Lead Architect, not an automatic slip |
+| **What happens if the reserve is exhausted** | Descope before extending. In priority order: (1) the restricted-ACL corpus moves to Phase 6 (DEP-05 already contemplates this); (2) UC-2.3 cross-system orchestration ships read-only; (3) the second warm region drops to `min-instances: 0`, accepting RSK-17 for the full day. **Not descopable under any circumstance:** anything in §4. Shipping the safety chain late is acceptable; shipping it partially is not |
+| **Why MVP vs full scope is unambiguous** | §1.2 draws the in/out line, §2.1 holds the post-MVP roadmap, and §7.7.3 costs it. Nothing in the 13-week plan depends on a post-MVP item |
+
+### **7.7.3. Costed and Sequenced Post-MVP Roadmap**
+
+§2.1 states the scaling *direction*. This subsection states what each step costs, what triggers it, and what must precede it - so the roadmap is a plan a sponsor can fund rather than a paragraph of intent.
+
+| Seq | Post-MVP Step | Trigger to Start | Prerequisite | Engineering Estimate | Run-Rate Delta | Primary Benefit |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **P6.1** | **IdP federation** - replace CON-01 functional credentials with corporate SSO (OIDC) at the gateway | MVP 1 UAT sign-off | None; §4.1 was built for this | 3 weeks, 1.0 Backend + 0.5 Security | +$0 | Removes the single largest gap between MVP and production readiness |
+| **P6.2** | **Google ADK migration** on the Gemini Enterprise Agent Platform, replacing the self-hosted LangGraph runtime | UNK-06 spike passes | P6.1; UNK-06 | 8 weeks, 1.5 Backend + 0.5 Architect (re-estimated after the spike) | **-$180/month** (managed runtime replaces Cloud Run agent-core) | Removes runtime maintenance; unlocks platform-native agent governance |
+| **P6.3** | **Multi-tenancy** - lift CON-02 by adding a tenant dimension to Firestore keys and datastore ACLs | Second business unit onboards | P6.1 | 5 weeks, 1.5 Backend + 0.5 Security | +$120/month per additional tenant | Amortises the platform across business units |
+| **P6.4** | **Horizontal scale to 10x volume** (150k inquiries/yr) | Sustained > 60% of the §5.2 queue ceiling for 2 consecutive weeks | None | 2 weeks, 0.5 Backend + 0.25 SRE (tuning and quota, not re-architecture) | **~$4,060/month** at 150k inquiries, per §6.3 - sub-linear because the fixed floor is already paid | Absorbs enterprise-wide rollout without a redesign |
+| **P6.5** | **Additional integrations** beyond CON-03 (payroll read-only, learning management) | Business demand | P6.3 | 4 weeks per integration, 1.0 Integration Engineer | +$40/month per integration | Extends the addressable envelope beyond the §1.1 51.2% |
+| **P6.6** | **Live agent warm transfer and co-browsing** (DEC-18 deferral) | Wave 3 adoption gate met | P6.1; contact-centre platform selection | 6 weeks, 1.0 Backend + contact-centre licensing | +$8/seat/month (third-party) | Closes the last gap in the §5.7 escalation experience |
+| **P6.7** | **Multilingual support** (lift CON-04) | First non-English site in scope | P6.3; corpus translated and governed | 4 weeks engineering + corpus translation (HR-owned) | +$210/month (translation and larger index) | Site expansion beyond English-language operations |
+
+**Sequencing rationale.** P6.1 is first because every other step is cheaper once identity is federated - P6.3 in particular is near-impossible to do cleanly against functional credentials. P6.4 is deliberately *not* first despite being the most-requested: the §6.3 analysis shows 10x volume is a tuning exercise on this architecture, so pulling it forward would spend engineering capacity on a problem that is not yet binding. P6.2 sits between them because the ADK migration is the only step whose scope is genuinely uncertain (UNK-06), and doing it before the tenancy and scale work would put that uncertainty on the critical path of everything after it.
+
+**Total post-MVP envelope:** ~32 engineering weeks across P6.1-P6.7, or roughly **two quarters at 2.5 FTE**. At full adoption of all seven steps at 10x volume the run rate settles near **$4,400/month** (the §6.3 10x figure of $4,060, plus ~$370 of tenancy, integration and multilingual overhead, less the ~$180 saved by the P6.2 managed runtime) - dominated by volume, not by the feature work - against a §6.6 break-even that scales with the same volume.
+
 ---
 
 # **8. Assumptions, Constraints, Risk & Mitigations**
@@ -2276,6 +2830,8 @@ To guarantee reproducible integration testing and prevent state pollution across
 | **ASM-05** | An entitlement source of truth exists that can emit revocation webhooks (Path 7) | Revocation propagation degrades from event-driven to a polling interval |
 | **ASM-06** | Google Cloud unit prices are within ~20% of the indicative rates dated 2026-08-25 | §6 totals move proportionally; the arithmetic is shown so it can be re-applied |
 | **ASM-07** | Employees interact through the corporate network or VPN, so Cloud Armor can apply a geo/IP allowlist | Broader attack surface; Cloud Armor rules would need to shift to purely behavioural |
+| **ASM-08** | The existing HR and IT human queues stay staffed and open for the whole of MVP 1, so every §5.7 escalation has a receiver and the HR Knowledge Team can meet the 2-business-day contested-answer SLA (§9.6.1) | The escalation ladder becomes a dead letterbox, which is worse than having none - the agent would be promising a human who never arrives. Rollout waves pause at the Wave 1 gate and the deflection commitment is re-cut (RSK-15) |
+| **ASM-09** | The FY26 **category and segment composition** in §1.1, not merely the aggregate, is representative and reasonably stable across the 6-month adoption window | The 51.2% addressable envelope shifts. The 40% commitment retains ~22% headroom precisely to absorb this, and the Phase 1 ITSM extract (§6.6) re-derives the category table, flagging any category off by more than 5 percentage points |
 
 ## **8.2. Constraints**
 
@@ -2284,7 +2840,7 @@ To guarantee reproducible integration testing and prevent state pollution across
 | **CON-01** | Functional test credentials only; no AD, Okta or SSO integration | BRD §6 | Subject binding is implemented at the gateway now, so IdP federation later is a gateway-only change (§2.1) |
 | **CON-02** | Single-tenant; multi-tenancy not supported | BRD §6 | No tenant dimension in Firestore keys or datastore ACLs in MVP 1 |
 | **CON-03** | Integrations limited to WorkWeek, ServiceImmediately and the policy repository | BRD §2.3 | Tool registry (§3.2) is a closed allowlist; anything else is blocked and logged |
-| **CON-04** | English only, text only | BRD §2.3 | No translation layer, no speech services |
+| **CON-04** | English only, text only | BRD §2.3 | **Technical consequence:** no translation layer, no speech services. **Population consequence, stated because the technical one is not the important one:** an English-only text interface is not neutral across the §1.1 segments. It is *advantageous* for deaf and hard-of-hearing employees, for whom text is the accessible modality; it is *exclusionary* for employees who are not English-first and for those with low written literacy, who are concentrated in the frontline segment. The MVP-1 deflection case does not depend on that segment (§1.1), so this constrains the *size* of the benefit, not its existence - but it must be measured rather than assumed (**UNK-07**) and it must not be allowed to look like a service-level difference between staff grades (**RSK-18**). P6.7 lifts it. |
 | **CON-05** | Safety scanning must add < 300 ms per turn | NFR-2.1 | Constrains the guardrail chain to three concurrency groups with a 120 ms design budget and per-stage fail-closed deadlines (§4.3) |
 | **CON-06** | No payroll, compensation, or performance data | BRD §2.3 | Those fields are absent from the adapter contracts entirely, not merely filtered |
 | **CON-07** | 99.9% availability | NFR-2.2 | Mandates the multi-region active-active posture in §2.2 |
@@ -2292,20 +2848,70 @@ To guarantee reproducible integration testing and prevent state pollution across
 
 ## **8.3. Risk & Mitigation Matrix**
 
-| Risk ID | Description | Likelihood | Impact | Concrete Mitigation |
-| :--- | :--- | :--- | :--- | :--- |
-| **RSK-01** | LLM hallucination in policy Q&A creating a compliance exposure | Low | Critical | Dual gate - retrieval relevance >= 0.8 **and** groundedness >= 0.85 with citation resolution; refuse rather than assert (§3.3 Path 1) |
-| **RSK-02** | Peak traffic triggers backend 429s and sync timeouts | Medium | High | Cloud Tasks rate-limited queueing at 90% of backend ceiling, idempotency keys, async user acknowledgement (§5.2) |
-| **RSK-03** | Inconsistent state after a partial cross-system failure | Medium | High | Saga with persistent Firestore ledger and the §5.4 compensation classification policy |
-| **RSK-04** | Prompt injection used to exfiltrate another employee's data | Low | Critical | Structural defence - `employee_id` is not a tool parameter (§4.1); plus Model Armor inbound, DLP pre-LLM masking, per-call scope intersection |
-| **RSK-05** | Unauthorised access persists after an employee status change | Low | Critical | 120-second assertion TTL, webhook-driven revocation, session status checked every turn (< 5 s effective window, §4.7) |
-| **RSK-06** | Chat logs retained indefinitely, breaching privacy mandates | Low | High | Native Firestore 30-day TTL, PII-stripped BigQuery archive, RTBF purge workflow (§4.6) |
-| **RSK-07** | Measured safety overhead exceeds the 300 ms NFR ceiling | **Low** *(reduced from Medium in v1.5)* | Medium | §4.3 was re-architected from five sequential stages into three concurrency groups: the design budget is now **120 ms p95 with 180 ms of headroom**, not 280 ms with 20 ms. Per-stage hard deadlines fail closed, so a network fluctuation cannot cascade into a turn timeout. `ALRT-04` warns at 240 ms, well before the NFR is breached, and Phase 3 retains its measurement exit criterion |
-| **RSK-08** | An auto-rollback cancels a consequential employee action | Low | **Critical** | Compensation classification policy (§5.4) - `HUMAN_CONSEQUENTIAL` steps are never auto-reversed; tested per class in CI |
-| **RSK-09** | A model version change silently regresses accuracy or safety | Medium | High | Model ID pinned, recorded per turn, and any change gated on the full §9.3 eval suite (§1.4 version governance) |
-| **RSK-10** | Mock backends diverge from real WorkWeek/ServiceImmediately behaviour | Medium | Medium | Contract tests run against the same OpenAPI specs for both; adapter isolates the difference (ASM-01, §7.2); the versioned `fidelity-profile.yaml` and the shadow stage of §5.6 surface divergence before cutover |
-| **RSK-11** *(new in v1.7)* | The de-identification template's **infoType coverage** is incomplete for a data class nobody anticipated - a novel identifier format reaches a model prompt in the clear even though the template is correctly enforced | **Medium** | High | This is the residual risk §4.10 explicitly does *not* close: enforcement is guaranteed, completeness is not. Mitigated by a quarterly §4.4 coverage review against Google's published infoType catalogue, by running the `inspectTemplate` at `minLikelihood: POSSIBLE` (a lower bar than the `LIKELY` used for transformation) over sampled prompts so near-misses surface, and by the §4.11 daily re-inspection catching anything that reaches storage. Custom `infoType` regexes for enterprise-specific formats (employee ID, badge number, internal case ID) are already in the template |
-| **RSK-12** *(new in v1.7)* | A future code change serialises a raw payload into a Saga compensation record | **Low** | **Critical** | Four independent layers (§4.11): the closed `extra="forbid"` emitter schema, the CI test that DLP-scans all compensation output across every use case and class, sink-level exclusion filters that drop non-conforming records before they land, and the daily DLP re-inspection over the audit dataset. The last layer is what makes this Low rather than Medium - it catches a leak that no reviewer anticipated, which a code-review control cannot promise |
+Risks are grouped into three categories - **Technical** (the system may not work as designed), **Operational** (the system works but is run or depended upon in a way that fails), and **Organisational** (the system works and is run correctly but people do not adopt or trust it). Every risk carries a named accountable owner; a mitigation without an owner is an aspiration.
+
+### **8.3.1. Technical Risks** - *the system may not work as designed*
+
+| Risk ID | Description | Likelihood | Impact | Concrete Mitigation | Owner |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **RSK-01** | LLM hallucination in policy Q&A creating a compliance exposure | Low | Critical | Dual gate - retrieval relevance >= 0.8 **and** groundedness >= 0.85 with citation resolution; refuse rather than assert (§3.3 Path 1) | Lead Architect |
+| **RSK-02** | Peak traffic triggers backend 429s and sync timeouts | Medium | High | Cloud Tasks rate-limited queueing at 90% of backend ceiling, idempotency keys, async user acknowledgement (§5.2) | Backend Tech Lead |
+| **RSK-03** | Inconsistent state after a partial cross-system failure | Medium | High | Saga with persistent Firestore ledger and the §5.4 compensation classification policy | Backend Tech Lead |
+| **RSK-04** | Prompt injection used to exfiltrate another employee's data | Low | Critical | Structural defence - `employee_id` is not a tool parameter (§4.1); plus Model Armor inbound, DLP pre-LLM masking, per-call scope intersection | Security Architect |
+| **RSK-05** | Unauthorised access persists after an employee status change | Low | Critical | 120-second assertion TTL, webhook-driven revocation, session status checked every turn (< 5 s effective window, §4.7) | Security Architect |
+| **RSK-06** | Chat logs retained indefinitely, breaching privacy mandates | Low | High | Native Firestore 30-day TTL, PII-stripped BigQuery archive, RTBF purge workflow (§4.6) | DPO / Security Architect |
+| **RSK-07** | Measured safety overhead exceeds the 300 ms NFR ceiling | **Low** *(reduced from Medium in v1.5)* | Medium | §4.3 was re-architected from five sequential stages into three concurrency groups: the design budget is now **120 ms p95 with 180 ms of headroom**, not 280 ms with 20 ms. Per-stage hard deadlines fail closed, so a network fluctuation cannot cascade into a turn timeout. `ALRT-04` warns at 240 ms, well before the NFR is breached, and Phase 3 retains its measurement exit criterion | Lead Architect |
+| **RSK-08** | An auto-rollback cancels a consequential employee action | Low | **Critical** | Compensation classification policy (§5.4) - `HUMAN_CONSEQUENTIAL` steps are never auto-reversed; tested per class in CI | HR Operations Lead |
+| **RSK-11** *(new in v1.7)* | The de-identification template's **infoType coverage** is incomplete for a data class nobody anticipated - a novel identifier format reaches a model prompt in the clear even though the template is correctly enforced | **Medium** | High | This is the residual risk §4.10 explicitly does *not* close: enforcement is guaranteed, completeness is not. Mitigated by a quarterly §4.4 coverage review against Google's published infoType catalogue, by running the `inspectTemplate` at `minLikelihood: POSSIBLE` (a lower bar than the `LIKELY` used for transformation) over sampled prompts so near-misses surface, and by the §4.11 daily re-inspection catching anything that reaches storage. Custom `infoType` regexes for enterprise-specific formats (employee ID, badge number, internal case ID) are already in the template | DPO / Security Architect |
+| **RSK-12** *(new in v1.7)* | A future code change serialises a raw payload into a Saga compensation record | **Low** | **Critical** | Four independent layers (§4.11): the closed `extra="forbid"` emitter schema, the CI test that DLP-scans all compensation output across every use case and class, sink-level exclusion filters that drop non-conforming records before they land, and the daily DLP re-inspection over the audit dataset. The last layer is what makes this Low rather than Medium - it catches a leak that no reviewer anticipated, which a code-review control cannot promise | Security Architect |
+
+### **8.3.2. Operational Risks** - *the system works, but is run or depended upon in a way that fails*
+
+| Risk ID | Description | Likelihood | Impact | Concrete Mitigation | Owner |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **RSK-09** | A model version change silently regresses accuracy or safety | Medium | High | Model ID pinned, recorded per turn, and any change gated on the full §9.3 eval suite (§1.4 version governance) | ML/Eval Engineer |
+| **RSK-10** | Mock backends diverge from real WorkWeek/ServiceImmediately behaviour | Medium | Medium | Contract tests run against the same OpenAPI specs for both; adapter isolates the difference (ASM-01, §7.2); the versioned `fidelity-profile.yaml` and the shadow stage of §5.6 surface divergence before cutover | Integration Engineer |
+| **RSK-17** *(new in v2.0)* | Outside the 07:00-20:00 UTC warm window both regions scale to zero, so a regional failure at 03:00 is served by a cold start (~7 s) rather than the < 30 s warm RTO claimed in §2.2 | Low | Low | Deliberate acceptance, not an oversight. Overnight traffic is under 2% of daily volume and the NFR-2.2 error budget is monthly, so the worst realistic case consumes under 4% of it. **On the shift-worker objection specifically:** the §1.1 frontline segment is 30% of headcount but 18% of ticket volume, and its sessions cluster at shift *changeover* - which for the MVP-1 sites falls inside the 07:00-20:00 UTC window, not outside it. The exposure is therefore genuinely small today and would stop being small the moment a non-US site is onboarded, which is exactly what OQ-06 tracks and what the Wave 2 measurement decides. A cold start is also a one-off ~7 s on the *first* turn, not a per-turn penalty, and the UI shows a typing indicator rather than a blank pane - the failure is a slow greeting, not an unresponsive interface. `ALRT-02` still fires on the availability burn rate, and the warm window is a single Terraform variable that can be widened to 24x7 for ~$95/month if measured overnight volume ever exceeds 5% | SRE Lead |
+
+### **8.3.3. Organisational & Adoption Risks** - *the system works and is run correctly, but people do not adopt or trust it*
+
+| Risk ID | Description | Likelihood | Impact | Concrete Mitigation | Owner |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **RSK-13** *(new in v1.8)* | **Low adoption - employees keep using the human queue, so the deflection and ROI case never materialises even though the system works correctly** | **Medium** | High | Segment-phased rollout with per-wave gates, department and site champions, capability card and per-segment example prompts (§9.6.4). Adoption is measured weekly (§9.6.3) with WAU and repeat-use as leading indicators. Structurally, the §1.1 target is reachable from the knowledge-worker segment alone, so frontline adoption is upside rather than a dependency - this risk therefore threatens the *size* of the return, not its existence (as §6.6 does for the baseline) | HR Change Lead |
+| **RSK-14** *(new in v1.8)* | **Over-trust / automation bias - an employee acts on a correct-but-incomplete answer and misses a statutory or contractual deadline** | Medium | **High** | Structural rather than advisory: ungrounded generations are refused rather than hedged (§3.3 Path 1); every policy claim carries a resolvable citation; transaction confirmations state the system of record, reference ID and live status (`PENDING_APPROVAL`) instead of "done"; the agent never adjudicates an entitlement (DEC-02). §9.6.2 records the wording discipline as a design commitment, not a copy preference | HR Change Lead |
+| **RSK-15** *(new in v1.8)* | **Trust collapse after a visible bad interaction - a wrong refusal or a guardrail false positive circulates internally and adoption stalls** | Medium | Medium | No employee is ever cornered by a refusal: the §5.7 ladder now includes a false-positive trigger with neutral wording, tagged for weekly InfoSec review. The §9.6.1 appeal path returns a human answer within 2 business days and can correct the corpus within 15 minutes (SLA-07), and every contested case becomes a golden-set entry so the same failure cannot silently recur. Depends on ASM-08 holding | HR Knowledge Team Lead |
+| **RSK-16** *(new in v1.8)* | Employees read the agent as workforce reduction and disengage or actively resist | Low | Medium | Joint HR/IT sponsor messaging framed on specialist capacity rather than headcount; human queues remain open throughout MVP 1 (ASM-08); use is voluntary (§9.6.4). The HR specialists whose escalations the design depends on are enabled before Wave 1 rather than after | Executive Sponsor (HR) |
+| **RSK-18** *(new in v2.2)* | **Differential service by language and ability** - an English-only text interface deflects effectively for head-office staff while frontline, non-English-first and low-literacy employees keep queueing, so the *measured* effect of the programme is that the best-served population gets faster and everyone else stays where they were. The reputational and industrial-relations exposure is larger than the technical one | **Medium** | Medium | Four controls, none of which require lifting CON-04. (1) **Measure it rather than discover it**: SM-10 deflection and SM-14 WAU are already reported per §1.1 segment; UNK-07 sizes the affected population from HRIS before Wave 3 rather than after. (2) **Do not withdraw the alternative**: the human queue is not reduced for any segment during MVP 1 - §6.6's business case is built on avoided *future* cost, not on removing capacity, so no employee loses a route they had. (3) **Accessibility is a launch gate, not a backlog item**: WCAG 2.2 AA conformance with assistive-technology users in UAT (DEC-24, §9.4). (4) **Sequence the fix on evidence**: P6.7 multilingual is triggered by the first non-English site, and UNK-07's answer can pull it forward. Residual: accepted for MVP 1, reviewed at the Wave 3 gate | HR Change Lead & Executive Sponsor |
+
+## **8.4. External Dependency Register**
+
+Risks describe what might go wrong inside the design. Dependencies describe what this project cannot control and must therefore plan around. Each entry names the owning party, what MVP 1 needs from them, when it is needed against the §7.4 roadmap, what happens if it does not arrive, and the fallback that keeps delivery moving.
+
+| ID | Dependency | Type | Owner (outside this team) | Needed By | Consequence if Late or Refused | Fallback That Preserves the Schedule |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **DEP-01** | **Google Cloud project, billing account and org-policy exceptions** (Vertex AI, Model Armor, DLP, VPC-SC perimeter) | Platform | Cloud Platform Team | Phase 0, week 1 | Nothing can be provisioned; Terraform apply fails at `modules/network` | None - this is the one hard blocker. Mitigated by requesting the perimeter and quota at kickoff rather than at first use, and by a sandbox project without VPC-SC for weeks 1-2 development |
+| **DEP-02** | **Vertex AI quota** for `gemini-3.7-flash` and `gemini-3.1-pro` in `us-central1` and `us-east4` (§6.1 assumes 1.2M input tok/min) | Platform | Google Cloud account team | Phase 1 | §9.5 peak and stress profiles cannot run; the AIMD limiter (§5.2) throttles to its floor under load test | Quota request filed at Phase 0 with the §6.1 volumetrics attached. Load profiles degrade to 0.5x concurrency and the gate is re-run after quota lands, rather than the phase being blocked |
+| **DEP-03** | **HR policy corpus** - curated, authoritative, English, one stable document ID per file (ASM-02) | Content | HR Knowledge Team | Phase 1 (ingestion); complete by Phase 4 (grounding gate) | The 95% grounding gate (NFR-3.1) cannot be measured; §9.2 golden answers have no source of truth | Phase 1 ingests a 40-document representative subset agreed at kickoff, which is enough to build and test the pipeline; the full corpus is required only for the Phase 4 grounding and UAT gates |
+| **DEP-04** | **WorkWeek and ServiceImmediately production endpoints, credentials and rate-limit confirmation** | Integration | HRIS Team / ITSM Team | Phase 5 (cutover) | MVP 1 ships mock-backed; the §5.6 shadow and canary stages cannot start | Explicitly designed for: CON-01 and §5.6 make mock-backed delivery a supported end state, not a failure. The adapter boundary (§7.2) localises the change to one module |
+| **DEP-05** | **Cloud Identity groups** populated with the entitlement model behind DEC-09 (ASM-05) | Identity | Identity & Access Team | Phase 2 | The restricted policy corpus cannot ship; §4.7 ACL propagation is untestable | The provider interface is swappable by design (DEC-09). MVP 1 falls back to a static group mapping in Secret Manager, with the restricted corpus deferred to Phase 4 |
+| **DEP-06** | **Revocation webhook** emitted on employee status change (ASM-05, Path 7) | Identity | Identity & Access Team | Phase 2 | SLA-01 revocation propagation degrades from event-driven (< 5 s) to polling | Documented and priced: a 60 s poll of the entitlement provider. SLA-01 is restated as < 65 s for the duration, and the change is visible in `ALRT-09` rather than silent |
+| **DEP-07** | **DPO sign-off** on the §4.4 mapping, §4.5 template and §4.6 retention model | Governance | Data Protection Officer | Phase 1 exit | No production data may be processed; go-live is blocked regardless of engineering readiness | The DPO is a named reviewer on this document (Document Control) precisely so sign-off is concurrent with build rather than a gate discovered at the end |
+| **DEP-08** | **Named HR and IT queue receivers** for the eight §5.7 escalation triggers, and HR Knowledge Team capacity for the 2-business-day contested-answer SLA (ASM-08) | Organisational | HR Operations / IT Service Desk | Wave 1 rollout | The escalation ladder becomes a dead letterbox - a worse outcome than having no agent (RSK-15) | Wave 1 is gated on receivers being named and on-call rotas published. Rollout pauses rather than proceeding with an unbacked promise |
+| **DEP-09** | **Model Armor availability** in the deployment regions, and stability of its API contract | Platform | Google Cloud | Phase 2 | §4.3 loses its inbound injection filter; the safety chain fails closed and refuses traffic | Model Armor is one of several layers, not the only one (RSK-04). If unavailable, the gateway falls back to the open-source guardrail classifier already used in the §9.3 red-team harness, at a measured cost of ~+35 ms |
+
+## **8.5. Known Unknowns & Investigation Plan**
+
+The distinction that matters: a **risk** is something we can characterise and have already mitigated; a **known unknown** is a question we cannot answer from the desk and have therefore scheduled an experiment to answer. Listing them is not an admission of incompleteness - it is the difference between a design that has been thought through and one that has merely been asserted. Each entry below names the experiment, its owner, when it runs, and - critically - **what we will do with each possible answer**, so the investigation cannot conclude in a shrug.
+
+| ID | Question We Cannot Answer From the Desk | Why It Cannot Be Answered Now | Investigation | Owner | Runs At | Decision Rule on the Answer |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **UNK-01** | **What is the *measured* p95 safety-chain overhead?** §4.3 designs to 120 ms with 180 ms headroom, but that is arithmetic over vendor-published latencies, not observation | Model Armor and DLP p95 under our payload shapes and our VPC-SC egress path are not published and cannot be modelled reliably | §9.5 peak and stress profiles with OpenTelemetry spans per safety stage | Lead Architect | Phase 3 exit gate | **< 180 ms** → proceed unchanged. **180-300 ms** → apply remediation ladder steps 1-3 (§9.5) and re-measure. **> 300 ms** → CON-05 is breached; escalate to the §9.5 step-4/5 decision, which trades the §4.3 Group 2 output scan for an async post-hoc scan on read-only turns |
+| **UNK-02** | **What is the real deflection rate?** §1.1 commits to 40% of a 51.2% addressable envelope, derived from FY26 ticket categories, not from observed agent behaviour | Deflection depends on employee phrasing, corpus coverage and trust - none of which exist until people use it | Wave 1 measured deflection against a matched control cohort still using the human queue (§9.6.3) | HR Change Lead | Wave 1 + 4 weeks | **>= 30%** → proceed to Wave 2 on plan. **15-30%** → proceed but re-cut the ROI to measured numbers and prioritise the top three refused-intent categories into the corpus. **< 15%** → pause rollout, run the §9.6.1 contested-answer and refusal logs as a root-cause review before any further wave |
+| **UNK-03** | **Does mock fidelity actually predict production behaviour?** §5.6 specifies fidelity requirements, but a mock is only as faithful as our understanding of the system it imitates | The production error taxonomy and latency distribution of WorkWeek and ServiceImmediately are known to us only from their OpenAPI specs | The §5.6 shadow stage - production traffic mirrored to both mock and real backend, responses diffed | Integration Engineer | Phase 5 shadow stage | **Diff rate < 1%** → proceed to canary. **1-5%** → re-baseline `fidelity-profile.yaml` and re-run the golden set before canary. **> 5%** → treat the adapter contract as unvalidated; hold cutover and re-derive §5.1 from observed behaviour |
+| **UNK-04** | **Is `gemini-3.7-flash` sufficient for routing, or does ambiguous multi-intent phrasing force `3.1-pro` on the hot path?** §1.4 chooses the tiered split on a cost/latency argument | Routing accuracy on *our* intent taxonomy with *our* employees' phrasing is not knowable from benchmark scores | Routing-accuracy slice of the 150-prompt golden set (§9.2), scored per tier | ML/Eval Engineer | Phase 2 | **>= 97% routing accuracy** → keep the tiered split. **93-97%** → keep Flash but add the disambiguation clarifying-question path. **< 93%** → promote routing to `3.1-pro`, which costs ~$310/month more (§6.3 sensitivity) and is affordable within the §6.6 break-even |
+| **UNK-05** | **How often do guardrails fire falsely on legitimate HR language?** Medical, disciplinary and grievance vocabulary overlaps heavily with the patterns safety classifiers are trained to flag | False-positive rate is a property of the interaction between real employee phrasing and a vendor classifier we do not control | §9.1 red-team suite measures the block rate; the §5.7 false-positive escalation trigger measures the *live* rate, reviewed weekly by InfoSec | Security Architect | Phase 3, then weekly in production | **< 1%** → within the §9.1 threshold, no action. **1-3%** → tune the Model Armor confidence threshold and add the affected phrasings to the golden set. **> 3%** → RSK-15 is materialising; route the affected intent class straight to the §5.7 ladder rather than refusing |
+| **UNK-06** | **What does the post-MVP Google ADK migration actually cost in engineering time?** §2.1 sets the direction and §7.7 estimates it, but no team has yet ported a LangGraph `StateGraph` of this shape | The ADK/Agent Platform Runtime surface is still evolving; a paper estimate of a port is the least reliable kind of estimate | Timeboxed 2-week spike porting the single-agent read-only path (UC-1.1) to ADK, measuring lines changed, test churn and latency delta | Lead Architect | MVP 1 close, before the Phase 6 commitment | **Spike ports cleanly in < 2 weeks** → commit the full migration to the Phase 6 plan at the §7.7 estimate. **Ports with friction** → re-estimate and re-sequence before committing. **Blocked** → stay on LangGraph and revisit at the next ADK release; §2.1 is a direction, not a dependency |
+| **UNK-07** | **How much of the workforce is effectively excluded by CON-04 - how many employees are not English-first, have low written literacy, or depend on assistive technology?** §1.1 segments by role and ticket volume, not by language or access need | This is HRIS and accessibility-network data that sits outside the engineering team, and self-declared language proficiency is incomplete in most HRIS records, so the number has to be assembled rather than queried | HR People Analytics extract (declared working language, site location) cross-referenced with the §1.1 segment table, plus an accessibility-network consultation; reported as a share of headcount **and** as a share of Tier-1 ticket volume, because those two will differ | HR Change Lead (with People Analytics) | Before the Wave 3 frontline gate | **< 5% of ticket volume** → proceed as planned; P6.7 stays triggered by site expansion. **5-15%** → keep the human queue explicitly staffed for those cohorts and say so in the Wave 3 comms, and re-cut the SM-10 target to the addressable population rather than the whole workforce. **> 15%** → pull P6.7 forward ahead of P6.3 and P6.4; at that share the multilingual gap is no longer a post-MVP nicety but the binding constraint on the business case |
 
 ---
 
@@ -2377,12 +2983,12 @@ Before any change to prompts, tools, model IDs, guardrail thresholds or the agen
 
 | Aspect | Detail |
 | :--- | :--- |
-| **Participants** | 12-15 users: 8 standard employees across departments, 3 People Partners, 2 IT support engineers, plus IT Director and DPO as observers |
+| **Participants** | 12-15 users: 8 standard employees across departments, 3 People Partners, 2 IT support engineers, plus IT Director and DPO as observers |  **Two of the standard-employee participants must be assistive-technology users** (screen reader and keyboard-only), recruited via the accessibility network - a conformance scan is not evidence that the interface is usable.
 | **Duration** | 2 weeks (Phase 4), against the UAT environment with mock backends seeded with realistic-but-synthetic records |
-| **Scenario coverage** | All six use cases; plus deliberate negative scenarios - out-of-scope question, insufficient PTO balance, an attempt to view a colleague's balance, a backend outage window, and a leave request with an invalid date range |
-| **Data captured** | Task completion rate, turns to completion, CSAT per interaction, verbatim feedback, and every unmatched prompt for §9.2 outside-in triage |
-| **Entry criteria** | §9.3 eval gate green; all §9.1 automated thresholds met in UAT |
-| **Exit criteria** | >= 90% task completion on in-scope scenarios; CSAT >= 4.0/5; **zero** cross-user data exposures; zero unhandled errors surfacing technical detail; IT Director and DPO sign-off recorded |
+| **Scenario coverage** | All six use cases; plus deliberate negative scenarios - out-of-scope question, insufficient PTO balance, an attempt to view a colleague's balance, a backend outage window, and a leave request with an invalid date range; plus **trust scenarios** (v1.8) - a grounding refusal followed by escalation, a deliberately contested answer taken end to end through the §9.6.1 appeal path, and a guardrail false positive |
+| **Data captured** | Task completion rate, turns to completion, CSAT per interaction, verbatim feedback, every unmatched prompt for §9.2 outside-in triage, and whether participants located the escalation and contest controls **unprompted** |
+| **Entry criteria** | §9.3 eval gate green; all §9.1 automated thresholds met in UAT; escalation ticket routing configured and a receiving specialist briefed (ASM-08) |
+| **Exit criteria** | >= 90% task completion on in-scope scenarios; CSAT >= 4.0/5; **zero** cross-user data exposures; zero unhandled errors surfacing technical detail; **escalation and appeal paths each exercised end to end with a human response actually received**; IT Director and DPO sign-off recorded; **zero Severity-1 or Severity-2 accessibility defects, and both assistive-technology participants completing the core policy-question and leave-request journeys unaided** |
 | **Defect triage** | Severity 1 (data exposure, unsafe output, incorrect transaction) blocks release outright; Severity 2 fixed before go-live; Severity 3 backlogged with an owner |
 
 ## **9.5. Performance Profiling & Latency Validation Plan**
@@ -2406,7 +3012,7 @@ Every latency figure in §4.3 is an engineering estimate. Estimates are how a de
 | Gate | Threshold | If it fails |
 | :--- | :--- | :--- |
 | Total safety overhead p95 | **< 300 ms** (NFR-2.1, hard) | Phase 3 does not exit |
-| Total safety overhead p95 | < 150 ms (design target, soft) | Recorded as variance; budget re-baselined to measured reality and §4.3 updated |
+| Total safety overhead p95 | < 150 ms (soft) - the **120 ms** §4.3 design budget plus a 25% measurement tolerance | Recorded as variance; budget re-baselined to measured reality and §4.3 updated |
 | Deadline-trip rate at 3x | < 0.1% of turns | Deadlines re-tuned upward within the 300 ms envelope, or the stage is optimised |
 | Cascade test | No unbounded latency growth; rejection begins before saturation | Blocking defect - the bulkhead design has failed and must be fixed before launch |
 | Soak p95 drift | < 10% over 4 hours | Investigate leak or pool exhaustion before launch |
@@ -2414,6 +3020,97 @@ Every latency figure in §4.3 is an engineering estimate. Estimates are how a de
 **Remediation ladder, in priority order, if the p95 gate fails.** These are pre-decided so the team is not designing under deadline pressure: (1) co-locate DLP and Model Armor endpoints in the serving region and re-measure; (2) narrow the DLP inspection template to the seven §4.4 element types rather than the broad default set; (3) cache citation-resolution metadata more aggressively; (4) move groundedness scoring fully off the critical path into a post-hoc verification that retracts rather than gates; (5) as a last resort, request an NFR-2.1 variance from the ARB with measured evidence. Options 1-3 are tuning; option 4 is a design change requiring InfoSec sign-off; option 5 is a business decision, not an engineering one.
 
 **Cadence.** Full profiling runs at Phase 3 and again at Phase 4 exit, with results recorded in the deployment record. A reduced-scale version (baseline profile, 10 minutes) runs nightly in CI so that a latency regression is caught by the commit that introduced it rather than at the next release.
+
+## **9.6. Adoption, Trust Calibration & Change Management**
+
+Every control up to this point measures whether the *system* is right. This section covers the failure mode where the system is right and the deployment still fails: employees do not use it, use it wrongly, or abandon it after one bad interaction. The 40% deflection target in §1.1 is a **behavioural** target, and a technically flawless agent that employees route around returns none of the $110,490 a month.
+
+§5.7 already specifies the escalation mechanics - eight triggers, the de-identified context package, guaranteed out-of-band notification. This section does not repeat them. It covers what §5.7 does not: the employee who **disputes an answer**, the calibration of how far the answer should be trusted, and the organisational work that decides whether any of it gets used.
+
+### **9.6.1. Contesting an Automated Answer - the appeal protocol**
+
+The highest-stakes trust event is an employee believing the agent got their entitlement wrong. The governing design principle is already load-bearing elsewhere in this document: **the agent never adjudicates.** It states policy and files requests; every decision with consequences for an employee is made by a human (DEC-02). A refusal is therefore never a denial of entitlement, and the appeal path exists to make that visible rather than merely true.
+
+```mermaid
+flowchart TD
+    Turn["Agent turn completes"] --> Q{"Employee response"}
+    Q -->|"Accepts the answer"| Done["Conversation continues"]
+    Q -->|"Taps Talk to a person"| Handoff["Warm handoff per §5.7:<br>ITSM ticket with de-identified context package"]
+    Q -->|"Taps This answer is wrong"| Contest["Contested-answer capture:<br>transcript, the exact citation set used,<br>model ID, trace ID, stated objection"]
+
+    Auto["Automatic §5.7 triggers:<br>repeated non-answer, tool failure,<br>guardrail false positive, sensitive topic"] --> Handoff
+
+    Handoff --> Human["Human HR / IT specialist<br>starts with full context"]
+    Contest --> Triage["HR Knowledge Team triage<br>SLA: 2 business days"]
+
+    Triage --> Upheld["Answer upheld:<br>human explains the policy basis"]
+    Triage --> Corrected["Corpus wrong, stale or ambiguous:<br>document corrected and republished"]
+
+    Corrected --> Reingest["Eventarc re-ingest, live in <= 15 min<br>(DEC-01, SLA-07)"]
+    Upheld & Reingest --> Golden["Case becomes a golden-set entry<br>(§9.2 outside-in triage)"]
+    Golden --> Trend["Contested-rate trend reviewed monthly<br>by HR Knowledge Team + DPO"]
+```
+
+| Stage | Commitment |
+| :--- | :--- |
+| **1. Contest** | One control on any agent answer. No form, no justification required, no separate portal. It sits beside the citation links, where the doubt actually forms |
+| **2. Acknowledge** | Immediate in-chat confirmation with a reference number, and a statement that a human will review it |
+| **3. Adjudicate** | The HR Knowledge Team reviews the transcript **and the exact citation set the agent used**, within 2 business days. Because citations are captured per turn, the reviewer can distinguish *wrong answer* from *correct answer drawn from the wrong document* - which decides whether this is a model problem or a content problem, and therefore who fixes it |
+| **4. Resolve** | Either the answer is upheld with a human explanation, or the corpus is corrected and republished, live within 15 minutes under SLA-07. Corrections are announced, so the employee sees that contesting changed something |
+| **5. Learn** | Every contested case - upheld or not - becomes a golden-set case (§9.2). A contested answer that never enters the eval suite will recur, and the second occurrence costs far more trust than the first |
+| **Escape hatch** | The existing HR portal and human queues remain fully open for all of MVP 1 (ASM-08). Use of the agent is **optional**, and no employee is required to interact with it to obtain an entitlement |
+
+### **9.6.2. Trust Calibration - both directions are failure modes**
+
+Under-trust wastes the investment. Over-trust is more dangerous: an employee who acts on a confidently-worded but incomplete answer can miss a statutory notification window, and the agent will have caused the harm it was built to prevent.
+
+| Failure Direction | Symptom | Design Countermeasure |
+| :--- | :--- | :--- |
+| **Over-trust** (automation bias) | A policy summary is treated as an authoritative HR decision | Every policy claim carries a resolvable citation deep link (FR-5.2/5.3). Unsourced assertions are structurally impossible because ungrounded generations are refused, not softened (§3.3 Path 1). Answers involving a deadline or an entitlement name the decision-maker |
+| **Over-trust** | A filed request is assumed to be an approved request | Transaction confirmations state the system of record, the reference ID and the **current status** verbatim - "filed in WorkWeek as LR-4471, pending your manager's approval" - never "done" or "all set". This is the same wording discipline that §5.7 applies to partial-completion summaries |
+| **Under-trust** | The employee re-checks every answer in the HR portal, doubling effort | Citations resolve into the same documents the portal exposes, so the agent is verifiably quoting the same source of truth; transaction receipts resolve to a record the employee can open |
+| **Under-trust** | The employee assumes a machine cannot handle their case and bypasses it | The onboarding message states plainly what the agent can and cannot do, with the §1.2 exclusions in plain language; segment comms lead with the two or three highest-volume tasks for that audience (§1.1) |
+| **Both** | The employee cannot tell whether they are talking to a person | Persistent AI disclosure in the UI; the agent identifies itself as an automated assistant on the first turn of every session and never adopts a human persona or personal name |
+
+### **9.6.3. Adoption & Trust Metrics**
+
+These are tracked from go-live alongside the §9.1 quality thresholds. They are the **leading indicators of the ROI case**, and unlike §9.1 they cannot be measured before real users arrive - which is why they are wave-gated rather than CI-gated. Deflection is measured as specified in §6.6, from `agent_node_lifecycle` completions reconciled against ITSM volume for the same intent categories.
+
+| Metric | Definition | 6-Month Target | Cadence |
+| :--- | :--- | :--- | :--- |
+| **Deflection rate** | Sessions resolved with no human touch / total sessions | **>= 40%** (§1.1) | Weekly |
+| **Weekly active users** | Distinct employees using the agent / eligible population | **>= 45%** of eligible headcount | Weekly |
+| **Frontline segment adoption** | WAU within the frontline / shift segment (§1.1) | **>= 20%** - deliberately lower; upside, not a dependency | Monthly |
+| **Repeat-use rate** | Employees with >= 2 sessions in a month / distinct users | **>= 60%** - the single best signal that trust survived first contact | Monthly |
+| **Escalation rate** | Sessions escalating under a §5.7 trigger / total sessions | **<= 25%** and trending down | Weekly |
+| **Contested-answer rate** | Answers contested via §9.6.1 / total answered turns | **< 2%**, with **100%** triaged inside SLA | Monthly |
+| **Contest upheld ratio** | Contests where the agent's answer was upheld | Tracked, not targeted. A **falling** ratio means the corpus is genuinely wrong more often than employees are; a ratio near 100% may instead mean the contest control is too hard to find | Monthly |
+| **Guardrail false-positive rate** | `SUSPECTED_FALSE_POSITIVE` events / total turns | **< 1%**, consistent with the §9.1 red-team threshold | Weekly |
+| **Turn-level satisfaction** | Thumbs-up / thumbs-down per answer | **>= 88% positive** (§1.1 CSAT target) | Weekly |
+| **Abandonment** | Sessions closed mid-transaction with neither resolution nor escalation | **< 10%** - the silent failure every other metric here misses | Monthly |
+
+> **A rising escalation rate against a stable ticket mix is a corpus-decay alarm, not a UX complaint.** It usually means policy documents changed and the datastore did not, so it is reviewed against the DEC-01 ingestion pipeline and SLA-07 before anyone touches the prompt. §5.7 already frames escalation rate as a product metric rather than a failure metric; this is the specific reading that makes it actionable.
+
+### **9.6.4. Change Management & Phased Rollout**
+
+Rollout is staged by population segment rather than switched on enterprise-wide, so a trust failure is contained to one wave and corrected before the next. The waves run after the §7.4 Phase 4 UAT exit.
+
+| Wave | Population | Duration | Gate to Proceed |
+| :--- | :--- | :--- | :--- |
+| **Wave 0 - UAT** | 12-15 participants (§9.4) | 2 weeks | §9.4 exit criteria signed off by the IT Director and DPO |
+| **Wave 1 - Pilot** | ~500 knowledge workers across 2 departments, plus their People Partners | 3 weeks | Deflection >= 25%; zero Severity-1 defects; contested rate < 3%; escalation and appeal paths each exercised end to end at least once with a human response received |
+| **Wave 2 - Knowledge-worker rollout** | The remaining ~6,700 knowledge workers and all people managers | 4 weeks | Wave 1 metrics hold at 10x volume; contested-answer SLA met; no unresolved corpus-decay trend |
+| **Wave 3 - Frontline enablement** | 3,600 frontline / shift workers | 4 weeks | Kiosk and mobile session testing complete; site champions trained |
+
+| Element | Commitment |
+| :--- | :--- |
+| **Sponsorship** | The HR Business Sponsor and IT Director communicate jointly at launch. The message is explicitly *"this handles routine questions so specialists can spend their time on you"* - not a headcount message, which is the fastest way to lose the cooperation of the HR team whose escalations the design depends on |
+| **Champions network** | One trained champion per department, including at least one per frontline site, briefed on capabilities, the §1.2 exclusions and the appeal path |
+| **Training** | None for employees - a system that needs training has failed its NLU goal (FR-2.1). Instead: a one-page capability card and three example prompts per segment. People Partners and IT specialists get a 20-minute session on how escalated tickets arrive and what context they carry |
+| **Specialist enablement** | Specialists are briefed **before** Wave 1 on the §5.7 context-package format, so the first escalation is not a surprise. Their feedback on whether the package is actually useful feeds the §9.2 outside-in loop |
+| **Voluntary use** | The human queue and HR portal stay open for the whole of MVP 1 (ASM-08). No queue is closed and no employee is redirected into the agent against their preference until the post-MVP business case is signed |
+| **Feedback channels** | In-product thumbs-down with free text, the §9.6.1 contest control, and a monthly review with the HR Knowledge Team, People Partners and the DPO |
+| **Transparency of change** | When a contested case produces a corpus correction, it is recorded in a monthly digest. Employees who can see that their objection changed the system contest constructively; employees who cannot, disengage |
 
 ---
 
@@ -2440,6 +3137,13 @@ Every latency figure in §4.3 is an engineering estimate. Estimates are how a de
 | **DEC-15** (ADR-004) *(merged from `main`, was DEC-11 there)* | Delivery & Testing (WAF Operational Excellence) | **Two-Stage Deployment Pipeline & Mock State Reset API:** Phase 1 single-region fast-path for immediate UAT validation, paired with a `POST /api/test/reset-state` endpoint on the mock backends for reproducible CI/CD testing, compiled out of production images (§7.6), per `ce-skills/.agents/workflows/system-validation.md`. Security and privacy controls are identical in both stages. | Platform & Dev Lead | **Approved & Integrated** |
 | **DEC-16** *(new in v1.7)* | Privacy enforcement | **The pre-LLM de-identification template is immutable, digest-pinned and fail-closed across all regions** (§4.10). The template is Terraform-managed with `prevent_destroy`, human `dlp.*.patch` is denied by org policy, services reference it by `name@sha256-digest`, every revision verifies the digest at startup and every call verifies `templateVersion`, CI proves digest equality across `us-central1` and `us-east4` with an hourly production drift probe, and there is no fail-open code path. Per-turn `dlp_template_digest`, deploy attestations and drift-probe results form the audit evidence. | DPO, InfoSec & Enterprise Architecture | Finalized |
 | **DEC-17** *(new in v1.7)* | Audit data protection | **Audit logs are partitioned into four sensitivity zones and Saga compensation records carry no raw PII** (§4.11). Compensation uses a closed `extra="forbid"` schema emitting surrogates, reference IDs, a `payload_pointer` into 30-day Firestore state and a `payload_digest` for tamper-evidence - never the payload itself. Enforced at build time (CI DLP scan of all compensation output), write time (sink exclusion filters), rest (daily DLP re-inspection) and read time (separate datasets, separate CMEK keys, disjoint reader sets, Z4 reads self-audited). **SLO-06** carries zero error budget. | DPO & InfoSec | Finalized |
+| **DEC-18** *(new in v1.8)* | Human escalation & appeal | **Asynchronous context-carrying handoff plus a formal appeal protocol.** §5.7 handles *the agent cannot help* through eight triggers and a de-identified context package; **§9.6.1** handles *the employee believes the answer is wrong* through a contest control on every answer, HR Knowledge Team review within 2 business days, a corpus correction live in <= 15 min under SLA-07, and mandatory promotion of every contested case into the golden set. **Live warm transfer stays out of MVP** - it requires an agent-desktop and presence integration barred by CON-03. Rollout is wave-gated per §9.6.4 rather than enterprise-wide. | HR Business Lead & IT Director | Finalized |
+| **DEC-19** *(new in v1.8)* | State-layer topology | **Firestore multi-region `nam5`** (§2.2.1): two read-write replicas plus a witness across three US regions, majority Paxos quorum, strongly consistent reads in both compute regions, CMEK, delete protection, 7-day PITR and a daily export to a **dual-region** GCS bucket. Declared in Terraform so nightly drift detection catches any console change. Recorded explicitly: *dual-region is not a Firestore location class* - it is a Cloud Storage / Spanner concept, used here only for the backup bucket - and the exact replica region IDs are Google-managed, so the design depends on the quorum guarantee rather than on a region list. | Enterprise Architecture & Platform | Finalized |
+| **DEC-20** *(new in v2.0)* | Delivery feasibility | **The 13-week plan is resourced at 6.25 FTE across nine named roles with an 18% central schedule reserve and a pre-agreed descope order** (§7.7). Buffer is held centrally rather than padded into tasks, so drawing on it is a recorded decision by the Lead Architect rather than a silent slip. The descope order is fixed in advance - restricted-ACL corpus, then UC-2.3 write path, then the secondary warm region - and **nothing in §4 is descopable**, because shipping the safety chain partially is categorically different from shipping it late. | Lead Architect & Executive Sponsor | Finalized |
+| **DEC-21** *(new in v2.0)* | Post-MVP roadmap | **The §2.1 scaling direction is committed as seven costed and sequenced steps, P6.1 - P6.7** (§7.7.3), each with a start trigger, prerequisites, an engineering estimate and a run-rate delta: ~32 engineering weeks, roughly two quarters at 2.5 FTE. IdP federation (P6.1) is sequenced first because every later step is cheaper once identity is federated; the 10x scale step (P6.4) is deliberately *not* first because §6.3 shows it is a two-week tuning exercise on this architecture rather than a re-architecture, so pulling it forward would spend capacity on a non-binding constraint. | Enterprise Architecture & FinOps | Finalized |
+| **DEC-22** *(new in v2.0)* | API lifecycle | **URI major versioning (`/api/v1/`) with a 90-day minimum parallel-run window, RFC 8594 `Sunset`/`Deprecation` headers, and an explicitly enumerated breaking-change definition** (§5.9). Path versioning is chosen over header negotiation deliberately: it buys per-version ALB routing, rate limiting and metrics that a custom header match cannot. The policy is written before a second version exists, so it is a contract rather than a post-hoc justification. | Platform Team | Finalized |
+| **DEC-23** *(new in v2.1)* | Transparency & data-subject rights | **Privacy transparency is delivered in the conversational surface, and data-subject rights are exercisable from inside the conversation through deterministic gateway handlers that never reach the model** (§4.12). A first-session blocking notice states the retention periods and legal basis; a standing header keeps the disclosure present without consent fatigue; five keywords map to Art. 12-15, Art. 17 and Art. 7(3) workflows already specified in §4.6. Routing them around the LLM is the load-bearing part of the decision: a model-generated erasure confirmation would be an unbacked promise, and a guardrail false positive on the word *forget* would refuse a statutory right. The `forget me` handler confirms scope explicitly rather than issuing a receipt the employee may misread as erasure of their HR record, which §4.6.0 places outside this system. | DPO & Lead Architect | Finalized |
+| **DEC-24** *(new in v2.2)* | Accessibility & inclusion | **WCAG 2.2 AA is a launch gate for the chat surface, not a post-MVP improvement** (§2.3.3, §9.4): keyboard-only operation, screen-reader announcement of streamed tokens *and of every refusal*, visible focus, 4.5:1 contrast, and no time-limited interaction - verified by a blocking axe-core scan in CI **and** by two assistive-technology users in UAT, because a passing scan is not evidence of a usable interface. The streaming case is the one that needs stating: an SSE interface that paints tokens into a live region without the right ARIA politeness is actively worse for a screen-reader user than a non-streaming one, so §6.7's latency optimisation is not allowed to regress it. CON-04's language limit is **not** lifted by this decision and is handled separately by UNK-07, RSK-18 and P6.7. | Lead Architect & HR Change Lead | Finalized |
 
 > **Decision-ID merge map (v1.6).** The `main` revision line independently issued DEC-08 to DEC-11 for its WAF findings while the evaluator line had already issued the same IDs for different decisions. The evaluator-line IDs are authoritative because they are referenced from §5.2, §6.5, §4.7 and §10.2; `main`'s four are re-keyed here. Any earlier reference to "DEC-08 (ADR-001)" through "DEC-11 (ADR-004)" means DEC-12 to DEC-15 in this document. The ADR numbers are unchanged and remain the stable external identifiers.
 
@@ -2458,11 +3162,29 @@ Every item previously listed here has been converted into a decision, because ev
 
 **Where the residual uncertainty actually lives.** Closing these items does not mean the design is free of unknowns, and this document does not claim that. It means none of the unknowns *block a decision*. What remains is recorded where it belongs and where it stays visible:
 
-- **§8.1 Assumptions** - ASM-01 through ASM-07, each with an explicit "impact if false".
-- **§8.3 Risks** - nine risks with likelihood, impact and mitigation.
+- **§8.1 Assumptions** - ASM-01 through ASM-09, each with an explicit "impact if false".
+- **§8.3 Risks** - eighteen risks across three categories, each with likelihood, impact, mitigation **and a named owner**, including the four adoption and trust risks added in v1.8, which are the ones no engineering control can close.
+- **§8.4 Dependencies** - DEP-01 through DEP-09: what other teams must supply, by when, and the fallback that preserves the schedule if they do not.
+- **§8.5 Known Unknowns** - UNK-01 through UNK-06: the six questions that cannot be answered from the desk, each with a scheduled experiment and a **pre-decided rule for what to do with every possible answer**.
+- **§10.3 Open Questions** - the non-blocking questions that remain genuinely undecided, with owners and due dates.
 - **Appendix C.2** - the dimensions where this document is weakest, named rather than glossed.
 
 The distinction being drawn is between *"we cannot proceed until someone tells us X"* and *"we have proceeded on a stated basis that may need revisiting"*. Only the first is an open item. Everything above is now the second.
+
+## **10.3. Open Questions**
+
+§10.2 states that nothing blocks delivery, and that remains true. It would be dishonest to stop there. A design document of this size with genuinely zero unresolved questions has either solved a problem simpler than this one or has quietly rounded its uncertainties down. The questions below are real, are currently undecided, and are **deliberately not blocking** - each has a stated default that ships if the question is not answered by its due date, so an unanswered question degrades into a known choice rather than a stall.
+
+| ID | Open Question | Why It Is Not Blocking | Owner | Due | Default If Unanswered by the Due Date |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **OQ-01** | Should the in-session thumb rating feed the golden set automatically, or only via HR Knowledge Team triage? Automatic ingestion scales; triaged ingestion protects the answer key from a popularity signal that is not a correctness signal | Either choice ships the same code path; only the triage step differs | ML/Eval Engineer + HR Knowledge Team Lead | Phase 4 | **Triaged.** A thumbs-down is evidence of dissatisfaction, not evidence of a wrong answer. Automatic ingestion would let confident-sounding wrong answers pass and correct refusals fail |
+| **OQ-02** | What is the right retention period for the Z4 `reident_audit` zone? §4.11 sets 365 days by symmetry with Z2, but re-identification events are rarer and more sensitive, and a longer window may be the more defensible position | The zone, its access controls and its alerting are all specified; only the number is open | DPO | Phase 3 | **365 days**, matching Z2. Changing a retention period later is a config change; over-retaining sensitive data in the interim is not reversible |
+| **OQ-03** | Should the §5.7 escalation package include the full de-identified transcript or only the structured intent summary? The transcript saves the employee from repeating themselves; the summary is a smaller disclosure to a human who may not need the whole conversation | The package format is versioned and the de-identification is identical either way | HR Operations Lead + DPO | Wave 1 | **Structured summary plus the last three turns.** It solves the "don't make me repeat myself" problem, which is the point of the warm handoff, at a fraction of the disclosure |
+| **OQ-04** | Do people managers get a read-only team view in a later phase, or is own-record-only permanent? §1.1 shows managers generating 8% of volume that the agent must currently decline | DEC-02 settles MVP 1 unambiguously; this is a P6.x scoping question, not an MVP one | Executive Sponsor (HR) | MVP 1 close | **Own-record only remains permanent** until a manager-specific RBAC model and its own risk assessment exist. Extending data access by inference from adoption metrics is exactly the mistake FR-1.5 exists to prevent |
+| **OQ-05** | Which contact-centre platform backs the P6.6 live warm transfer? | P6.6 is post-MVP and gated on the Wave 3 adoption gate; §5.7's asynchronous handoff is complete without it | HR Operations Lead | Before the P6.6 commitment | **Deferred.** No selection is made on speculation; the §7.7.3 estimate carries the licensing cost as a range rather than assuming a vendor |
+| **OQ-06** | Should the 07:00-20:00 UTC warm window widen for non-US sites as the rollout expands? | RSK-17 documents the accepted overnight posture and the window is a single Terraform variable | SRE Lead | Wave 2 | **Unchanged.** Widened only when measured overnight volume exceeds 5% of daily, per the RSK-17 trigger, rather than pre-emptively |
+
+**Why these are listed and the §10.2 items are not.** An item belongs in §10.2 if the answer changes what gets *built*. An item belongs here if the answer changes a *setting, a policy or a later phase* - and if the design already works under the stated default. Everything above is the second kind. Nothing above is on the §7.4 critical path.
 
 ---
 
@@ -2478,13 +3200,13 @@ Every BRD requirement maps to a design section, an implementing component, and a
 | **FR-1.4** | Data masking / redaction | §4.4, §4.5, **§4.10**, **§4.11** | Cloud DLP inspect + de-identify templates, digest-pinned and fail-closed in both regions; four-zone log partitioning | DLP transformation unit tests; transcript inspection; cross-region digest equality gate (E5); daily DLP re-inspection of the audit dataset |
 | **FR-1.5** | RBAC and data isolation | §4.1 load-bearing rule, §4.2, **§4.9** | Server-side subject binding; RBAC matrix; scope intersection; three-way service-account isolation with enumerated prohibited permissions | Cross-user adversarial suite - 0 successful reads; IAM policy conformance test |
 | **FR-2.1** | Natural language understanding | §3.1 supervisor routing | Gemini 3.7 Flash intent classification | Perturbed-prompt NLU suite (§9.1) |
-| **FR-2.2** | Multi-turn dialog without cross-session leakage | §4.6 | Firestore session-scoped state, 30-day TTL, no cross-session read path | Session isolation test |
+| **FR-2.2** | Multi-turn dialog without cross-session leakage | **§4.6.0** entity model, §4.6.1 schemas | Firestore session-scoped state, 30-day TTL, no cross-session read path | Session isolation test |
 | **FR-3.1** | Delegated authorization to WorkWeek | §4.1 | Composite token, `scope` claim | Scope-violation rejection test |
-| **FR-3.2** | WorkWeek core actions (4 operations) | §5.1 | `ww.get_profile`, `ww.update_contact`, `ww.get_balances`, `ww.submit_leave` | Contract tests against the OpenAPI spec |
+| **FR-3.2** | WorkWeek core actions (4 operations) | §5.1, **§5.9** contract lifecycle | `ww.get_profile`, `ww.update_contact`, `ww.get_balances`, `ww.submit_leave` | Contract tests against the OpenAPI spec |
 | **FR-3.3** | WorkWeek operation guardrails | §5.3 | Balance, temporal, and format validators in the adapter | Guardrail unit tests per rule |
 | **FR-3.4** | Real-time data fetch, no caching | §4.6 note | Live reads only; `token_cache` holds no employee data | Cache-inspection test |
 | **FR-4.1** | Auditable ticket creation | §4.1, §3.3 Path 3, §5.1 | Verified automation source recorded on the ticket | Audit record assertion |
-| **FR-4.2** | ITSM status tracking and management (4 operations) | §5.1 | `si.get_incident`, `si.create_incident`, `si.post_comment`, `si.update_status` | Contract tests |
+| **FR-4.2** | ITSM status tracking and management (4 operations) | §5.1, **§5.9** contract lifecycle | `si.get_incident`, `si.create_incident`, `si.post_comment`, `si.update_status` | Contract tests |
 | **FR-4.3** | ITSM operation guardrails | §5.3 | Transition legality, duplicate scan, priority verification | Guardrail unit tests per rule |
 | **FR-5.1** | Document ingestion | §2.1, DEC-01 | GCS + Eventarc + Agent Search import | Ingestion pipeline test |
 | **FR-5.2** | Grounded answers | §3.3 Path 1, §5.5 | Groundedness gate >= 0.85 with refusal fallback | Golden set - 0% hallucination |
@@ -2493,10 +3215,10 @@ Every BRD requirement maps to a design section, an implementing component, and a
 | **FR-5.5** | Document sync latency | DEC-01 | Eventarc-driven incremental import, < 15 min | Timed end-to-end ingestion test |
 | **NFR-1.1** | Safety for AI interactions | §4.3 | Model Armor RAI categories with org floor settings | Red-team suite |
 | **NFR-1.2** | Audit logging of every action, including denials | §4.6 retention table, §5.5, **§4.11**, §7.5 | Cloud Logging → BigQuery Z1/Z2/Z4 datasets, guardrail decision logs, 4 structured log schemas | Audit completeness reconciliation - 100%; `test_compensation_emits_no_raw_pii` |
-| **NFR-1.3** | Compliance adherence (GDPR) | §4.4-§4.7, **§4.10**, **§4.11** | Masking, 30-day TTL, RTBF purge, consent withdrawal, pseudonymised audit, immutable de-id enforcement, zone-partitioned logs | DPO review; RTBF end-to-end test; SLO-06 zero-finding measurement |
-| **NFR-2.1** | Latency: < 10 s to start, < 300 ms safety overhead | §4.3 budget, §9.1, §9.5, §5.8.3, §6.7 | SSE streaming; three concurrency groups at a **120 ms** design budget (180 ms headroom) with per-stage fail-closed deadlines; `min-instances: 1`; context-cached prefill | Cloud Trace p95 measurement - hard gate; §9.5 load profiles; `ALRT-04` warns at 240 ms |
-| **NFR-2.2** | 99.9% availability | §2.2 | Multi-region active-active Cloud Run, Firestore `nam5` | SLO monitoring; quarterly failover drill |
-| **NFR-2.3** | Asynchronous processing | §5.2 | Cloud Tasks queues, parallel saga fan-out | Non-blocking behaviour test under injected latency |
+| **NFR-1.3** | Compliance adherence (GDPR) | §4.4-§4.7, **§4.6.0**, **§4.10**, **§4.11** | Masking, 30-day TTL, RTBF purge, consent withdrawal, pseudonymised audit, immutable de-id enforcement, zone-partitioned logs | DPO review; RTBF end-to-end test; SLO-06 zero-finding measurement |
+| **NFR-2.1** | Latency: < 10 s to start, < 300 ms safety overhead | §4.3 budget, **§2.3.3** NFR index, §9.1, §9.5, §5.8.3, §6.7 | SSE streaming; three concurrency groups at a **120 ms** design budget (180 ms headroom) with per-stage fail-closed deadlines; `min-instances: 1`; context-cached prefill | Cloud Trace p95 measurement - hard gate; §9.5 load profiles; `ALRT-04` warns at 240 ms |
+| **NFR-2.2** | 99.9% availability | §2.2, **§2.3.2** capacity limits | Multi-region active-active Cloud Run, Firestore `nam5` | SLO monitoring; quarterly failover drill |
+| **NFR-2.3** | Asynchronous processing | §5.2, **§2.3.1** load derivation | Cloud Tasks queues, parallel saga fan-out | Non-blocking behaviour test under injected latency |
 | **NFR-3.1** | >= 95% accuracy, 0% hallucination | §9.1, §9.2 | Golden dataset + Gen AI Evaluation Service | CI eval gate |
 | **NFR-4.1** | Graceful failure handling | §5.5 | Error matrix; no stack traces or vendor codes surfaced | Chaos suite; message inspection |
 | **NFR-4.2** | Transient fault tolerance | §5.2, **§5.8.1**, **§5.8.2** | Exponential backoff (5 attempts), AIMD adaptive concurrency, DLQ, circuit breaker, Firestore idempotency locks | Fault-injection test; breaker state-transition test; duplicate-submission test |
@@ -2507,6 +3229,8 @@ Every BRD requirement maps to a design section, an implementing component, and a
 | **UC-2.1** | Equipment procurement | §3.3 Path 4 | Saga Coordinator | Saga trajectory test |
 | **UC-2.2** | Medical leave | §3.3 Path 5 | Saga Coordinator + §5.4 policy | Saga trajectory + forced-failure test |
 | **UC-2.3** | Relocation | §3.3 Path 6 | Saga Coordinator | Saga trajectory + compensation test |
+
+**Traceability beyond the BRD.** The matrix above traces the **19 FR, 10 NFR and 6 UC** items the BRD states. Three further classes of commitment are traced elsewhere in the document because the BRD does not enumerate them: the **launch gates and outcome metrics** (SM-01 - SM-18, §1.6) which state how each requirement above is judged *satisfied* in production; the **consolidated NFR index** (§2.3.3) which maps all five NFR categories to an owning section and a verification method; and the **delivery commitments** (resourcing §7.7.1, schedule reserve §7.7.2, dependency register §8.4, known unknowns §8.5, open questions §10.3) which state what must be true *around* the system for the design to be buildable. Every row above resolves to a section that exists; no row is aspirational.
 
 ---
 
@@ -2533,46 +3257,60 @@ Every BRD requirement maps to a design section, an implementing component, and a
 | **Circuit breaker** | When a downstream system keeps failing, the assistant stops calling it for a minute instead of piling on more failing requests, then tries one careful test call before resuming (§5.8.1) |
 | **Idempotency** | A guarantee that pressing "submit" twice books one leave request, not two (§5.8.2) |
 | **Context caching** | The unchanging part of the instructions given to the AI is stored ready-made, so it is not re-read and re-charged on every message - cheaper and faster (§6.7) |
+| **Escalation / warm handoff** | Handing the conversation to a human. Here it opens a ticket that already contains what you asked and what the assistant tried, so you never explain yourself twice (§5.7) |
+| **Contesting an answer** | Telling the assistant it got something wrong. A person reviews it within two working days, and if the underlying policy document was at fault it is corrected for everyone (§9.6.1) |
+| **Automation bias** | The human habit of believing a computer because it sounds confident. The countermeasures are showing the source for every claim and never describing a filed request as an approved one (§9.6.2) |
+| **Deflection** | A question the assistant answers fully, so it never becomes a helpdesk ticket. This is the measure the business case rests on (§1.1) |
+| **Read-write replica / witness** | Copies of the stored data held in different data centres. Two hold the real data and a third only votes on which copy is correct, so losing an entire data centre loses no data (§2.2.1) |
+| **System of record** | The one system that owns a piece of information and is the final word on it. WorkWeek owns employee and leave data; ServiceImmediately owns tickets. The agent holds *references* to them, never its own copy - which is why erasing an employee's conversations does not touch their HR file (§4.6.0) |
+| **Known unknown** | A question the team has identified but cannot answer from a desk - it needs an experiment. Distinct from a risk, which is something already understood and mitigated. §8.5 lists six, each with a scheduled test and a rule agreed in advance for what to do with each possible result |
+| **Critical path** | The chain of tasks where any delay delays the whole project. Work off the critical path has slack; work on it does not. §7.4 marks it explicitly so it is clear where a week lost is a week lost overall (§7.7.2) |
+| **Schedule buffer / contingency reserve** | Spare time held centrally at the end of the plan rather than hidden inside individual task estimates. Central reserve has to be spent by a deliberate decision; hidden padding gets consumed silently and nobody notices until the end (§7.7.2) |
+| **Breaking change** | A change to an interface that stops existing callers working - removing a field, renaming one, or making an optional input required. §5.9 lists exactly what counts, so it cannot be argued about after the fact |
+| **Peak concurrency** | How many conversations are happening at the same instant at the busiest moment, as opposed to how many happen in a month. It is the number that determines how much capacity to provision, and §2.3.1 shows the arithmetic that produces it |
 
 ---
 
 # **Appendix C - SDD Rubric Coverage Index**
 
 > **Status and honesty note.** The official 29 rubric definitions used by the evaluation harness have not been supplied to the authoring team; this was formerly OPEN-04 and is now closed as **DEC-11** with a documented re-keying procedure. The 29 dimensions below are a **reconstruction**, derived from (a) the categories the harness has actually surfaced across evaluation runs `sdd-20260825-4244fa`, `sdd-20260825-820884`, `sdd-20260825-ce39a6`, `sdd-20260825-6f9866`, `sdd-20260825-a78dec` and `sdd-20260826-8b2dea` - strengths, critical gaps, and the IT Director / DPO persona reflections - and (b) standard enterprise solution-design review taxonomy. Dimension *names* are therefore inferred and will likely differ from the official wording. The **mapping** is the useful part: it identifies where each concern is answered and what evidence supports it, and that survives re-labelling. When the official list arrives, this table is re-keyed rather than rewritten.
+>
+> **One supplementary entry.** Row 30 (*Adoption, trust calibration and change management*) is deliberately outside the reconstructed 29. Run `sdd-20260826-8b2dea` raised user adoption and trust calibration as an uncovered risk, and no reconstructed dimension was a natural home for it - forcing it into an existing row would have hidden the fact that it is a distinct concern. If the official list has no counterpart, row 30 is retired under the DEC-11 procedure and §9.6 continues to stand on its own.
 
 ## **C.1. Coverage by Dimension**
 
 | # | Category | Rubric Dimension | Where Addressed | Primary Evidence Artefact |
 | :-- | :--- | :--- | :--- | :--- |
-| 1 | Business & Stakeholder | Business problem, context and drivers | §1.1 | Challenge narrative; 40% Tier 1 deflection driver |
-| 2 | Business & Stakeholder | Requirements traceability to source BRD | Appendix A | RTM covering 19 FR + 10 NFR + 6 UC, each with a verification method |
-| 3 | Business & Stakeholder | Quantified business value and ROI | §1.1, §6.2, §6.5, **§6.6** | ROI matrix; $0.034/inquiry vs $18.50; ~217x with arithmetic shown; price sensitivity to 2x rates; break-even at 0.19% deflection; baseline re-derived from live ITSM data |
+| 1 | Business & Stakeholder | Business problem, context and drivers | §1.1 | Challenge narrative; **8-category FY26 baseline decomposition** reconciling to 15,000/mo and a 4.2 h blended MTTR; 4-segment user population; the 40% target derived from a 51.2% addressable envelope rather than asserted |
+| 2 | Business & Stakeholder | Requirements traceability to source BRD | Appendix A, **§1.6** | RTM covering 19 FR + 10 NFR + 6 UC, each with a verification method; **§1.6** adds the SM-01 - SM-18 success-metric register linking every target to a measurement method, timeline and owner, split into launch gates and post-launch outcomes |
+| 3 | Business & Stakeholder | Quantified business value and ROI | §1.1, **§1.1 Why Now**, **§1.6**, §6.2, §6.5, **§6.6** | ROI matrix; three-driver *why now* with the cost of deferral quantified at ~$333k/quarter; $0.034/inquiry vs $18.50; ~217x with arithmetic shown; price sensitivity to 2x rates; break-even at 0.19% deflection; baseline re-derived from live ITSM data |
 | 4 | Business & Stakeholder | Scope boundaries and explicit exclusions | §1.2, §8.2 | In/out-of-scope table; CON-01 to CON-08 |
-| 5 | Business & Stakeholder | Accessibility for non-technical sponsors | §1.1 metaphor, **§1.5**, Appendix B | Concierge analogy; reviewer's index mapping questions to answers; 12-term plain-language glossary |
+| 5 | Business & Stakeholder | Accessibility for non-technical sponsors | §1.1 metaphor, **§1.5**, Appendix B | Concierge analogy; reviewer's index mapping questions to answers; 30-term plain-language glossary |
 | 6 | Architecture & Design | Target architecture completeness | §1.3 | End-to-end component flowchart across six layers |
 | 7 | Architecture & Design | Separation of concerns and coupling | §1.3, §3.1, §7.2 | Reasoning/execution split; adapters behind a protocol; no agent-to-agent imports |
 | 8 | Architecture & Design | Agent topology and capability boundaries | §3.1, §3.2 | Supervisor-Worker graph; Agent & Tool Registry with allowlists |
-| 9 | Architecture & Design | Alternatives considered and decision rationale | §1.4, §10.1 | 6-row alternatives table with trade-offs; **DEC-01 to DEC-17**, four of them mapped to ADR-001 - ADR-004, with a documented merge map for the re-keyed IDs |
+| 9 | Architecture & Design | Alternatives considered and decision rationale | §1.4, §10.1 | 6-row alternatives table with trade-offs; **DEC-01 to DEC-24**, four of them mapped to ADR-001 - ADR-004, with a documented merge map for the re-keyed IDs |
 | 10 | Architecture & Design | Technology currency and platform fit | §1.4, **§1.3.1**, version-governance note | Gemini 3.7 Flash / 3.1 Pro; Agent Search; Model Armor; pinned IDs; Google Cloud Next '26 GEAP taxonomy mapped to legacy product names for stakeholder translation |
-| 11 | Architecture & Design | Scalability and future-state roadmap | §2.1, §6.3 | 5-step roadmap to ADK / Apigee / multi-tenancy; cost at 10x volume |
-| 12 | Integration | Interface contract specification | §5.1 | Full OpenAPI 3.0 for both adapters, all 9 operations |
+| 11 | Architecture & Design | Scalability and future-state roadmap | §2.1, **§2.3**, §6.3, **§7.7.3** | **§2.3.1 load derivation** (60,000 turns/mo -> ~3.2 concurrent at 1x peak -> a 25-turn design point) and **§2.3.2 capacity limits per layer** answering the 10x question; **§7.7.3 costs and sequences P6.1 - P6.7** with start triggers, prerequisites, engineering estimates and run-rate deltas (~32 engineering weeks, ~two quarters at 2.5 FTE) - DEC-21 |
+| 12 | Integration | Interface contract specification | §5.1, **§5.9** | Full OpenAPI 3.0 for both adapters - 8 mandated operations plus the compensator, 9 in total; **§5.9 versioning, compatibility and deprecation policy** with an enumerated breaking-change definition and a 90-day parallel-run window (DEC-22) |
 | 13 | Integration | Tool and function-calling design | §5.1 agentic tool calling | Schemas generated from OpenAPI; `thought_signature`; idempotency keys |
 | 14 | Integration | Input validation and business-rule enforcement | §5.3 | Deterministic rules engine flowchart; FR-3.3 and FR-4.3 rules |
 | 15 | Integration | Contract stability and schema-drift control | §5.1, **§5.6**, §7.2, §7.3 | Versioned specs; mock and production adapters generated from the same OpenAPI documents; contract-parity gate as cutover Stage 0 |
 | 16 | Security & Governance | Authentication and workload identity | §4.1 | Two-layer OIDC + `signJwt` composite credential, both verified |
 | 17 | Security & Governance | Authorization, RBAC and data isolation | §4.1 load-bearing rule, §4.2, **§4.8**, **§4.9** | 4-role RBAC matrix; server-side subject binding; three-way permission intersection; mid-session and mid-Saga revocation contract; **three isolated service accounts with enumerated prohibited permissions**, no static keys, CMEK |
 | 18 | Security & Governance | AI-specific threat controls | §4.3, §5.5 | Model Armor inbound **and** outbound; six categories; org floor settings |
-| 19 | Security & Governance | Data privacy, classification and masking | §4.4, §4.5, **§4.10** | 7-element PII mapping matrix; concrete DLP de-identify template; **four-mode threat model and seven enforcement mechanisms** making the template immutable, digest-pinned, cross-region-verified and fail-closed, with per-turn `dlp_template_digest` as audit evidence |
-| 20 | Security & Governance | Retention, lifecycle and right-to-be-forgotten | §4.6, §4.7 | Firestore schemas; retention by data class incl. masked-PII audit records; Art. 17 purge; **Art. 7(3) consent withdrawal with ephemeral mode**; stale-embedding eviction; SLA-01 - SLA-06 |
+| 19 | Security & Governance | Data privacy, classification and masking | §4.4, §4.5, **§4.6.0**, **§4.10** | 7-element PII mapping matrix enforced by 12 infoTypes (9 Google built-in + 3 enterprise custom) under an explicit canonical counting rule; a logical data model naming the system of record for every entity and showing the agent holds no employee identifier in the clear; concrete DLP de-identify template; **four-mode threat model and seven enforcement mechanisms** making the template immutable, digest-pinned, cross-region-verified and fail-closed, with per-turn `dlp_template_digest` as audit evidence |
+| 20 | Security & Governance | Retention, lifecycle and right-to-be-forgotten | §4.6, §4.7, **§4.12** | Firestore schemas; retention by data class incl. masked-PII audit records; Art. 17 purge; **Art. 7(3) consent withdrawal with ephemeral mode**; stale-embedding eviction; SLA-01 - SLA-08 |
 | 21 | Security & Governance | Auditability and traceability | §3.2, §4.6, §5.5, **§4.11**, §7.5 | Per-turn model ID and guardrail verdict; **four-zone log partitioning (Z1-Z4) with separate CMEK keys and disjoint reader sets**; `saga_compensation_event` allow-list schema; 365-day BigQuery archive; denied actions logged; **SLO-06** zero-raw-PII with no error budget |
-| 22 | Reliability & Ops | Availability, DR and failover | §2.2 | Active-active multi-region; RPO 0 / RTO < 30 s; PITR; quarterly drill |
+| 22 | Reliability & Ops | Availability, DR and failover | §2.2, **§2.2.1** | Active-active multi-region compute; **Firestore `nam5` replication topology stated explicitly** - 2 read-write replicas + 1 witness, synchronous Paxos majority quorum, zone- and region-loss failure modes, why not dual-region, and the `google_firestore_database` Terraform resource that pins it; RPO 0 / RTO < 30 s; 7-day PITR; daily export to a dual-region bucket; quarterly drill |
 | 23 | Reliability & Ops | Resilience, retry, throttling and backpressure | §5.2, **§5.7**, **§5.8** | Per-backend rate limits; Cloud Tasks YAML; AIMD adaptive concurrency; full DLQ strategy; **queue depth ceilings, 30-min staleness bound, read-only mode**; human escalation and out-of-band notification; **circuit breaker, idempotency locks, cold-start elimination**, with the three breaker/limiter layers explicitly distinguished |
 | 24 | Reliability & Ops | Distributed transaction consistency | §5.4 | Saga ledger; four-class compensation policy; decision flowchart |
 | 25 | Reliability & Ops | Latency budget and performance targets | §4.3, §9.1, **§9.5** | 3-group concurrent safety budget: **120 ms vs the 300 ms NFR**, per-stage fail-closed deadlines, circuit breaker, cascade/bulkhead analysis; empirical profiling plan with load profiles and pass/fail gates |
-| 26 | Reliability & Ops | Observability, SLOs and alerting | **§7.5**, §2.2, §9.1, §4.11 | **6 SLOs** with error-budget policy (SLO-06 carries none by design); **23 enumerated alert policies** with thresholds, windows, severities and automated responses; multi-window burn-rate alerting; 4 structured log payload schemas |
+| 26 | Reliability & Ops | Observability, SLOs and alerting | **§7.5**, §2.2, §9.1, §4.11 | **6 SLOs** with error-budget policy (SLO-06 carries none by design); **24 enumerated alert policies** with thresholds, windows, severities and automated responses; multi-window burn-rate alerting; 4 structured log payload schemas |
 | 27 | Delivery & Assurance | IaC, environment and configuration management | §7.1, §7.2, **§7.6**, §4.10 | 8 Terraform modules; state isolation and locking; prompt/registry versioning; two-stage delivery topology with **identical security controls in both stages**; `prevent_destroy` and digest-pinned security templates |
 | 28 | Delivery & Assurance | CI/CD, release gating and rollback | §7.3 | Eval-gated pipeline; Binary Authorization; canary with automatic rollback |
 | 29 | Delivery & Assurance | Evaluation, test strategy and UAT | §9.1 - **§9.5**, §5.6, **§7.6**, §4.10, §4.11 | 150-prompt golden set + 100-vector red team; trajectory tests; UAT plan; CI-validated mock fidelity schema; performance profiling with baseline/peak/stress/soak/cascade profiles; deterministic mock state reset; **privacy gates that block the build** - cross-region template digest equality, DLP-bypass test, `test_compensation_emits_no_raw_pii` |
+| 30 *(supplementary, added v1.8)* | Delivery & Assurance | Adoption, trust calibration and change management | **§9.6**, §5.7, §9.4, §8.3 | Appeal protocol with a **2-business-day** adjudication SLA and a contested-answer path that feeds the golden set; over-trust and under-trust countermeasures stated as separate failure modes; 10 adoption metrics with 6-month targets; four-wave gated rollout with named change-management commitments; RSK-13 - RSK-16 |
 
 ## **C.2. Known Weakest Coverage**
 
@@ -2583,13 +3321,24 @@ Stating these plainly is more useful than claiming uniform strength.
 | # | Dimension | v1.4 weakness | Resolution in v1.5 |
 | :-- | :--- | :--- | :--- |
 | 25 | Latency budget | 280 ms design budget, 20 ms headroom, five unmeasured sequential stages | Re-architected into three concurrency groups: **120 ms budget, 180 ms headroom**, plus per-stage fail-closed deadlines and a circuit breaker (§4.3) |
-| 26 | Observability | Alert thresholds not enumerated | **§7.5** added: 6 SLOs, error-budget policy, 23 alert policies with thresholds and automated responses, 4 structured log schemas |
+| 26 | Observability | Alert thresholds not enumerated | **§7.5** added: 6 SLOs, error-budget policy, 24 alert policies with thresholds and automated responses, 4 structured log schemas |
 
-**Remaining weakest coverage.** These are supported by design intent rather than by measurement, and each is tracked:
+**Closed in v2.0.** Three further dimensions previously listed as weak are closed by this revision, in each case by writing down something that was implied but never stated:
 
-| # | Dimension | Why it is still weaker | Tracked as |
+| # | Dimension | v1.8 weakness | Resolution in v2.0 |
 | :-- | :--- | :--- | :--- |
-| 25 | Latency budget | The 120 ms figure is still a *design* budget. **§9.5 now specifies exactly how it gets measured** - environment, instrumentation, five load profiles, pass/fail gates and a pre-decided remediation ladder - but the measurement itself happens in Phase 3, not in this document. No amount of design work can close this one; only a profiler can | RSK-07 (Low); §9.5; Phase 3 exit criterion; `ALRT-04` |
-| 3 | ROI | Both halves are now bounded rather than open: §6.5 shows the conclusion holds at 2x prices, §6.6 shows break-even at a 0.19% deflection rate. What remains is that the *magnitude* is unverified until Phase 1 re-derives the baseline from live ITSM data | ASM-03; DEC-10; §6.6 |
-| 11 | Scalability roadmap | The post-MVP migration to Google ADK on the Gemini Enterprise Agent Platform is described as a direction with a rationale (§1.3.1, §1.4), not as a costed and sequenced plan | §2.1; revisited at MVP 1 close |
-| 19 / 21 | Privacy enforcement | §4.10 and §4.11 are complete as *design*, and their CI gates are specified precisely enough to implement, but no gate has yet run against a deployed system. The controls are verified by observation of output rather than by code inspection specifically so that this gap closes automatically at Phase 1 rather than requiring another design round | RSK-11, RSK-12; DEC-16, DEC-17; Phase 1 exit criterion; SLO-06 |
+| 11 | Scalability roadmap | The post-MVP direction had a rationale but no cost, no sequence and no triggers | **§2.3** derives expected load from the §1.1 baseline and states per-layer capacity limits; **§7.7.3** turns §2.1 into **P6.1 - P6.7** with start triggers, prerequisites, engineering estimates, run-rate deltas and an explicit sequencing rationale (DEC-21) |
+| 12 | Interface contract lifecycle | Contracts were fully specified; how they *change* was not | **§5.9** defines URI major versioning, an enumerated breaking-change list, a 90-day parallel-run window and RFC 8594 sunset headers, with the three separately-owned contracts distinguished (DEC-22) |
+| - | Feasibility & resourcing | The roadmap had phases and exit criteria but no team, no buffer and no descope order | **§7.7** states 6.25 FTE across nine roles with per-role failure impact, an 18% central schedule reserve with a named draw-down trigger, a critical path, and a fixed descope order in which nothing in §4 is descopable (DEC-20) |
+
+**Remaining residual uncertainty.** Everything below is a claim that **only measurement can settle**, not a gap in the design. Each has a named experiment in **§8.5**, a scheduled date, and a pre-decided rule for what to do with every possible answer - which is the difference between an open question and an unmanaged one. No further design work would close any of them; the honest position is to name them, bound them, and schedule them.
+
+| # | Dimension | What is unverified | Why design cannot close it | Experiment & decision rule | Tracked as |
+| :-- | :--- | :--- | :--- | :--- | :--- |
+| 25 | Latency budget | The 120 ms figure is a *design* budget derived from vendor-published latencies | Model Armor and DLP p95 under our payload shapes and VPC-SC egress path are not published. Only a profiler can settle this | **UNK-01** - §9.5 peak and stress profiles at Phase 3 exit, with a three-branch decision rule (< 180 ms proceed / 180-300 ms remediation ladder / > 300 ms ARB variance) | RSK-07 (Low); SM-05; `ALRT-04` |
+| 3 | ROI magnitude | The *direction* is bounded - §6.5 holds at 2x prices, §6.6 breaks even at 0.19% deflection against a 40% target. The *magnitude* rests on the FY26 baseline | A baseline can only be re-derived from live data, not reasoned about | **UNK-02** - Wave 1 measured deflection against a matched control cohort, with a three-branch rule at 30% / 15% thresholds; Phase 1 ITSM extract re-derives the §1.1 category table | ASM-03, ASM-09; DEC-10; SM-10, SM-12 |
+| 19 / 21 | Privacy gate execution | §4.10 and §4.11 are complete as design and their CI gates are specified precisely enough to implement, but no gate has yet run against a deployed system | A gate that has not run has not passed. The controls are deliberately specified as *observations of output* rather than code inspections, so this closes automatically at Phase 1 rather than needing another design round | Gates run at Phase 1 and become continuous; **UNK-05** separately measures the live guardrail false-positive rate with a three-branch rule at 1% / 3% | RSK-11, RSK-12; DEC-16, DEC-17; SM-02, SM-08; SLO-06 |
+| 30 | Adoption and trust | The appeal protocol, trust countermeasures and adoption targets are reasoned from automation-bias literature and the §1.1 deflection model, not tested on a real employee population | Adoption is a property of people, not of the design. The 6-month targets are set, not observed | Wave-gated rollout in which **Wave 1 is explicitly the experiment**; **UNK-02** governs the decision; §1.6 states the failure conditions in advance (deflection < 15%, or contested-answer rate > 5%) | RSK-13 - RSK-16; DEC-18; SM-13 - SM-17 reviewed at each wave gate |
+| 15 | Mock-to-production fidelity | §5.6 specifies fidelity requirements, but a mock is only as faithful as our understanding of the system it imitates | The production error taxonomy and latency distribution of the backends are known to us only from their OpenAPI specs (DEP-04) | **UNK-03** - the §5.6 shadow stage diffs mock against real responses, with a three-branch rule at 1% / 5% diff rates | RSK-10; ASM-01; DEP-04 |
+
+**What this section is claiming.** Not that the document is complete - that no residual item is *unmanaged*. Every row above names the experiment, the date, the owner and the decision rule. A reader who disagrees with a judgement here can point at the specific experiment that would settle it, which is the most a design document can offer before code exists.
