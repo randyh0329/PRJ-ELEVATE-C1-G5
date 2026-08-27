@@ -49,8 +49,8 @@ Production-grade, multi-agent AI architecture implementing cross-system enterpri
 │   │   └── operation_guardrails.py         # 30-min deduplication, positive leave days, temporal checks
 │   ├── grounding/                          # OKF catalog & deterministic policy grounding
 │   │   ├── __init__.py
-│   │   ├── okf_store.py                    # Open Knowledge Format (OKF) curated policy catalog
-│   │   ├── policy_engine.py                # Dual Grounding Engine with deep-link clickable citations
+│   │   ├── okf_store.py                    # Four curated policy rules; the fallback when no index is built
+│   │   ├── policy_engine.py                # Dual Grounding Engine: FAISS corpus first, curated rules as backstop
 │   │   ├── rag_boilerplate.py              # BaseRAGPipeline interface + Vertex AI Search stubs
 │   │   ├── faiss_pipeline.py               # FaissPolicyRAG: BaseRAGPipeline over the local FAISS index
 │   │   └── policy_rag/                     # FAISS semantic retrieval + A2A server (see its README.md)
@@ -87,12 +87,13 @@ Production-grade, multi-agent AI architecture implementing cross-system enterpri
 │       ├── golden_mas_eval.evalset.json    # 20-case 4-tier stratified ADK evaluation dataset
 │       ├── policy_rag_golden.json          # 45 policy questions with expected disposition
 │       └── v1.jsonl                        # Versioned JSONL golden benchmark cases
-├── tests/                                  # Comprehensive pytest test suite (146 test cases)
+├── tests/                                  # Comprehensive pytest test suite (162 test cases)
 │   ├── __init__.py
 │   ├── conftest.py                         # Pytest test fixtures & state isolation
 │   ├── test_api_server.py                  # FastAPI REST endpoints & HTTP assertions
 │   ├── test_cross_system_orchestration.py  # UC-2.1 Equipment & UC-2.3 Relocation workflows
 │   ├── test_guardrails.py                  # Deduplication, balance limits & state machine checks
+│   ├── test_policy_graph_node.py           # PolicySpecialistNode grounding gate, escalation & fallback
 │   ├── test_policy_qa.py                   # UC-1.1 Grounded Policy Q&A & zero-hallucination refusals
 │   ├── test_saas_mcp_integration.py        # Live SaaS FastMCP client integration tests
 │   ├── test_safety.py                      # DLP SPII masking & Model Armor jailbreak prevention
@@ -154,6 +155,7 @@ and the raw Altostrat Singapore handbook:
 * **Five refuse/escalate guards:** absent handbook sections, extended-workforce leave questions, known source conflicts, no hits above the gate, and groundedness failures — each traceable to the corpus datasheet's *"what must not be answered"*.
 * **Query-time ACL (SDD §4.7):** `references/` material requires `hr_operational`; entitlements bind from the verified caller, never the payload.
 * **A2A surface:** three skills served over JSON-RPC with a discoverable agent card, so other teams' agents consume the knowledge base without importing this package.
+* **Wired into both entry points:** free-text policy questions retrieve from this index whether they arrive through the REST path (`DualGroundingEngine`) or the StateGraph path (`PolicySpecialistNode`). The index is a git-ignored build artefact, so when it is absent both fall back to their pre-corpus fixtures and say so — every answer carries a `grounding_source` of `faiss` or `curated`. **The two disagree:** the fixture puts bereavement leave at 5 days, the handbook at 20 work days. Run the ingest below before trusting an answer.
 
 ### 2.5 Operational Guardrails & Business Constraints
 * **30-Minute Ticket Deduplication:** Prevents duplicate IT incident creation for the same user and category within a rolling 30-minute window.
@@ -271,7 +273,7 @@ methodology.
 
 ## 5. Running Tests & Evaluation
 
-### 5.1 Run Full Pytest Suite (148 Unit, Integration & Trajectory Tests)
+### 5.1 Run Full Pytest Suite (162 Unit, Integration & Trajectory Tests)
 ```bash
 # Run all tests with verbose output
 PYTHONPATH=. pytest tests/ -v
@@ -294,7 +296,8 @@ is absent or expired.
 | [`tests/test_cross_system_orchestration.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_cross_system_orchestration.py) | UC-2.1 Equipment procurement & UC-2.3 Relocation allowance | 3 |
 | [`tests/test_saga_compensation.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_saga_compensation.py) | UC-2.2 Medical leave happy path and backward rollback | 2 |
 | [`tests/test_guardrails.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_guardrails.py) | Deduplication window, balance limits, temporal ordering | 4 |
-| [`tests/test_policy_qa.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_policy_qa.py) | Policy grounding citations & ungrounded inquiry refusals | 2 |
+| [`tests/test_policy_qa.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_policy_qa.py) | UC-1.1 policy grounding, deep-link citations, refusals & the curated fallback | 8 |
+| [`tests/test_policy_graph_node.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_policy_graph_node.py) | `PolicySpecialistNode` grounding gate, escalation & mock-datastore fallback | 8 |
 | [`tests/test_saas_mcp_integration.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_saas_mcp_integration.py) | FastMCP communication via `X-MCP-Token` header | 3 |
 | [`tests/test_safety.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_safety.py) | Singapore NRIC / US SSN / phone / email DLP redaction | 5 |
 | [`tests/test_workweek_flow.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_workweek_flow.py) | WorkWeek balance inquiries & caller isolation security | 3 |
@@ -308,7 +311,7 @@ is absent or expired.
 | [`tests/policy_rag/test_faiss_pipeline.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_faiss_pipeline.py) | `BaseRAGPipeline` adapter contract & ACL pass-through | 10 |
 | [`tests/policy_rag/test_service.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_service.py) | Retrieve → guard → compose, citation resolution, corpus stats | 8 |
 | [`tests/policy_rag/test_loaders.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_loaders.py) | OKF frontmatter & raw-handbook section parsing | 7 |
-| **Total** | | **148** |
+| **Total** | | **162** |
 
 ---
 

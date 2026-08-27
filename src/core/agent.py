@@ -164,13 +164,22 @@ class HREnterpriseAgent:
             caller_employee_id=caller_id,
             action_type="POLICY_QUERY",
             status="SUCCESS" if result.is_grounded else "NOT_FOUND",
-            details={"is_grounded": result.is_grounded, "confidence": result.confidence_score}
+            details={
+                "is_grounded": result.is_grounded,
+                "confidence": result.confidence_score,
+                # Which corpus answered, and how the guards disposed of it. An
+                # auditor reconstructing a bad answer needs to know whether it
+                # came from the indexed handbook or the degraded fallback.
+                "grounding_source": result.source,
+                "decision": result.decision,
+            }
         )
         return AgentResponse(
             response_text=result.answer_text,
             intent="UC_1_1_POLICY_QA",
             citations=result.citations,
-            action_performed="POLICY_LOOKUP"
+            action_performed="POLICY_LOOKUP",
+            is_refusal=result.decision == "refuse",
         )
 
     def _handle_workweek_leave(
@@ -244,8 +253,14 @@ class HREnterpriseAgent:
 
     def _handle_equipment_procurement(self, caller_id: str, prompt: str) -> AgentResponse:
         """UC-2.1: Equipment Procurement (Grounding -> WorkWeek -> ServiceImmediately)."""
-        # Step 1: Policy Grounding
-        policy_res = self._grounding.query_policy("remote work hardware allowance monitor")
+        # Step 1: Policy Grounding.
+        # `curated_only`: this citation is the entitlement rule authorising a
+        # purchase, not an answer to a question the employee asked. It has to name
+        # the same rule on every run - a cap that moves because a retrieval
+        # ranking shifted would be a defect, not a better answer.
+        policy_res = self._grounding.query_policy(
+            "remote work hardware allowance monitor", curated_only=True
+        )
         citation = policy_res.citations[0] if policy_res.citations else "[View Policy Section 08.3](https://hr.corp.internal/policies/08.3-remote-equipment)"
 
         # Step 2: WorkWeek Profile Check
@@ -312,8 +327,11 @@ class HREnterpriseAgent:
 
     def _handle_relocation(self, caller_id: str, prompt: str) -> AgentResponse:
         """UC-2.3: Relocation Allowance & Facilities Badge."""
-        # Step 1: Policy grounding
-        policy_res = self._grounding.query_policy("international relocation allowance london")
+        # Step 1: Policy grounding. `curated_only` for the same reason as the
+        # equipment flow above: the relocation cap is a transaction parameter.
+        policy_res = self._grounding.query_policy(
+            "international relocation allowance london", curated_only=True
+        )
         citation = policy_res.citations[0] if policy_res.citations else "[View Policy Section 14.1](https://hr.corp.internal/policies/14.1-international-relocation)"
 
         # Step 2: WorkWeek Contact & Office Update

@@ -100,6 +100,12 @@ class AgentState(TypedDict):
     guardrail_verdict: Literal["ALLOW", "BLOCK"]
     grounding_score: float
     citations: List[Dict[str, str]]
+    # Which corpus answered - "faiss" (indexed handbook) or "curated" (the mock
+    # datastore used when no index has been built) - and how the guards disposed
+    # of the query. Recorded so an auditor can tell a grounded answer from a
+    # degraded one, and an escalation from a refusal.
+    grounding_source: str
+    policy_decision: Literal["answer", "escalate", "refuse"]
     final_response: Optional[str]
 
     # 5. Fault Injection (For §9.1 Trajectory Testing Harness)
