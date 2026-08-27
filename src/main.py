@@ -17,6 +17,7 @@ from src.security.auth import (
     mint_session_token,
     verify_session_token,
 )
+from src.integrations.mcp.client import current_mcp_token, saas_fast_mcp_client
 from config.settings import get_settings
 
 settings = get_settings()
@@ -32,12 +33,15 @@ class GoogleAuthRequest(BaseModel):
     """Google OIDC credential token payload."""
     credential: str
     client_id: Optional[str] = None
+    mcp_token: Optional[str] = None
 
 
 class QuickAuthRequest(BaseModel):
     """Test login payload for quick corporate login without external popups."""
     email: str = "romij@google.com"
     name: Optional[str] = "Romij Employee"
+    mcp_token: Optional[str] = None
+
 
 
 class ChatRequest(BaseModel):
@@ -97,6 +101,19 @@ def serve_web_chat_ui():
     .btn-test-auth:hover { background: #1d4ed8; }
     .btn-logout { background: transparent; color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 4px 10px; font-size: 0.75rem; cursor: pointer; }
     .btn-logout:hover { background: rgba(239, 68, 68, 0.15); }
+    .btn-settings { background: #1e293b; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; font-size: 0.8rem; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 6px; }
+    .btn-settings:hover { background: #334155; border-color: var(--primary); }
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.75); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+    .modal { background: #1e293b; border: 1px solid var(--border); border-radius: 12px; width: 92%; max-width: 500px; padding: 22px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6); }
+    .modal h2 { font-size: 1.1rem; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+    .form-group { margin-bottom: 14px; }
+    .form-group label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 6px; }
+    .form-group input { width: 100%; background: #0f172a; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; color: var(--text); font-size: 0.88rem; outline: none; box-sizing: border-box; }
+    .form-group input:focus { border-color: var(--primary); }
+    .form-hint { font-size: 0.76rem; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+    .btn-secondary { background: #334155; color: var(--text); border: none; border-radius: 6px; padding: 8px 16px; font-size: 0.85rem; cursor: pointer; }
+    .btn-primary { background: var(--primary); color: #0f172a; font-weight: 600; border: none; border-radius: 6px; padding: 8px 18px; font-size: 0.85rem; cursor: pointer; }
     .main-container { flex: 1; display: flex; flex-direction: column; max-width: 900px; width: 100%; margin: 0 auto; padding: 16px; overflow: hidden; }
     .quick-actions { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 14px; scrollbar-width: none; }
     .quick-btn { background: #1e293b; color: var(--text); border: 1px solid var(--border); border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; cursor: pointer; white-space: nowrap; transition: all 0.2s; }
@@ -132,8 +149,10 @@ def serve_web_chat_ui():
         <button class="btn-test-auth" onclick="loginWithGoogleEmail('romij@google.com')">
           <span>🔵</span> Google Login (romij@google.com)
         </button>
+        <button class="btn-settings" onclick="openSettingsModal()" title="FastMCP Token & Account Settings">
+          <span>⚙️</span> Token Settings
+        </button>
       </div>
-
 
       <!-- Authenticated View -->
       <div id="authControls" style="display: none; align-items: center; gap: 10px;">
@@ -143,10 +162,12 @@ def serve_web_chat_ui():
           <span style="color: var(--muted);" id="userEmailSpan">(romij@google.com)</span>
           <span class="badge" id="userEmpBadge">EMP-509</span>
         </div>
+        <button class="btn-settings" onclick="openSettingsModal()" title="FastMCP Token Settings">⚙️</button>
         <button class="btn-logout" onclick="logout()">Sign Out</button>
       </div>
     </div>
   </header>
+
 
   <div class="main-container">
     <div class="quick-actions">
@@ -174,14 +195,61 @@ def serve_web_chat_ui():
     </form>
   </div>
 
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="settingsModal">
+    <div class="modal">
+      <h2>⚙️ FastMCP & Google Account Settings</h2>
+      <div class="form-group">
+        <label for="settingEmail">Google Corporate Email</label>
+        <input type="text" id="settingEmail" value="romij@google.com" placeholder="user@google.com" />
+      </div>
+      <div class="form-group">
+        <label for="settingToken">WorkWeek FastMCP Token (X-MCP-Token)</label>
+        <input type="text" id="settingToken" placeholder="mcp_HiIwlFkRL-DrjYgdQvO-fMHg8Q8A_YskI5J00qrP8SA" />
+        <div class="form-hint">
+          Paste your personal FastMCP token here. The agent will auto-probe FastMCP to resolve and bind your exact Employee ID.
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeSettingsModal()">Cancel</button>
+        <button class="btn-primary" onclick="saveSettings()">💾 Save & Connect</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const chatWindow = document.getElementById('chatWindow');
     const userInput = document.getElementById('userInput');
     const typingIndicator = document.getElementById('typingIndicator');
 
-
     let sessionToken = localStorage.getItem('hr_agent_session_token');
     let currentUser = null;
+
+    function openSettingsModal() {
+      const emailInput = document.getElementById('settingEmail');
+      const tokenInput = document.getElementById('settingToken');
+      if (currentUser) {
+        emailInput.value = currentUser.email;
+      }
+      tokenInput.value = localStorage.getItem('hr_agent_custom_mcp_token') || 'mcp_HiIwlFkRL-DrjYgdQvO-fMHg8Q8A_YskI5J00qrP8SA';
+      document.getElementById('settingsModal').style.display = 'flex';
+    }
+
+    function closeSettingsModal() {
+      document.getElementById('settingsModal').style.display = 'none';
+    }
+
+    async function saveSettings() {
+      const email = document.getElementById('settingEmail').value.trim() || 'romij@google.com';
+      const token = document.getElementById('settingToken').value.trim();
+      if (token) {
+        localStorage.setItem('hr_agent_custom_mcp_token', token);
+      } else {
+        localStorage.removeItem('hr_agent_custom_mcp_token');
+      }
+      closeSettingsModal();
+      await loginWithGoogleEmail(email, token);
+    }
 
     async function checkAuth() {
       if (!sessionToken) {
@@ -219,12 +287,13 @@ def serve_web_chat_ui():
       document.getElementById('authControls').style.display = 'none';
     }
 
-    async function loginWithGoogleEmail(email) {
+    async function loginWithGoogleEmail(email, customToken = null) {
+      const tokenToSend = customToken || localStorage.getItem('hr_agent_custom_mcp_token');
       try {
         const res = await fetch('/auth/quick-login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: email, name: 'Romij Employee' })
+          body: JSON.stringify({ email: email, name: 'Google Tester', mcp_token: tokenToSend })
         });
         const data = await res.json();
         if (data.success && data.token) {
@@ -246,6 +315,7 @@ def serve_web_chat_ui():
       renderUnauth();
       appendMessage('Signed out. Switched back to functional test credentials.', false);
     }
+
 
     function appendMessage(text, isUser, meta = null, citations = []) {
       const msgDiv = document.createElement('div');
@@ -353,15 +423,26 @@ def google_login(req: GoogleAuthRequest):
 
 @app.post("/auth/quick-login")
 def quick_login(req: QuickAuthRequest):
-    """Direct Google/corporate email login for fast local/cloudtop testing without external popups."""
+    """Direct Google/corporate email login with optional custom MCP token."""
+    token_to_use = req.mcp_token or settings.SAAS_MCP_CREDENTIAL
+    discovered_id = None
+    if token_to_use:
+        try:
+            discovered_id = saas_fast_mcp_client.get_current_employee_id(token=token_to_use)
+        except Exception:
+            pass
+
     emp_info = resolve_employee_id(req.email, default_name=req.name)
+    bound_id = discovered_id or emp_info["employee_id"]
+
     user = AuthenticatedUser(
         email=req.email,
-        employee_id=emp_info["employee_id"],
+        employee_id=bound_id,
         name=emp_info.get("name", req.name or "Employee"),
         picture=None,
         role=emp_info.get("role", "End User"),
-        auth_provider="corporate_federation"
+        auth_provider="corporate_federation",
+        mcp_token=token_to_use
     )
     token = mint_session_token(user)
     return {"success": True, "token": token, "user": user.model_dump()}
@@ -402,10 +483,12 @@ def handle_chat(
     authorization: Optional[str] = Header(default=None),
     x_automation_origin: Optional[str] = Header(default="HR_AGENT_ORCHESTRATOR_V1"),
     x_caller_employee_id: Optional[str] = Header(default=None),
-    x_goog_authenticated_user_email: Optional[str] = Header(default=None)
+    x_goog_authenticated_user_email: Optional[str] = Header(default=None),
+    x_mcp_token: Optional[str] = Header(default=None)
 ):
     """Process user prompt through the agentic reasoning and safety loop."""
     caller_id = None
+    user_token = None
 
     # Priority 1: Verified session token (Google OIDC or corporate federation)
     if authorization and authorization.startswith("Bearer "):
@@ -413,6 +496,7 @@ def handle_chat(
         user = verify_session_token(token)
         if user:
             caller_id = user.employee_id
+            user_token = user.mcp_token
 
     # Priority 2: Cloud Run IAP header (X-Goog-Authenticated-User-Email)
     if not caller_id and x_goog_authenticated_user_email:
@@ -422,6 +506,12 @@ def handle_chat(
     # Priority 3: Explicit test caller header or payload
     if not caller_id:
         caller_id = x_caller_employee_id or payload.employee_id
+
+    # Bind per-request custom FastMCP token if provided
+    token_to_set = user_token or x_mcp_token
+    if token_to_set:
+        current_mcp_token.set(token_to_set)
+
 
     response = hr_enterprise_agent.process_message(
         user_prompt=payload.message,

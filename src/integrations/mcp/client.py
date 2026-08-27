@@ -7,14 +7,19 @@ Authenticates using the custom 'X-MCP-Token' header to bypass Google Cloud IAP a
 """
 
 import os
-import json
 import asyncio
+import contextvars
+import json
 import logging
+import os
 from typing import Dict, Any, Optional, List
 import httpx
 from config.settings import get_settings
 
 logger = logging.getLogger("integrations.mcp")
+
+# ContextVar for per-request / per-user custom MCP token injection
+current_mcp_token: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("current_mcp_token", default=None)
 
 
 class SaaSFastMCPClient:
@@ -35,13 +40,15 @@ class SaaSFastMCPClient:
         self._bound_loop = None
         self._cached_employee_id: Optional[str] = None
 
-    def _get_headers(self) -> Dict[str, str]:
+    def _get_headers(self, override_token: Optional[str] = None) -> Dict[str, str]:
         # NOTE: Do NOT send 'Authorization' header to avoid GFE intercepting!
+        token = override_token or current_mcp_token.get() or self.mcp_token
         return {
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
-            "X-MCP-Token": self.mcp_token,
+            "X-MCP-Token": token,
         }
+
 
     def _get_sync_client(self) -> httpx.Client:
         if self._sync_client is None or self._sync_client.is_closed:
@@ -67,7 +74,8 @@ class SaaSFastMCPClient:
         self,
         server_path: str,
         tool_name: str,
-        arguments: Dict[str, Any]
+        arguments: Dict[str, Any],
+        override_token: Optional[str] = None
     ) -> Dict[str, Any]:
         """Synchronously invoke an MCP tool via JSON-RPC 2.0."""
         client = self._get_sync_client()
@@ -84,7 +92,7 @@ class SaaSFastMCPClient:
             }
         }
 
-        resp = client.post(url, json=payload, headers=self._get_headers())
+        resp = client.post(url, json=payload, headers=self._get_headers(override_token=override_token))
         if resp.status_code == 200:
             data = resp.json()
             if "result" in data:
@@ -94,7 +102,7 @@ class SaaSFastMCPClient:
         logger.error(f"Sync MCP call {tool_name} to {url} failed with {resp.status_code}: {resp.text}")
         raise RuntimeError(f"FastMCP call failed with HTTP {resp.status_code}: {resp.text}")
 
-    def read_resource_sync(self, server_path: str, uri: str) -> Dict[str, Any]:
+    def read_resource_sync(self, server_path: str, uri: str, override_token: Optional[str] = None) -> Dict[str, Any]:
         """Synchronously reads an MCP resource (JSON-RPC 'resources/read')."""
         client = self._get_sync_client()
         clean_path = server_path.strip("/")
@@ -107,7 +115,8 @@ class SaaSFastMCPClient:
             "params": {"uri": uri}
         }
 
-        resp = client.post(url, json=payload, headers=self._get_headers())
+        resp = client.post(url, json=payload, headers=self._get_headers(override_token=override_token))
+
         if resp.status_code == 200:
             data = resp.json()
             if "result" in data:
@@ -167,22 +176,26 @@ class SaaSFastMCPClient:
     # High-level WorkWeek FastMCP Operations
     # =========================================================================
 
-    def get_current_employee_id(self) -> str:
+    def get_current_employee_id(self, token: Optional[str] = None) -> str:
         """Resolves authenticated session employee ID (e.g. 'EMP-509')."""
-        if self._cached_employee_id:
+        if not token and self._cached_employee_id:
             return self._cached_employee_id
         try:
-            res = self.call_tool_sync("work-week/mcp/", "get_current_employee_id", {})
+            res = self.call_tool_sync("work-week/mcp/", "get_current_employee_id", {}, override_token=token)
             eid = res.get("structuredContent", {}).get("result") or res.get("result")
             if isinstance(eid, str):
-                self._cached_employee_id = eid
+                if not token:
+                    self._cached_employee_id = eid
                 return eid
             if "content" in res and isinstance(res["content"], list) and len(res["content"]) > 0:
-                self._cached_employee_id = res["content"][0].get("text", "EMP-509")
-                return self._cached_employee_id
+                discovered = res["content"][0].get("text", "EMP-509")
+                if not token:
+                    self._cached_employee_id = discovered
+                return discovered
         except Exception as e:
             logger.warning(f"Unable to fetch employee id from session: {e}")
         return "EMP-509"
+
 
     def get_employee_balances(self, employee_id: str) -> Dict[str, float]:
         """Fetches vacation and sick balances from live WorkWeek FastMCP."""

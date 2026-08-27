@@ -100,3 +100,21 @@ def test_chat_with_cloud_run_iap_header(client):
     assert chat_resp.status_code == 200
     chat_data = chat_resp.json()
     assert chat_data["intent"] == "UC_1_2_WORKWEEK_LEAVE"
+
+
+def test_quick_login_with_custom_mcp_token(client):
+    """Verify /auth/quick-login accepts and preserves custom MCP token."""
+    login_resp = client.post(
+        "/auth/quick-login",
+        json={"email": "teammate@google.com", "mcp_token": "mcp_custom_token_12345"}
+    )
+    assert login_resp.status_code == 200
+    data = login_resp.json()
+    assert data["success"] is True
+    assert data["user"]["mcp_token"] == "mcp_custom_token_12345"
+
+    token = data["token"]
+    me_resp = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert me_resp.status_code == 200
+    assert me_resp.json()["user"]["mcp_token"] == "mcp_custom_token_12345"
+

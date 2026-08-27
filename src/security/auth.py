@@ -32,6 +32,8 @@ class AuthenticatedUser(BaseModel):
     picture: Optional[str] = None
     auth_provider: str = "google_oidc"
     role: str = "End User"
+    mcp_token: Optional[str] = None
+
 
 
 # Corporate Email to WorkWeek Employee ID Directory
@@ -131,6 +133,7 @@ def mint_session_token(user: AuthenticatedUser, ttl_seconds: int = 86400) -> str
         "picture": user.picture,
         "role": user.role,
         "auth_provider": user.auth_provider,
+        "mcp_token": user.mcp_token,
         "iat": now,
         "exp": now + ttl_seconds,
     }
@@ -174,7 +177,9 @@ def verify_session_token(token: str) -> Optional[AuthenticatedUser]:
             picture=payload.get("picture"),
             role=payload.get("role", "End User"),
             auth_provider=payload.get("auth_provider", "session"),
+            mcp_token=payload.get("mcp_token"),
         )
     except Exception as e:
         logger.error(f"Error parsing session token: {e}")
         return None
+
