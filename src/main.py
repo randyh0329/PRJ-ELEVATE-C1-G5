@@ -621,7 +621,7 @@ def handle_chat(
     except Exception as e:
         logger.error(f"Error processing chat message: {e}", exc_info=True)
         return ChatResponse(
-            response=f"⚠️ 요청 처리 중 오류가 발생했습니다: {str(e)}",
+            response=f"⚠️ Error processing request: {str(e)}",
             intent="SYSTEM_ERROR",
             citations=[],
             action_performed="ERROR",

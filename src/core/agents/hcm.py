@@ -269,7 +269,7 @@ class WorkWeekAutonomousSpecialist:
         tool_res = self.execute_tool(tool_name, arguments, caller_id, ref_date)
         if tool_res.get("status") == "ERROR":
             return {
-                "response_text": f"❌ WorkWeek FastMCP 서비스 연결 오류: {tool_res.get('message')}. 개인 FastMCP 토큰을 확인해 주세요.",
+                "response_text": f"❌ WorkWeek FastMCP communication error: {tool_res.get('message')}. Please verify your FastMCP token.",
                 "action_performed": "ERROR",
                 "tool_called": tool_name,
                 "tool_result": tool_res,
@@ -287,9 +287,9 @@ class WorkWeekAutonomousSpecialist:
         if tool_name == "cancel_leave_request":
             req_id = args.get("request_id") or tool_res.get("request_id", "")
             if tool_res.get("status") == "SUCCESS":
-                text = f"✅ **휴가 취소 완료**: 신청 번호 **#{req_id}**의 휴가 신청이 취소되었으며, 연차가 정상 환불되었습니다."
+                text = f"Leave request #{req_id} has been cancelled successfully, and the days have been refunded to your leave balance."
             else:
-                text = f"❌ **휴가 취소 실패**: 신청 번호 #{req_id}를 취소할 수 없습니다 ({tool_res.get('message')})."
+                text = f"Failed to cancel leave request #{req_id}: {tool_res.get('message', 'Unknown error')}."
             return {
                 "response_text": text,
                 "action_performed": "CANCEL_LEAVE",
@@ -301,10 +301,13 @@ class WorkWeekAutonomousSpecialist:
         elif tool_name == "get_leave_requests":
             requests = tool_res.get("requests", [])
             if not requests:
-                text = "현재 WorkWeek에 등록된 휴가 신청 내역이 없습니다."
+                text = "You currently have no leave requests registered in WorkWeek."
             else:
-                lines = [f"- **신청 ID #{r.get('request_id')}**: {r.get('start_date')} ~ {r.get('end_date')} ({r.get('days')}일, {r.get('leave_type')})" for r in requests]
-                text = f"📋 **현재 등록된 휴가 신청 내역 (총 {len(requests)}건)**:\n" + "\n".join(lines)
+                lines = [
+                    f"- Request #{r.get('request_id')}: {r.get('start_date')} to {r.get('end_date')} ({r.get('days')} days, {r.get('leave_type')})"
+                    for r in requests
+                ]
+                text = f"Current registered WorkWeek leave requests ({len(requests)} total):\n" + "\n".join(lines)
             return {
                 "response_text": text,
                 "action_performed": "LIST_LEAVE_REQUESTS",
@@ -319,13 +322,13 @@ class WorkWeekAutonomousSpecialist:
                 phone = args.get("phone_number")
                 parts = []
                 if addr:
-                    parts.append(f"주소: `{addr}`")
+                    parts.append(f"address: '{addr}'")
                 if phone:
-                    parts.append(f"연락처: `{phone}`")
-                desc = ", ".join(parts) if parts else "연락처 정보"
-                text = f"✅ WorkWeek 개인정보가 성공적으로 업데이트되었습니다 ({desc})."
+                    parts.append(f"phone: '{phone}'")
+                desc = ", ".join(parts) if parts else "contact details"
+                text = f"Your personal contact information has been updated successfully in WorkWeek ({desc})."
             else:
-                text = f"❌ 개인정보 변경 실패: {tool_res.get('message')}"
+                text = f"Failed to update personal contact info in WorkWeek: {tool_res.get('message')}"
             return {
                 "response_text": text,
                 "action_performed": "UPDATE_CONTACT",
