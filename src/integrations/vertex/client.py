@@ -4,6 +4,7 @@ Compliant with Enterprise Agentic Solution Design Document (MVP 1) §2.2, §3.1 
 Provides structured output generation and tool call selection using Gemini on Vertex AI.
 """
 
+import datetime
 import json
 import logging
 import os
@@ -234,11 +235,22 @@ class VertexGeminiClient:
             temperature=0.0,
         )
 
-    def select_workweek_tool(self, prompt: str) -> WorkWeekToolSelection:
+    def select_workweek_tool(
+        self,
+        prompt: str,
+        reference_date: Optional[datetime.date] = None
+    ) -> WorkWeekToolSelection:
         """Select WorkWeek FastMCP tool and extract arguments using Gemini."""
+        ref = reference_date or datetime.date.today()
+        ref_context = (
+            f"\n\nCRITICAL DATE CONTEXT: Today's reference date is {ref.isoformat()} ({ref.strftime('%A')}). "
+            f"All relative date expressions (such as 'tomorrow', '내일', 'next week', '다음 주', 'next Monday') "
+            f"MUST be calculated strictly relative to {ref.isoformat()}. "
+            f"Leave requests MUST NEVER be submitted for dates in the past (< {ref.isoformat()})."
+        )
         return self.generate_structured(
-            prompt=prompt,
-            system_instruction=self.WORKWEEK_TOOL_SYSTEM_INSTRUCTION,
+            prompt=f"[Reference Today: {ref.isoformat()}]\nUser request: {prompt}",
+            system_instruction=self.WORKWEEK_TOOL_SYSTEM_INSTRUCTION + ref_context,
             response_model=WorkWeekToolSelection,
             temperature=0.0,
         )

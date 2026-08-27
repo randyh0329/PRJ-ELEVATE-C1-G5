@@ -80,7 +80,7 @@ class MockVertexGeminiClient:
             reasoning="Mock: WorkWeek HCM self-service operation."
         )
 
-    def select_workweek_tool(self, prompt: str) -> WorkWeekToolSelection:
+    def select_workweek_tool(self, prompt: str, **kwargs) -> WorkWeekToolSelection:
         p = prompt.lower()
 
         # Cancellation
@@ -181,7 +181,7 @@ def mock_vertex_gemini(monkeypatch):
     """Automatically mock VertexGeminiClient in all pytest tests for deterministic CI execution."""
     mock_client = MockVertexGeminiClient()
     monkeypatch.setattr(VertexGeminiClient, "route_intent", lambda self, prompt: mock_client.route_intent(prompt))
-    monkeypatch.setattr(VertexGeminiClient, "select_workweek_tool", lambda self, prompt: mock_client.select_workweek_tool(prompt))
+    monkeypatch.setattr(VertexGeminiClient, "select_workweek_tool", lambda self, prompt, **kwargs: mock_client.select_workweek_tool(prompt, **kwargs))
 
 
 @pytest.fixture(autouse=True)

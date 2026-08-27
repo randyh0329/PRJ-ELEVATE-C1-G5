@@ -139,15 +139,21 @@ class WorkWeekAutonomousSpecialist:
             # 3. request_time_off
             elif tool_name == "request_time_off":
                 start_str = arguments.get("start_date")
-                end_str = arguments.get("end_date")
-                leave_type = arguments.get("leave_type", "Vacation")
+                raw_type = str(arguments.get("leave_type", "Vacation")).lower()
+                leave_type = "Sick" if any(k in raw_type for k in ["sick", "병가", "medical"]) else "Vacation"
                 days = float(arguments.get("days", 1.0))
 
                 try:
-                    start_date = datetime.date.fromisoformat(start_str) if start_str else ref_date + datetime.timedelta(days=7)
+                    start_date = datetime.date.fromisoformat(start_str) if start_str else ref_date + datetime.timedelta(days=1)
                     end_date = datetime.date.fromisoformat(end_str) if end_str else start_date + datetime.timedelta(days=int(days)-1)
                 except Exception:
-                    start_date = ref_date + datetime.timedelta(days=7)
+                    start_date = ref_date + datetime.timedelta(days=1)
+                    end_date = start_date + datetime.timedelta(days=int(days)-1)
+
+                # Guard against past date calculation
+                if start_date < ref_date:
+                    logger.warning(f"Calculated start_date {start_date} is before ref_date {ref_date}. Adjusting to {ref_date}.")
+                    start_date = ref_date
                     end_date = start_date + datetime.timedelta(days=int(days)-1)
 
                 resp = self.client.submit_leave_request(
@@ -236,7 +242,7 @@ class WorkWeekAutonomousSpecialist:
         ref_date = reference_date or datetime.date.today()
 
         # Step 1: Gemini Function Calling for FastMCP Tool Selection & Argument Extraction
-        selection = self._llm.select_workweek_tool(prompt)
+        selection = self._llm.select_workweek_tool(prompt, reference_date=ref_date)
         tool_name = selection.tool_name
         args = selection.arguments or {}
 
