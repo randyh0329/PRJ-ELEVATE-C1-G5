@@ -19,10 +19,26 @@ dependencies = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.5",
     "httpx>=0.27.0",
+    # Policy RAG (src/grounding/policy_rag): FAISS retrieval + A2A server.
+    "faiss-cpu>=1.9,<2",
+    "numpy>=1.26",
+    "PyYAML>=6",
+    "a2a-sdk[http-server]>=1.1,<2",
 ]
+
+[project.optional-dependencies]
+# Default embedding provider (`embedding.provider: local` in config/corpus.yaml).
+# Not needed when running with POLICY_RAG_EMBEDDING_PROVIDER=hash.
+local-embeddings = ["sentence-transformers>=3.0"]
+# embedding.provider: vertex
+vertex = ["google-cloud-aiplatform>=1.60"]
+# POLICY_RAG_COMPOSER=gemini
+gemini = ["google-genai>=1.0"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
 addopts = "-ra -q"
 testpaths = ["tests"]
 pythonpath = ["."]
+# The A2A surface tests are bare `async def test_*` with no explicit marker.
+asyncio_mode = "auto"
