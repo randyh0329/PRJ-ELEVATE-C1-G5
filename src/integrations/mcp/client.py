@@ -221,8 +221,8 @@ class SaaSFastMCPClient:
         """Fetches address and phone from live WorkWeek FastMCP."""
         res = self.call_tool_sync("work-week/mcp/", "get_personal_info", {"employee_id": employee_id})
         text = res.get("content", [{}])[0].get("text", "")
-        address = "Singapore Office, 80 Pasir Panjang Rd, Singapore"
-        phone = "+65-6521-0000"
+        address = ""
+        phone = ""
         try:
             for line in text.splitlines():
                 if "- Address:" in line:
@@ -232,6 +232,7 @@ class SaaSFastMCPClient:
         except Exception:
             pass
         return {"address": address, "phone": phone}
+
 
     def update_personal_info(self, employee_id: str, address: str, phone: str) -> Dict[str, Any]:
         """Updates contact info in live WorkWeek FastMCP."""

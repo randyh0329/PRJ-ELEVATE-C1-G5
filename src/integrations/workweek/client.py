@@ -187,8 +187,8 @@ class WorkWeekClient:
             try:
                 self._mcp_client.update_personal_info(
                     employee_id=target_employee_id,
-                    address=home_address or "Singapore Office, 80 Pasir Panjang Rd, Singapore",
-                    phone=phone_number or "+65-6521-0000"
+                    address=home_address or "",
+                    phone=phone_number or ""
                 )
                 res = ContactUpdateResponse(
                     success=True,

@@ -339,7 +339,7 @@ class WorkWeekAutonomousSpecialist:
 
         if "department" in p or "부서" in p or "팀" in p:
             tool_res = self.execute_tool("get_employee_profile", {"field": "department"}, caller_id, ref_date)
-            dept = tool_res.get("department", "Google Forge (Customer Engineering)")
+            dept = tool_res.get("department") or "Engineering"
             return {
                 "response_text": f"Your department in WorkWeek is {dept}.",
                 "action_performed": "CHECK_DEPARTMENT",
@@ -350,7 +350,7 @@ class WorkWeekAutonomousSpecialist:
 
         if "phone" in p or "전화번호" in p or "연락처" in p:
             tool_res = self.execute_tool("get_employee_profile", {"field": "phone"}, caller_id, ref_date)
-            phone = tool_res.get("phone_number", "+65-6521-0000")
+            phone = tool_res.get("phone_number") or "Not registered"
             return {
                 "response_text": f"Your contact phone number in WorkWeek is {phone}.",
                 "action_performed": "CHECK_PHONE",
@@ -361,7 +361,7 @@ class WorkWeekAutonomousSpecialist:
 
         if ("address" in p or "주소" in p) and not ("profile" in p or "job" in p or "프로필" in p):
             tool_res = self.execute_tool("get_employee_profile", {"field": "address"}, caller_id, ref_date)
-            addr = tool_res.get("home_address", "Singapore Office, 80 Pasir Panjang Rd, Singapore")
+            addr = tool_res.get("home_address") or "Not registered"
             return {
                 "response_text": f"Your registered address in WorkWeek is {addr}.",
                 "action_performed": "CHECK_ADDRESS",

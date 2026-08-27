@@ -42,6 +42,20 @@ class ServiceImmediatelyMockService:
         )
         self._tickets[initial_ticket.ticket_id] = initial_ticket
 
+        # Baseline ticket for EMP-509
+        initial_ticket_509 = IncidentTicket(
+            ticket_id="INC123401",
+            requester_id="EMP-509",
+            category="IT_NETWORK",
+            priority="3 - Moderate",
+            short_description="VPN connection intermittent dropouts",
+            status="In Progress",
+            created_at=(datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)).isoformat(),
+            updated_at=datetime.datetime.now(datetime.timezone.utc).isoformat()
+        )
+        self._tickets[initial_ticket_509.ticket_id] = initial_ticket_509
+
+
     def set_simulate_error(self, simulate_error: bool) -> None:
         """Enable or disable simulated 500 server error."""
         self._simulate_500_error = simulate_error
