@@ -121,7 +121,6 @@ class VertexGeminiClient:
         candidate_paths = [
             shutil.which("gcloud"),
             os.path.expanduser("~/google-cloud-sdk/bin/gcloud"),
-            "/usr/local/google/home/romij/google-cloud-sdk/bin/gcloud",
             "/usr/bin/gcloud",
         ]
         gcloud_bin = next((p for p in candidate_paths if p and os.path.isfile(p) and os.access(p, os.X_OK)), None)
