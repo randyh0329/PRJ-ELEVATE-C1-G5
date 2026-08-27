@@ -89,16 +89,22 @@ def get_balances(employee_id: str):
     return balances
 
 
-def run_interactive_cli() -> None:
+def run_interactive_cli(default_employee_id: Optional[str] = None) -> None:
     """Run interactive terminal chat with the HR Agent."""
+    from src.integrations.mcp.client import saas_fast_mcp_client
+
+    live_id = saas_fast_mcp_client.get_current_employee_id() if saas_fast_mcp_client else "EMP-509"
+    caller_id = default_employee_id or live_id
+
     print("=" * 70)
     print("🚀 Enterprise HR Agentic Solution (MVP 1) - Interactive Console")
     print("=" * 70)
-    print("Logged in as default test user: EMP-1001 (Jane Doe, Senior AI Engineer)")
-    print("Type 'exit' or 'quit' to end session.")
-    print("Type 'reset' to reload backend mock databases.\n")
+    print(f"Logged in user: {caller_id} (Live SaaS FastMCP session connected)")
+    print("Commands:")
+    print("  • Type 'switch <EMP_ID>' to change employee (e.g. 'switch EMP-509')")
+    print("  • Type 'reset' to reload backend mock databases")
+    print("  • Type 'exit' or 'quit' to end session\n")
 
-    caller_id = "EMP-1001"
     agent = hr_enterprise_agent
 
     while True:
@@ -113,6 +119,11 @@ def run_interactive_cli() -> None:
                 workweek_mock_service.init_mock_data()
                 service_immediately_mock_service.init_mock_data()
                 print("Mock databases reset to initial state.\n")
+                continue
+            if user_input.lower().startswith("switch "):
+                new_id = user_input.split()[1].strip().upper()
+                caller_id = new_id
+                print(f"Switched active caller to: {caller_id}\n")
                 continue
 
             resp = agent.process_message(user_prompt=user_input, caller_employee_id=caller_id)
@@ -130,11 +141,13 @@ def run_interactive_cli() -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="HR Agentic Solution Entrypoint")
     parser.add_argument("--cli", action="store_true", help="Launch interactive CLI")
+    parser.add_argument("--employee-id", type=str, default=None, help="Employee ID for CLI session (defaults to live session EMP-509)")
     parser.add_argument("--port", type=int, default=8000, help="Port to run FastAPI server on")
     args = parser.parse_args()
 
     if args.cli:
-        run_interactive_cli()
+        run_interactive_cli(default_employee_id=args.employee_id)
     else:
         import uvicorn
         uvicorn.run("src.main:app", host="0.0.0.0", port=args.port, reload=True)
+

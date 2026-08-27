@@ -163,7 +163,7 @@ class HREnterpriseAgent:
         p = prompt.lower()
 
         # Check if inquiry only or submission
-        if "check" in p or "how many" in p or "what is my balance" in p or "remaining" in p:
+        if "check" in p or "how many" in p or "balance" in p or "remaining" in p:
             balances = self._ww_client.get_leave_balances(caller_id, caller_id)
             if not balances:
                 return AgentResponse(

@@ -34,4 +34,14 @@ Thumbs.db
 htmlcov/
 
 # Logs
+=======
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+.env
+.DS_Store
 *.log
