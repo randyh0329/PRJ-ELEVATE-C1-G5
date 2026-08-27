@@ -97,7 +97,6 @@ def serve_web_chat_ui():
     .btn-test-auth:hover { background: #1d4ed8; }
     .btn-logout { background: transparent; color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 4px 10px; font-size: 0.75rem; cursor: pointer; }
     .btn-logout:hover { background: rgba(239, 68, 68, 0.15); }
-    select { background: #1e293b; color: var(--text); border: 1px solid var(--border); padding: 6px 12px; border-radius: 6px; outline: none; font-size: 0.85rem; }
     .main-container { flex: 1; display: flex; flex-direction: column; max-width: 900px; width: 100%; margin: 0 auto; padding: 16px; overflow: hidden; }
     .quick-actions { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 14px; scrollbar-width: none; }
     .quick-btn { background: #1e293b; color: var(--text); border: 1px solid var(--border); border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; cursor: pointer; white-space: nowrap; transition: all 0.2s; }
@@ -133,12 +132,8 @@ def serve_web_chat_ui():
         <button class="btn-test-auth" onclick="loginWithGoogleEmail('romij@google.com')">
           <span>🔵</span> Google Login (romij@google.com)
         </button>
-        <select id="empSelect" title="Select persona fallback">
-          <option value="EMP-509" selected>EMP-509 (Romij Employee)</option>
-          <option value="EMP-1001">EMP-1001 (Staff SE)</option>
-          <option value="EMP-1002">EMP-1002 (Senior PM)</option>
-        </select>
       </div>
+
 
       <!-- Authenticated View -->
       <div id="authControls" style="display: none; align-items: center; gap: 10px;">
@@ -182,8 +177,8 @@ def serve_web_chat_ui():
   <script>
     const chatWindow = document.getElementById('chatWindow');
     const userInput = document.getElementById('userInput');
-    const empSelect = document.getElementById('empSelect');
     const typingIndicator = document.getElementById('typingIndicator');
+
 
     let sessionToken = localStorage.getItem('hr_agent_session_token');
     let currentUser = null;
@@ -284,7 +279,7 @@ def serve_web_chat_ui():
       const text = userInput.value.trim();
       if (!text) return;
 
-      const empId = currentUser ? currentUser.employee_id : empSelect.value;
+      const empId = currentUser ? currentUser.employee_id : 'EMP-509';
       appendMessage(text, true);
       userInput.value = '';
       typingIndicator.style.display = 'block';
