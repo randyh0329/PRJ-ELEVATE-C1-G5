@@ -38,9 +38,10 @@ gcloud run deploy "${SERVICE_NAME}" \
   --project "${PROJECT_ID}" \
   --platform managed \
   --allow-unauthenticated \
-  --set-env-vars "PORT=8080,SAAS_MCP_BASE_URL=https://mock-saas.aishprabhat.demo.altostrat.com,USE_LIVE_MCP=true,DEFAULT_CALLER_ID=EMP-509" \
+  --set-env-vars "SAAS_MCP_BASE_URL=https://mock-saas.aishprabhat.demo.altostrat.com,USE_LIVE_MCP=true,DEFAULT_CALLER_ID=EMP-509" \
   --set-secrets "SAAS_MCP_CREDENTIAL=saas-mcp-token:latest" \
   --port 8080
+
 
 # 4. Verify deployment health
 SERVICE_URL=$(gcloud run services describe "${SERVICE_NAME}" --region "${REGION}" --project "${PROJECT_ID}" --format 'value(status.url)')

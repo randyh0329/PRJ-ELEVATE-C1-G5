@@ -204,12 +204,8 @@ resource "google_cloud_run_v2_service" "hr_agentic_service" {
       }
 
       env {
-        name  = "PORT"
-        value = "8080"
-      }
-
-      env {
         name  = "SAAS_MCP_BASE_URL"
+
         value = var.saas_mcp_base_url
       }
 
