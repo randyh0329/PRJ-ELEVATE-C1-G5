@@ -1,0 +1,329 @@
+{
+  "corpus": "okf-handbook",
+  "description": "Golden question set for the Altostrat Singapore HR policy RAG. Every `expect_paths` entry was verified to exist in the corpus at authoring time. `expect` selects the required outcome: `answer` (retrieval must surface the listed path), `escalate` (the corpus datasheet forbids answering - a Conflict section, extended-workforce leave, or a placeholder contact), or `refuse` (nothing in the corpus can support an answer, so the gate must reject).",
+  "questions": [
+    {
+      "id": "g-leave-01",
+      "query": "How many days of paid vacation leave do I get after 8 years of service?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/leave/vacation.md"],
+      "tags": ["leave", "figure"]
+    },
+    {
+      "id": "g-leave-02",
+      "query": "Does unused annual leave carry over to the next year?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/leave/vacation.md"],
+      "tags": ["leave", "carryover"]
+    },
+    {
+      "id": "g-leave-03",
+      "query": "How many days of outpatient sick leave am I entitled to?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/leave/sick-and-hospitalisation.md"],
+      "tags": ["leave", "figure"]
+    },
+    {
+      "id": "g-leave-04",
+      "query": "When do I need to submit a medical certificate for sick leave?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/leave/sick-and-hospitalisation.md"],
+      "tags": ["leave", "procedure"]
+    },
+    {
+      "id": "g-leave-05",
+      "query": "How much childcare leave can I take in a year?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/leave/childcare.md"],
+      "tags": ["leave", "figure"]
+    },
+    {
+      "id": "g-leave-06",
+      "query": "What is the bereavement leave allowance?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/leave/bereavement.md"],
+      "tags": ["leave", "figure"]
+    },
+    {
+      "id": "g-leave-07",
+      "query": "How does time off in lieu work for overtime?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/leave/time-off-in-lieu.md"],
+      "tags": ["leave"]
+    },
+    {
+      "id": "g-leave-08",
+      "query": "How long is maternity leave and who is eligible?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/leave/maternity.md"],
+      "tags": ["leave", "eligibility"]
+    },
+    {
+      "id": "g-leave-09",
+      "query": "What is ramp-back time after returning from parental leave?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/leave/ramp-back.md"],
+      "tags": ["leave"]
+    },
+    {
+      "id": "g-leave-10",
+      "query": "Can I take carer's leave to look after a sick parent?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/leave/carers.md"],
+      "tags": ["leave", "eligibility"]
+    },
+    {
+      "id": "g-leave-11",
+      "query": "How do I request unpaid time off?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/leave/unpaid-and-personal.md"],
+      "tags": ["leave", "procedure"]
+    },
+    {
+      "id": "g-ethics-01",
+      "query": "What is the gift value threshold that needs pre-approval?",
+      "expect": "answer",
+      "expect_paths": [
+        "okf/altostrat-sg-handbook/ethics/commercial-gifts.md",
+        "okf/altostrat-sg-handbook/ethics/anti-bribery.md"
+      ],
+      "tags": ["ethics", "figure"]
+    },
+    {
+      "id": "g-ethics-02",
+      "query": "Can I accept a meal paid for by a government official?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/ethics/anti-bribery.md"],
+      "tags": ["ethics"]
+    },
+    {
+      "id": "g-ethics-03",
+      "query": "Do I have to declare outside employment or a second job?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/ethics/conflicts-of-interest.md"],
+      "tags": ["ethics", "disclosure"]
+    },
+    {
+      "id": "g-ethics-04",
+      "query": "What are my obligations for handling confidential company information?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/ethics/confidentiality-and-assets.md"],
+      "tags": ["ethics"]
+    },
+    {
+      "id": "g-conduct-01",
+      "query": "Can I have a romantic relationship with someone I manage?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/conduct/personal-relationships.md"],
+      "tags": ["conduct"]
+    },
+    {
+      "id": "g-conduct-02",
+      "query": "How do I report workplace harassment?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/conduct/harassment-and-discrimination.md"],
+      "tags": ["conduct", "procedure"]
+    },
+    {
+      "id": "g-conduct-03",
+      "query": "What is the disciplinary process for poor performance?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/conduct/performance-and-discipline.md"],
+      "tags": ["conduct", "procedure"]
+    },
+    {
+      "id": "g-conduct-04",
+      "query": "What is the policy on drinking alcohol at company events?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/conduct/alcohol-smoking-drugs.md"],
+      "tags": ["conduct"]
+    },
+    {
+      "id": "g-conduct-05",
+      "query": "How do I raise a grievance against my manager?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/conduct/grievance-and-disputes.md"],
+      "tags": ["conduct", "procedure"]
+    },
+    {
+      "id": "g-workplace-01",
+      "query": "What is the lodging cap when I travel for work?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/workplace/travel-and-expense.md"],
+      "tags": ["workplace", "figure"]
+    },
+    {
+      "id": "g-workplace-02",
+      "query": "How many days a week am I expected in the office under hybrid working?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/workplace/remote-and-hybrid-work.md"],
+      "tags": ["workplace"]
+    },
+    {
+      "id": "g-workplace-03",
+      "query": "How do I apply for flexible working arrangements?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/workplace/flexible-work-requests.md"],
+      "tags": ["workplace", "procedure"]
+    },
+    {
+      "id": "g-workplace-04",
+      "query": "Can I use my work laptop for personal social media?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/workplace/it-acceptable-use.md"],
+      "tags": ["workplace"]
+    },
+    {
+      "id": "g-workplace-05",
+      "query": "What notice period do I have to give when I resign?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/workplace/exit.md"],
+      "tags": ["workplace", "figure"]
+    },
+    {
+      "id": "g-workplace-06",
+      "query": "What happens to my leave balance when I leave the company?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/workplace/exit.md"],
+      "tags": ["workplace", "payout"]
+    },
+    {
+      "id": "g-workplace-07",
+      "query": "What do I need to do on my first day of onboarding?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/workplace/onboarding.md"],
+      "tags": ["workplace"]
+    },
+    {
+      "id": "g-workplace-08",
+      "query": "How do I report a workplace accident or injury?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/workplace/health-and-safety.md"],
+      "tags": ["workplace", "procedure"]
+    },
+    {
+      "id": "g-peopleops-01",
+      "query": "How do I claim on the company health insurance?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/people-ops/health-insurance.md"],
+      "tags": ["people-ops", "procedure"]
+    },
+    {
+      "id": "g-peopleops-02",
+      "query": "What are the employer and employee CPF contribution rates?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/people-ops/payroll-and-cpf.md"],
+      "tags": ["people-ops", "figure"]
+    },
+    {
+      "id": "g-peopleops-03",
+      "query": "When is payday and how is salary paid?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/people-ops/payroll-and-cpf.md"],
+      "tags": ["people-ops"]
+    },
+    {
+      "id": "g-peopleops-04",
+      "query": "What personal data does the company hold about me?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/people-ops/employee-privacy.md"],
+      "tags": ["people-ops", "privacy"]
+    },
+    {
+      "id": "g-escalate-01",
+      "query": "Are interns eligible for bereavement leave?",
+      "expect": "escalate",
+      "expect_paths": ["okf/altostrat-sg-handbook/leave/bereavement.md"],
+      "reason": "Datasheet rule 1 - the handbook contradicts itself on intern eligibility (Conflict section).",
+      "tags": ["guard", "conflict"]
+    },
+    {
+      "id": "g-escalate-02",
+      "query": "Which channel do I use to request RCI pre-approval for a government gift?",
+      "expect": "escalate",
+      "expect_paths": ["okf/altostrat-sg-handbook/ethics/anti-bribery.md"],
+      "reason": "Datasheet rule 1 - the source names two different channels (Conflict section).",
+      "tags": ["guard", "conflict"]
+    },
+    {
+      "id": "g-escalate-03",
+      "query": "Does a father donating Shared Parental Leave reduce his baby bonding leave?",
+      "expect": "escalate",
+      "expect_paths": ["okf/altostrat-sg-handbook/leave/maternity.md", "okf/altostrat-sg-handbook/leave/baby-bonding.md"],
+      "reason": "Datasheet rule 1 - unresolved SPL conflict across two concepts.",
+      "tags": ["guard", "conflict"]
+    },
+    {
+      "id": "g-escalate-04",
+      "query": "I am a contractor. How much annual leave do I get?",
+      "expect": "escalate",
+      "reason": "Datasheet rule 2 - the extended workforce is excluded from every Singapore leave policy and the source carries no substitute figures.",
+      "tags": ["guard", "extended-workforce"]
+    },
+    {
+      "id": "g-escalate-05",
+      "query": "I am a vendor temp, what sick leave am I entitled to?",
+      "expect": "escalate",
+      "reason": "Datasheet rule 2 - extended workforce leave.",
+      "tags": ["guard", "extended-workforce"]
+    },
+    {
+      "id": "g-escalate-06",
+      "query": "What is in handbook Section 11?",
+      "expect": "escalate",
+      "reason": "Datasheet rule 5 - Sections 11 and 15 do not exist; absence is not evidence the topic is unregulated.",
+      "tags": ["guard", "absent-section"]
+    },
+    {
+      "id": "g-refuse-01",
+      "query": "What is Altostrat's stock option vesting schedule?",
+      "expect": "refuse",
+      "reason": "Equity compensation is not covered anywhere in the handbook.",
+      "tags": ["out-of-corpus"]
+    },
+    {
+      "id": "g-refuse-02",
+      "query": "How do I reset my VPN certificate on a Linux workstation?",
+      "expect": "refuse",
+      "reason": "IT support procedure, not an HR policy in this corpus.",
+      "tags": ["out-of-corpus"]
+    },
+    {
+      "id": "g-refuse-03",
+      "query": "What is the weather forecast in Singapore this week?",
+      "expect": "refuse",
+      "reason": "Wholly unrelated to the corpus - the gate must reject rather than return the nearest policy.",
+      "tags": ["out-of-corpus"]
+    },
+    {
+      "id": "g-refuse-04",
+      "query": "Who won the 2026 Singapore general election?",
+      "expect": "refuse",
+      "reason": "Wholly unrelated to the corpus.",
+      "tags": ["out-of-corpus"]
+    },
+    {
+      "id": "g-refuse-05",
+      "query": "What is our pricing for the enterprise SKU in APAC?",
+      "expect": "refuse",
+      "reason": "Commercial data, out of corpus - and adjacent enough to 'commercial gifts' to test that lexical overlap alone cannot pass the gate.",
+      "tags": ["out-of-corpus", "adversarial"]
+    },
+    {
+      "id": "g-acl-01",
+      "query": "Which handbook defects are recorded in the source defect register?",
+      "expect": "answer",
+      "expect_paths": ["okf/altostrat-sg-handbook/references/source-defects.md"],
+      "entitlements": ["general", "hr_operational"],
+      "tags": ["acl", "hr-operational"]
+    },
+    {
+      "id": "g-acl-02",
+      "query": "Which handbook defects are recorded in the source defect register?",
+      "expect": "refuse",
+      "entitlements": ["general"],
+      "reason": "SDD §4.7 - the references/ prefix requires hr_operational; a general caller must not see it, and no general-entitled chunk answers the question.",
+      "tags": ["acl", "negative"]
+    }
+  ]
+}
