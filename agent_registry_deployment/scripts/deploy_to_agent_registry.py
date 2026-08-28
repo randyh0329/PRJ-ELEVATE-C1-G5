@@ -90,7 +90,34 @@ class AgentRegistryDeployer:
   ) -> str:
     """Register an individual ADK Agent into Vertex AI Agent Engine & Registry."""
     logger.info(f"Registering ADK Agent [{agent_id}] -> Display Name: {display_name} (Model: {model})")
+    
     resource_name = f"projects/{self.project_id}/locations/{self.location}/agents/{agent_id}"
+
+    # If not dry-run and project is configured, trigger ADK native deploy to Agent Engine
+    if not self.dry_run and self.project_id and self.project_id != "sample-gcp-project":
+      if agent_id == "hr_supervisor_orchestrator":
+        try:
+          import subprocess
+          logger.info(f"🚀 Deploying Root Supervisor Agent to Vertex AI Agent Engine via ADK CLI...")
+          cmd = [
+              sys.executable, "-m", "google.adk.cli", "deploy", "agent_engine",
+              f"--project={self.project_id}",
+              f"--region={self.location}",
+              f"--display_name={display_name}",
+              "src/adk"
+          ]
+          res = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+          if res.returncode == 0:
+            logger.info(f"✅ ADK CLI deploy succeeded:\n{res.stdout}")
+            for line in res.stdout.splitlines():
+              if "projects/" in line and "reasoningEngines/" in line:
+                resource_name = line.strip()
+          else:
+            logger.warning(f"ADK CLI deploy notice: {res.stderr.strip() or res.stdout.strip()}")
+            logger.info(f"Using manifest-cataloged reference: {resource_name}")
+        except Exception as e:
+          logger.warning(f"ADK native deploy fallback to manifest catalog: {e}")
+
     self.registered_agents[agent_id] = resource_name
     logger.info(f"✅ Cataloged ADK Agent: {display_name} -> {resource_name}")
     return resource_name
