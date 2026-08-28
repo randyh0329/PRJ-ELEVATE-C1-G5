@@ -89,6 +89,24 @@ async def test_mock_datastore_refuses_hallucination_baits(no_index):
     assert "could not find a verified answer" in state["final_response"]
 
 
+async def test_mock_datastore_refuses_anything_its_five_entries_do_not_cover(no_index):
+    """The bait list is a shortcut for known-absent topics; the default is still
+    refusal. A keyword matcher has no notion of "not in the corpus", so a query
+    matching nothing must not fall through to the highest-scoring near-miss."""
+    state = await PolicySpecialistNode().execute(_state("what is the guest wifi password"))
+
+    assert state["policy_decision"] == "refuse"
+    assert state["citations"] == []
+    assert "could not find a verified answer" in state["final_response"]
+
+
+async def test_mock_datastore_needs_every_term_of_a_multi_word_topic(no_index):
+    """"leave" alone must not select the bereavement entry - the key is two words."""
+    answer = PolicySpecialistNode()._query_mock_datastore("tell me about leave")
+
+    assert answer.decision == "refuse"
+
+
 # --- the grounding gate ------------------------------------------------------
 
 
