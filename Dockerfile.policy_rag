@@ -19,7 +19,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY config/ ./config/
 COPY src/ ./src/
 COPY okf/ ./okf/
-COPY "ALTOSTRAT SINGAPORE EMPLOYEE POLICY HANDBOOK & CONDUCT GUIDELINES.md" .
+COPY ["ALTOSTRAT SINGAPORE EMPLOYEE POLICY HANDBOOK & CONDUCT GUIDELINES.md", "./"]
 COPY pyproject.toml .
 
 RUN python -m src.grounding.policy_rag.cli ingest || true
