@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -188,10 +189,44 @@ def test_the_audit_stream_handler_is_installed_only_once():
 def test_a_policy_is_retrievable_by_its_exact_section_id():
     store = OKFPolicyStore()
 
-    doc = store.get_policy_by_section("14.1")
+    doc = store.get_policy_by_section("22")
 
     assert doc is not None
-    assert "relocation" in doc.tags
+    assert "bereavement" in doc.tags
+    assert doc.path == "okf/altostrat-sg-handbook/leave/bereavement.md"
+
+
+def test_a_summary_layer_section_resolves_to_the_governing_concept():
+    """The handbook states most rules twice: a detail layer and a summary layer.
+    Bereavement is Section 22 in the first and Section 3.1 in the second, and an
+    employee quoting either number means the same policy."""
+    store = OKFPolicyStore()
+
+    assert store.get_policy_by_section("3.1") is store.get_policy_by_section("22")
+
+
+def test_every_citation_points_at_a_file_that_exists():
+    """FR-5.3. The register this replaced cited `hr.corp.internal` URLs that
+    resolved to nothing, so an answer could not be checked against its source -
+    which is exactly how four wrong figures survived in it."""
+    repo_root = Path(__file__).resolve().parents[1]
+    base = "https://github.com/randyh0329/PRJ-ELEVATE-C1-G5/blob/main/"
+
+    for doc in OKFPolicyStore().all_policies():
+        assert doc.citation_url.startswith(base), doc.section_id
+        assert (repo_root / doc.path).is_file(), doc.citation_url
+
+
+def test_the_register_reports_the_handbooks_figures_not_the_old_fixtures():
+    """The four documents this register replaced were each wrong on the number
+    that mattered. Pinning the real ones here is what stops a future edit
+    quietly reintroducing a plausible figure with no source behind it."""
+    store = OKFPolicyStore()
+
+    assert "4 weeks" in store.get_policy_by_section("22").details        # not 5 days
+    assert "US$500" in store.get_policy_by_section("5.4").details        # not US$350
+    assert "US$10,000" in store.get_policy_by_section("4").details       # not £5,000
+    assert "46 work days" in store.get_policy_by_section("19").details   # not 60 days
 
 
 def test_an_unknown_section_id_reads_back_as_absent():

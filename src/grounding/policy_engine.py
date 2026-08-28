@@ -18,34 +18,44 @@ class PolicyQueryResult(BaseModel):
     citations: list[str] = Field(default_factory=list)
     referenced_section_ids: list[str] = Field(default_factory=list)
     confidence_score: float
-    #: Which backend answered: `faiss` (the indexed handbook corpus) or
-    #: `curated` (the four baseline documents in `okf_store`). Recorded because
-    #: the two do not always agree - see the class docstring below.
+    #: Which backend answered: `faiss` (semantic search over the indexed
+    #: handbook) or `curated` (the deterministic register in `okf_store`). Both
+    #: read the same corpus; they differ in what they can find, so a `curated`
+    #: refusal does not mean the handbook is silent.
     source: str = "curated"
     #: Guard disposition from the RAG backend: `answer`, `escalate` or `refuse`.
     #: An escalation is not a refusal: the corpus has something to say, but the
     #: honest response is to route the question to a human.
     decision: str = "answer"
+    #: The register documents behind the answer, best first. Populated on the
+    #: `curated` path only - the FAISS path returns chunks, not whole concepts.
+    #: Carried so that a saga step can quote one rule out of a long document
+    #: (`PolicyDocument.excerpt`) instead of restating it from memory.
+    documents: list[PolicyDocument] = Field(default_factory=list)
 
 
 class DualGroundingEngine:
-    """Curated OKF rules plus FAISS semantic search over the handbook corpus.
+    """Two ways of searching one corpus: FAISS semantic, or the OKF register.
 
-    "Dual" is now literal. Free-text policy questions are answered from the FAISS
-    index built over `okf/altostrat-sg-handbook/` and the raw handbook - 480
-    chunks, under the SDD §3.3 dual gate, with the corpus-datasheet guards and
-    resolved deep-link citations. The four hand-written `PolicyDocument`s in
-    `okf_store` stay as a fallback for when that index has not been built: it is
-    a git-ignored build artefact, so a fresh clone has none and the agent still
-    has to answer rather than crash.
+    "Dual" is literal, and it is now a split in *method* rather than in *content*.
+    Free-text policy questions are answered from the FAISS index built over
+    `okf/altostrat-sg-handbook/` and the raw handbook - 480 chunks, under the SDD
+    §3.3 dual gate, with the corpus-datasheet guards and resolved deep-link
+    citations. `okf_store` is the fallback for when that index has not been
+    built: it is a git-ignored build artefact, so a fresh clone has none and the
+    agent still has to answer rather than crash.
 
-    **The fallback is not equivalent, and that is why it reports itself.** Where
-    the two overlap they disagree: the curated entry says bereavement leave is
-    "up to 5 consecutive days"; `leave/bereavement.md` in the actual handbook
-    says four weeks, 20 work days, and flags that the two source layers dispute
-    intern eligibility. The curated set is a demo fixture that predates the
-    corpus. `PolicyQueryResult.source` records which one answered so an audit
-    event can tell a grounded answer from a degraded one.
+    **The fallback is degraded in recall, not in truthfulness.** It reads the
+    same 31 concept files and quotes them verbatim, so where it answers at all it
+    agrees with the indexed path; what it cannot do is recognise a question
+    phrased in words the corpus does not use, and it declines rather than guess.
+    That was not true before: the register used to be four hand-written fixtures
+    that predated the corpus and contradicted it - bereavement leave "up to 5
+    consecutive days" against a handbook that grants four weeks - citing
+    `hr.corp.internal` URLs that resolved to nothing, so following the citation
+    could not expose the error. `PolicyQueryResult.source` still records which
+    backend answered, because refusing where the other path would answer is a
+    difference an audit event should be able to see.
     """
 
     def __init__(self, store: object | None = None, rag: Any | None = None) -> None:
@@ -69,12 +79,12 @@ class DualGroundingEngine:
                     self._rag = faiss_policy_rag.service
                 else:
                     logger.warning(
-                        "FAISS policy index not built - falling back to the curated OKF "
-                        "documents, which cover far less and disagree with the handbook "
-                        "in places. Run: python -m src.grounding.policy_rag.cli ingest"
+                        "FAISS policy index not built - falling back to the deterministic OKF "
+                        "register, which reads the same corpus but refuses questions semantic "
+                        "search would answer. Run: python -m src.grounding.policy_rag.cli ingest"
                     )
             except ImportError:  # pragma: no cover - faiss/numpy not installed
-                logger.warning("policy RAG dependencies unavailable; using curated OKF documents")
+                logger.warning("policy RAG dependencies unavailable; using the OKF register")
         return self._rag
 
     # --- public API ---------------------------------------------------------
@@ -128,7 +138,7 @@ class DualGroundingEngine:
         )
 
     def _from_curated(self, user_query: str) -> PolicyQueryResult:
-        """The pre-corpus baseline: four documents, keyword-scored."""
+        """Keyword-scored lookup over the 31 OKF concept files."""
         matching_policies = self._store.search_policies(user_query)
 
         if not matching_policies:
@@ -156,6 +166,7 @@ class DualGroundingEngine:
             confidence_score=0.98,
             source="curated",
             decision="answer",
+            documents=matching_policies,
         )
 
 
