@@ -103,14 +103,15 @@ def test_leave_guardrail_end_before_start():
 
 
 def test_leave_guardrail_accepts_a_well_formed_future_request():
-    """The pass case: in balance, correctly ordered, and not in the past."""
+    """The pass case: in balance, correctly ordered, not in the past, and with a
+    duration that matches the span (2026-09-07..09 is Mon-Wed, three working days)."""
     engine = OperationGuardrailEngine()
     today = datetime.date(2026, 8, 27)
     res = engine.validate_leave_request(
         days_requested=3.0,
         remaining_balance=14.0,
-        start_date=today + datetime.timedelta(days=7),
-        end_date=today + datetime.timedelta(days=9),
+        start_date=datetime.date(2026, 9, 7),
+        end_date=datetime.date(2026, 9, 9),
         reference_date=today
     )
     assert res.is_valid

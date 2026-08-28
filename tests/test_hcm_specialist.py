@@ -318,7 +318,10 @@ def test_the_dates_the_employee_gave_are_the_dates_submitted(client):
 @pytest.mark.parametrize("leave_type", ["sick", "Sick leave", "medical", "병가"])
 def test_sick_leave_is_recognised_however_it_is_worded(client, leave_type):
     make_specialist(client).execute_tool(
-        "request_time_off", {"leave_type": leave_type, "days": 1}, CALLER, REF
+        "request_time_off",
+        {"leave_type": leave_type, "start_date": "2026-04-01", "days": 1},
+        CALLER,
+        REF,
     )
 
     assert client.last("submit_leave_request")["leave_type"] == "Sick"
@@ -326,25 +329,48 @@ def test_sick_leave_is_recognised_however_it_is_worded(client, leave_type):
 
 def test_anything_that_is_not_sick_leave_is_booked_as_vacation(client):
     make_specialist(client).execute_tool(
-        "request_time_off", {"leave_type": "Annual", "days": 1}, CALLER, REF
+        "request_time_off",
+        {"leave_type": "Annual", "start_date": "2026-04-01", "days": 1},
+        CALLER,
+        REF,
     )
 
     assert client.last("submit_leave_request")["leave_type"] == "Vacation"
 
 
-def test_a_missing_start_date_defaults_to_tomorrow(client):
-    make_specialist(client).execute_tool("request_time_off", {"days": 1}, CALLER, REF)
+def test_a_missing_start_date_is_asked_about_rather_than_guessed(client):
+    """It used to default to tomorrow and submit, booking a date nobody named."""
+    result = make_specialist(client).execute_tool("request_time_off", {"days": 1}, CALLER, REF)
 
-    assert client.last("submit_leave_request")["start_date"] == datetime.date(2026, 3, 3)
+    assert result["status"] == "NEEDS_CLARIFICATION"
+    assert "which date" in result["message"].lower()
+    assert client.calls == []
 
 
-def test_an_unparseable_start_date_falls_back_rather_than_raising(client):
-    """The model writes these; "next Monday" is an expected input, not a fault."""
-    make_specialist(client).execute_tool(
+def test_an_unparseable_start_date_is_asked_about_rather_than_guessed(client):
+    """The model writes these; "next Monday" is an expected input, not a date.
+
+    Falling back to tomorrow made an unreadable request indistinguishable from a
+    request for tomorrow, and wrote the difference to the HR system of record.
+    """
+    result = make_specialist(client).execute_tool(
         "request_time_off", {"start_date": "next Monday", "days": 1}, CALLER, REF
     )
 
-    assert client.last("submit_leave_request")["start_date"] == datetime.date(2026, 3, 3)
+    assert result["status"] == "NEEDS_CLARIFICATION"
+    assert client.calls == []
+
+
+def test_a_start_date_without_any_duration_is_asked_about(client):
+    """The reported bug: "999 days off from tomorrow" extracted no `days` at all,
+    defaulted to 1.0, and confirmed a one-day booking the employee never made."""
+    result = make_specialist(client).execute_tool(
+        "request_time_off", {"start_date": "2026-04-01"}, CALLER, REF
+    )
+
+    assert result["status"] == "NEEDS_CLARIFICATION"
+    assert "how many days" in result["message"].lower()
+    assert client.calls == []
 
 
 def test_a_missing_end_date_is_derived_from_the_day_count(client):
@@ -370,36 +396,40 @@ def test_an_unusable_end_date_does_not_discard_a_good_start_date(client):
     assert call["end_date"] == datetime.date(2026, 4, 2)
 
 
-def test_an_end_date_before_the_start_is_recomputed_from_the_day_count(client):
-    make_specialist(client).execute_tool(
+def test_an_end_date_before_the_start_is_queried_not_straightened_out(client):
+    """A span running backwards is a misread. Recomputing it from `days` booked
+    dates the employee never gave and reported them as confirmed."""
+    result = make_specialist(client).execute_tool(
         "request_time_off",
         {"start_date": "2026-04-10", "end_date": "2026-04-02", "days": 2},
         CALLER,
         REF,
     )
 
-    call = client.last("submit_leave_request")
-    assert call["start_date"] == datetime.date(2026, 4, 10)
-    assert call["end_date"] == datetime.date(2026, 4, 11)
+    assert result["status"] == "NEEDS_CLARIFICATION"
+    assert client.calls == []
 
 
-def test_a_start_date_in_the_past_is_pulled_forward_to_today(client):
-    """Backdating leave is not something the employee can ask the agent to do."""
-    make_specialist(client).execute_tool(
+def test_a_start_date_in_the_past_is_refused_rather_than_pulled_forward(client):
+    """Backdating is not something the agent can do - but nor is quietly
+    rebooking January's leave into March and calling it submitted."""
+    result = make_specialist(client).execute_tool(
         "request_time_off",
         {"start_date": "2026-01-05", "end_date": "2026-01-07", "days": 3},
         CALLER,
         REF,
     )
 
-    call = client.last("submit_leave_request")
-    assert call["start_date"] == REF
-    assert call["end_date"] == datetime.date(2026, 3, 4)
+    assert result["status"] == "NEEDS_CLARIFICATION"
+    assert "past" in result["message"]
+    assert client.calls == []
 
 
 def test_the_business_reference_date_is_passed_through_to_the_adapter(client):
     """The adapter re-checks the past-date rule against the same day (§2.2)."""
-    make_specialist(client).execute_tool("request_time_off", {"days": 1}, CALLER, REF)
+    make_specialist(client).execute_tool(
+        "request_time_off", {"start_date": "2026-04-01", "days": 1}, CALLER, REF
+    )
 
     assert client.last("submit_leave_request")["reference_date"] == REF
 
@@ -411,7 +441,7 @@ def test_a_rejected_submission_is_reported_as_failed_not_errored(client):
     )
 
     result = make_specialist(client).execute_tool(
-        "request_time_off", {"days": 5}, CALLER, REF
+        "request_time_off", {"start_date": "2026-04-01", "days": 5}, CALLER, REF
     )
 
     assert result["status"] == "FAILED"
@@ -522,7 +552,9 @@ def test_the_reference_date_defaults_to_the_business_day(client, monkeypatch):
     """§2.2: "today" is Singapore's today, not the serving region's."""
     monkeypatch.setattr("src.core.agents.hcm.business_today", lambda: datetime.date(2026, 6, 1))
 
-    make_specialist(client).execute_tool("request_time_off", {"days": 1}, CALLER)
+    make_specialist(client).execute_tool(
+        "request_time_off", {"start_date": "2026-06-15", "days": 1}, CALLER
+    )
 
     assert client.last("submit_leave_request")["reference_date"] == datetime.date(2026, 6, 1)
 
@@ -608,7 +640,9 @@ def test_an_adapter_error_short_circuits_before_formatting(client):
 def test_the_fast_path_defaults_its_reference_date_too(client, monkeypatch):
     monkeypatch.setattr("src.core.agents.hcm.business_today", lambda: datetime.date(2026, 6, 1))
 
-    make_specialist(client).execute_fast_path("request_time_off", {"days": 1}, CALLER)
+    make_specialist(client).execute_fast_path(
+        "request_time_off", {"start_date": "2026-06-15", "days": 1}, CALLER
+    )
 
     assert client.last("submit_leave_request")["reference_date"] == datetime.date(2026, 6, 1)
 
@@ -755,10 +789,23 @@ def test_a_rejected_request_reports_why_and_carries_no_reference(client):
         success=False, message="Insufficient balance."
     )
 
-    result = make_specialist(client).execute_fast_path("request_time_off", {"days": 99}, CALLER, REF)
+    result = make_specialist(client).execute_fast_path(
+        "request_time_off", {"start_date": "2026-04-01", "days": 99}, CALLER, REF
+    )
 
     assert result["response_text"] == "Leave submission failed: Insufficient balance."
     assert result["transaction_reference"] is None
+
+
+def test_an_underspecified_request_asks_instead_of_confirming_a_booking(client):
+    """The fast path is what the employee actually reads. A question has to
+    survive the composer as a question - not become "submitted"."""
+    result = make_specialist(client).execute_fast_path("request_time_off", {}, CALLER, REF)
+
+    assert result["action_performed"] == "CLARIFY_LEAVE"
+    assert result["transaction_reference"] is None
+    assert "submitted" not in result["response_text"].lower()
+    assert client.calls == []
 
 
 def test_a_tool_with_no_formatter_still_returns_a_usable_envelope(client):

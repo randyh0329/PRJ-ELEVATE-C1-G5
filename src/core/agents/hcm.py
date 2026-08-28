@@ -12,6 +12,7 @@ import uuid
 from typing import Any
 
 from src.core.clock import business_today
+from src.core.leave_request import Clarification, parse_leave_date, resolve_leave_span
 from src.core.state import AgentState
 from src.integrations.workweek.client import WorkWeekClient, workweek_client
 from src.security.token_minter import CompositeTokenMinter
@@ -136,35 +137,40 @@ class WorkWeekAutonomousSpecialist:
 
             # 3. request_time_off
             elif tool_name == "request_time_off":
-                start_str = arguments.get("start_date")
-                end_str = arguments.get("end_date")
                 raw_type = str(arguments.get("leave_type", "Vacation")).lower()
                 leave_type = "Sick" if any(k in raw_type for k in ["sick", "병가", "medical"]) else "Vacation"
-                days = float(arguments.get("days", 1.0))
 
-                # Parsed independently so that an unusable end date does not also
-                # discard a perfectly good start date. `except Exception` here
-                # previously hid a NameError on `end_str`, which meant every
-                # caller-supplied start date was silently replaced by "tomorrow";
-                # the narrow catch is what keeps that class of bug visible.
-                start_date = self._parse_date(start_str) or ref_date + datetime.timedelta(days=1)
-                end_date = self._parse_date(end_str) or start_date + datetime.timedelta(days=int(days) - 1)
-                if end_date < start_date:
-                    end_date = start_date + datetime.timedelta(days=int(days) - 1)
-
-                # Guard against past date calculation
-                if start_date < ref_date:
-                    logger.warning("Calculated start_date %s is before ref_date %s. Adjusting to %s.", start_date, ref_date, ref_date)
-                    start_date = ref_date
-                    end_date = start_date + datetime.timedelta(days=int(days)-1)
+                # Nothing here invents a missing parameter.
+                #
+                # This branch used to default `days` to 1.0, `start_date` to
+                # tomorrow and `end_date` to the start date. Between them those
+                # three defaults could manufacture an entire leave request out of
+                # an empty argument dict and write it to the HR system of record:
+                # asked for "999 days off from tomorrow", the extractor returned
+                # no duration at all and the employee was told "your vacation
+                # request for 1.0 days from 2026-08-29 to 2026-08-29 has been
+                # submitted". The 999 never reached the balance guardrail, which
+                # would have refused it.
+                #
+                # A request we cannot read is not a one-day request. It is a
+                # question - see `src.core.leave_request`, shared with the ADK
+                # runtime so the two cannot drift back apart.
+                resolved = resolve_leave_span(
+                    start_date=arguments.get("start_date"),
+                    end_date=arguments.get("end_date"),
+                    days=arguments.get("days"),
+                    today=ref_date,
+                )
+                if isinstance(resolved, Clarification):
+                    return self._clarify(resolved.question)
 
                 resp = self.client.submit_leave_request(
                     caller_employee_id=caller_id,
                     target_employee_id=caller_id,
                     leave_type=leave_type,
-                    start_date=start_date,
-                    end_date=end_date,
-                    days=days,
+                    start_date=resolved.start_date,
+                    end_date=resolved.end_date,
+                    days=resolved.days,
                     reference_date=ref_date
                 )
                 return {
@@ -172,9 +178,9 @@ class WorkWeekAutonomousSpecialist:
                     "request_id": resp.request_id,
                     "message": resp.message,
                     "remaining_balance": resp.remaining_balance,
-                    "start_date": start_date.isoformat(),
-                    "end_date": end_date.isoformat(),
-                    "days": days,
+                    "start_date": resolved.start_date.isoformat(),
+                    "end_date": resolved.end_date.isoformat(),
+                    "days": resolved.days,
                     "leave_type": leave_type
                 }
 
@@ -231,20 +237,25 @@ class WorkWeekAutonomousSpecialist:
             return {"status": "ERROR", "message": str(e)}
 
     @staticmethod
-    def _parse_date(value: Any) -> datetime.date | None:
-        """An ISO date, or `None` when the model supplied something unusable.
+    def _clarify(question: str) -> dict[str, Any]:
+        """Stop and ask, having written nothing.
 
-        The model populates these arguments, so a malformed value is an expected
-        input rather than an exceptional one - hence a `None` return instead of a
-        raise the caller would have to wrap.
+        The alternative this replaces is guessing a parameter and submitting, and
+        leave is a write to the system of record: an employee who is told their
+        request was submitted stops thinking about it. Being asked one more
+        question costs a turn. Being booked for the wrong dates costs a day off
+        that has to be discovered and unwound.
         """
-        if not value:
-            return None
-        try:
-            return datetime.date.fromisoformat(str(value))
-        except (TypeError, ValueError):
-            logger.warning("[WorkWeekAutonomous] Unparseable date %r; falling back to a derived one", value)
-            return None
+        logger.info("[WorkWeekAutonomous] Leave request underspecified; asking: %s", question)
+        return {"status": "NEEDS_CLARIFICATION", "message": question}
+
+    _parse_date = staticmethod(parse_leave_date)
+    """An ISO date, or `None` when the model supplied something unusable.
+
+    Kept as a name on the specialist because callers and tests reach for it here;
+    the implementation lives in `src.core.leave_request` alongside the rest of
+    the argument handling it belongs to.
+    """
 
     def plan_and_execute(
         self,
@@ -410,17 +421,40 @@ class WorkWeekAutonomousSpecialist:
             }
 
         elif tool_name == "request_time_off":
-            if tool_res.get("status") == "SUCCESS":
-                req_id = tool_res.get("request_id", "WW-LV-NEW")
-                rem = tool_res.get("remaining_balance", 0.0)
-                days_val = tool_res.get("days", args.get("days", 1.0))
+            status = tool_res.get("status")
+            if status == "NEEDS_CLARIFICATION":
+                # Distinct from a failure: nothing was attempted, so there is
+                # nothing to retry or unwind - we just do not know enough yet.
+                return {
+                    "response_text": tool_res.get("message", "Could you tell me the dates you need?"),
+                    "action_performed": "CLARIFY_LEAVE",
+                    "tool_called": "request_time_off",
+                    "tool_result": tool_res,
+                    "transaction_reference": None
+                }
+            if status == "SUCCESS":
+                req_id = tool_res.get("request_id")
+                rem = tool_res.get("remaining_balance")
+                days_val = tool_res.get("days")
                 s_date = tool_res.get("start_date")
                 e_date = tool_res.get("end_date")
+                leave_word = "sick leave" if tool_res.get("leave_type") == "Sick" else "vacation"
+
                 text = (
-                    f"Your vacation request for {days_val} days from {s_date} to {e_date} "
-                    f"has been submitted in WorkWeek. Transaction Reference: [{req_id}]. "
-                    f"Remaining balance: {rem} days."
+                    f"Your {leave_word} request for {days_val} days from {s_date} to {e_date} "
+                    f"has been submitted in WorkWeek."
                 )
+                # A reference we made up is worse than none: the employee quotes
+                # it to HR and no such record exists. Say so instead.
+                text += (
+                    f" Transaction Reference: [{req_id}]."
+                    if req_id
+                    else " WorkWeek did not return a reference number for it; "
+                         "you can find the request under your leave history."
+                )
+                # Likewise the balance - reported only when WorkWeek told us.
+                if rem is not None:
+                    text += f" Remaining balance: {rem} days."
             else:
                 text = f"Leave submission failed: {tool_res.get('message')}"
             return {
