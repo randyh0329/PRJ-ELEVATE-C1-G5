@@ -25,6 +25,14 @@ COPY src/ ./src/
 COPY pyproject.toml .
 
 
+# Stamp the commit into the image so the running service can report its own
+# version. Declared here, after the COPY steps, so changing it does not
+# invalidate the cached dependency layers. The image is self-describing as a
+# result: `docker run` it anywhere and /health still knows what it is.
+# Nothing above copies `.git`, so this is the only way the container can know.
+ARG GIT_COMMIT_SHA=unknown
+ENV GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
+
 # Create and switch to non-root application user for least-privilege container security
 RUN useradd -m -u 10001 appuser && \
     chown -R appuser:appuser /app

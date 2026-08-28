@@ -182,39 +182,19 @@ class MockVertexGeminiClient:
         )
 
     def select_itsm_tool(self, prompt: str, **kwargs) -> ITSMToolSelection:
-        from src.models.routing import ITSMToolSelection
-        p = prompt.lower()
-        tid_match = re.search(r'\b(INC[-_]?\d{3,8})\b', prompt, re.IGNORECASE)
+        """Delegate to the production offline router rather than restating it.
 
-        if tid_match or (any(k in p for k in ["status", "check", "details", "lookup", "how is"]) and not any(k in p for k in ["create", "open", "new", "report"])):
-            tid = tid_match.group(1).upper() if tid_match else "INC-5001"
-            return ITSMToolSelection(
-                tool_name="get_ticket_details",
-                ticket_id=tid,
-                reasoning="Mock: ticket lookup."
-            )
+        This used to be a copy of `_fallback_select_itsm_tool`. Two copies of a
+        routing table drift, and the drift is invisible in exactly the direction
+        that matters: the suite goes green against the mock's rules while the
+        rules that actually ship are wrong. That is not hypothetical - the copy
+        reproduced a bug where "any open tickets for me?" filed a new ticket.
 
-        if any(k in p for k in ["list", "show my tickets", "active tickets", "my tickets", "all tickets"]):
-            return ITSMToolSelection(
-                tool_name="list_tickets",
-                reasoning="Mock: list user tickets."
-            )
-
-        cat = "IT_GENERAL"
-        if any(k in p for k in ["vpn", "wifi", "network", "internet", "dns", "connection"]):
-            cat = "IT_NETWORK"
-        elif any(k in p for k in ["laptop", "screen", "keyboard", "battery", "hardware", "monitor", "display", "mouse"]):
-            cat = "IT_HARDWARE"
-        elif any(k in p for k in ["access", "permission", "password", "login", "github", "account", "unlock"]):
-            cat = "IT_ACCESS"
-
-        return ITSMToolSelection(
-            tool_name="create_incident",
-            category=cat,
-            short_description=prompt[:100],
-            priority="3 - Moderate",
-            reasoning="Mock: create incident ticket."
-        )
+        Delegating keeps the determinism this fixture is for (the real method
+        is pure and needs no network) and makes every ITSM turn in the suite an
+        assertion about production routing.
+        """
+        return VertexGeminiClient._fallback_select_itsm_tool(prompt)
 
 
 @pytest.fixture(autouse=True)

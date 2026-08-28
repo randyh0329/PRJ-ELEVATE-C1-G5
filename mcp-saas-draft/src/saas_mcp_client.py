@@ -30,7 +30,7 @@ class SaaSMCPClient:
         enable_mock_fallback: bool = False
     ):
         self.base_url = (base_url or os.environ.get("SAAS_MCP_BASE_URL", self.DEFAULT_BASE_URL)).rstrip("/")
-        self.mcp_token = mcp_token or os.environ.get("SAAS_MCP_CREDENTIAL", "mcp_HiIwlFkRL-DrjYgdQvO-fMHg8Q8A_YskI5J00qrP8SA")
+        self.mcp_token = mcp_token or os.environ.get("SAAS_MCP_CREDENTIAL", "mcp_local_dev_placeholder_set_SAAS_MCP_CREDENTIAL")
         self.enable_mock_fallback = enable_mock_fallback
         self._http_client: Optional[httpx.AsyncClient] = None
         self._bound_loop = None

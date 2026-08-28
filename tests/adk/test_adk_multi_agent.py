@@ -45,9 +45,10 @@ def test_adk_workweek_submit_and_cancel_leave(agent):
     resp_submit = adk_runner.process_message("Request 2 days vacation from 2026-09-03 to 2026-09-04", caller_employee_id="EMP-1001")
     assert resp_submit.intent == "UC_1_2_WORKWEEK_LEAVE"
     assert "successfully submitted" in resp_submit.response_text
+    req_id = resp_submit.transaction_reference
 
-    # 2. Cancel leave
-    resp_cancel = adk_runner.process_message("Cancel leave request 101", caller_employee_id="EMP-1001")
+    # 2. Cancel leave using the created request ID
+    resp_cancel = adk_runner.process_message(f"Cancel leave request {req_id}", caller_employee_id="EMP-1001")
     assert resp_cancel.intent == "UC_1_2_WORKWEEK_LEAVE"
     assert "cancelled" in resp_cancel.response_text.lower()
 

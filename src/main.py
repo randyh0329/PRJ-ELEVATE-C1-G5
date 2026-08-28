@@ -2,6 +2,7 @@
 import argparse
 import logging
 import sys
+from html import escape
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Header, HTTPException
@@ -21,6 +22,7 @@ from src.security.auth import (
     verify_session_token,
 )
 from src.telemetry.audit_logger import audit_logger
+from src.telemetry.build_info import UNKNOWN, BuildInfo, get_build_info
 from src.security.mcp_token_manager import mcp_token_manager
 
 logger = logging.getLogger("api.main")
@@ -76,13 +78,17 @@ class ChatResponse(BaseModel):
 @app.get("/health")
 def health_check():
     """Service health probe."""
-    return {"status": "HEALTHY", "service": "hr-agentic-solution", "version": "0.1.0"}
+    return {
+        "status": "HEALTHY",
+        "service": "hr-agentic-solution",
+        "version": "0.1.0",
+        # `version` is the hand-maintained release number and moves rarely; the
+        # commit is what tells you whether a given fix is actually deployed.
+        "build": get_build_info().as_dict(),
+    }
 
 
-@app.get("/", response_class=HTMLResponse)
-def serve_web_chat_ui():
-    """Serve responsive interactive web chat UI for testing agent features."""
-    return """<!DOCTYPE html>
+_CHAT_UI_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -106,6 +112,13 @@ def serve_web_chat_ui():
     .brand { display: flex; align-items: center; gap: 12px; }
     .brand h1 { font-size: 1.1rem; font-weight: 600; }
     .badge { background: rgba(56, 189, 248, 0.12); color: var(--primary); font-size: 0.75rem; padding: 3px 10px; border-radius: 9999px; border: 1px solid rgba(56, 189, 248, 0.25); font-weight: 600; }
+    .build-badge { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.02em; text-decoration: none; cursor: help; }
+    .build-badge:hover { background: rgba(56, 189, 248, 0.25); }
+    /* Amber, not blue: "running my uncommitted edits" is the state a developer
+       most needs to notice, and it must not read as a clean deploy. */
+    .build-badge-dirty { background: rgba(251, 191, 36, 0.15); color: #fbbf24; border-color: rgba(251, 191, 36, 0.35); }
+    .build-badge-dirty:hover { background: rgba(251, 191, 36, 0.28); }
+    .build-badge-unknown { background: rgba(148, 163, 184, 0.12); color: var(--muted); border-color: rgba(148, 163, 184, 0.3); }
     .auth-section { display: flex; align-items: center; gap: 12px; font-size: 0.85rem; }
     .user-chip { display: flex; align-items: center; gap: 8px; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 20px; padding: 5px 14px; font-size: 0.82rem; }
     .btn-connect { background: #2563eb; color: white; border: none; border-radius: 6px; padding: 7px 16px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: background 0.15s; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.25); }
@@ -176,6 +189,7 @@ def serve_web_chat_ui():
     <div class="brand">
       <h1>🚀 HR Agentic Solution</h1>
       <span class="badge">Google Cloud MVP 1</span>
+      __BUILD_BADGE__
     </div>
     <div class="auth-section" id="authSection">
       <!-- Unauthenticated View -->
@@ -654,6 +668,44 @@ def serve_web_chat_ui():
   </script>
 </body>
 </html>"""
+
+
+def _build_badge_html(build: BuildInfo) -> str:
+    """The version chip in the header: `⑂ 1a2b3c4`, linked to the commit.
+
+    A dirty tree gets a different colour, because "running my edits" and
+    "running what is on the branch" are the two answers a developer is trying
+    to tell apart and they should not look alike. An unresolved version is a
+    plain span - an `<a>` with an empty href reloads the page, which is a worse
+    lie than admitting the build is unknown.
+    """
+    if build.commit == UNKNOWN:
+        return (
+            '<span class="badge build-badge build-badge-unknown" '
+            'title="Build version unknown: no GIT_COMMIT_SHA, and no git repository to read.">'
+            "⑂ unknown</span>"
+        )
+
+    title = build.commit
+    classes = "badge build-badge"
+    if build.dirty:
+        title += " (tracked files differ - this process is running local edits)"
+        classes += " build-badge-dirty"
+
+    return (
+        f'<a class="{classes}" href="{escape(build.url or "", quote=True)}" '
+        f'target="_blank" rel="noopener" title="{escape(title, quote=True)}">'
+        f"⑂ {escape(build.label)}</a>"
+    )
+
+
+@app.get("/", response_class=HTMLResponse)
+def serve_web_chat_ui():
+    """Serve responsive interactive web chat UI for testing agent features."""
+    # Substituted rather than interpolated: the page is ~500 lines of CSS and
+    # JavaScript, and every `{` in it would have to be doubled to make the
+    # literal an f-string.
+    return _CHAT_UI_HTML.replace("__BUILD_BADGE__", _build_badge_html(get_build_info()))
 
 
 

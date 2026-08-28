@@ -211,7 +211,13 @@ class ADKHREnterpriseRunner:
                     response_text = f"Time-off submission rejected by WorkWeek: {res['message']}"
                 action_performed = "SUBMIT_LEAVE_REQUEST"
             elif tool_name == "cancel_leave_request":
-                req_id = int(args.get("request_id", 101))
+                req_id = args.get("request_id")
+                if not req_id or str(req_id) == "101":
+                    import re
+                    m = re.search(r'(WW-LV-[A-Z0-9]+|\b\d+\b)', sanitized_prompt)
+                    if m:
+                        req_id = m.group(1)
+                req_id = req_id or "101"
                 res = workweek_cancel_leave(caller_id=caller_employee_id, request_id=req_id)
                 response_text = res["message"]
                 action_performed = "CANCEL_LEAVE_REQUEST"
