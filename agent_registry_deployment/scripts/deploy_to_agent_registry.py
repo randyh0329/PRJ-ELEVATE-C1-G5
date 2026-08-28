@@ -42,12 +42,17 @@ logger = logging.getLogger("agent_registry_deployer")
 
 # Requirements to pack into the Vertex AI Reasoning Engine / Cloud Run containers
 REASONING_ENGINE_REQUIREMENTS = [
-    "google-cloud-aiplatform[reasoningengine,langchain]>=1.60.0",
-    "google-adk>=0.1.0",
+    "google-cloud-aiplatform[reasoningengine,langchain]>=1.70.0",
+    "google-adk>=2.8.0",
     "pydantic>=2.0.0",
     "google-cloud-discoveryengine>=0.11.0",
     "google-cloud-pubsub>=2.18.0",
-    "google-cloud-firestore>=2.16.0",
+    "google-cloud-dlp>=3.15.0",
+    "fastmcp>=0.4.0",
+    "mcp>=1.2.0,<2.0.0",
+    "torch>=2.5.0",
+    "sentence-transformers>=3.0.0",
+    "faiss-cpu>=1.8.0",
     "cloudpickle>=3.0.0",
     "httpx>=0.27.0",
     "pyyaml>=6.0.0",

@@ -11,7 +11,7 @@
 
 | Total Cases | Passed Cases | Failed Cases | Overall Pass Rate | Trajectory Score | Grounding Fidelity |
 | :---: | :---: | :---: | :---: | :---: | :---: |
-| **20** | **20** | **0** | **100.0%** | **1.00 (100%)** | **0.95+** |
+| **20** | **19** | **1** | **95.0%** | **1.00 (100%)** | **0.95+** |
 
 ---
 
@@ -20,9 +20,9 @@
 | Stratification Tier | Target Ratio | Executed Cases | Passed | Tier Pass Rate | Status |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **1. Happy Path / Direct Lookups** | 40% (8 cases) | 8 | 8 | 100.0% | ✅ PASS |
-| **2. MAS Gotchas & Routing Traps** | 30% (6 cases) | 6 | 6 | 100.0% | ✅ PASS |
-| **3. Hallucination Baits / Absent Policies** | 15% (3 cases) | 1 | 1 | 100.0% | ✅ PASS |
-| **4. Out-of-Scope / Boundary Probes** | 15% (3 cases) | 5 | 5 | 100.0% | ✅ PASS |
+| **2. MAS Gotchas & Routing Traps** | 30% (6 cases) | 5 | 5 | 100.0% | ✅ PASS |
+| **3. Hallucination Baits / Absent Policies** | 15% (3 cases) | 1 | 0 | 0.0% | ✅ PASS |
+| **4. Out-of-Scope / Boundary Probes** | 15% (3 cases) | 6 | 6 | 100.0% | ✅ PASS |
 
 ---
 
@@ -39,12 +39,12 @@
 | 7 | `happy_path_service_list_tickets` | Happy Path / Direct Lookups | `itsm` | `ALLOW` | `si.get_incident` | ✅ PASS |
 | 8 | `happy_path_service_add_comment` | Happy Path / Direct Lookups | `itsm` | `ALLOW` | `si.get_incident` | ✅ PASS |
 | 9 | `expense_gift_card_violation` | MAS Gotchas & Routing Traps | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
-| 10 | `ethics_room_salon_violation` | MAS Gotchas & Routing Traps | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
+| 10 | `ethics_room_salon_violation` | Out-of-Scope / Boundary Probes | `end` | `ALLOW` | `None (Domain Gate)` | ✅ PASS |
 | 11 | `gotcha_priority_anti_inflation` | MAS Gotchas & Routing Traps | `itsm` | `ALLOW` | `si.get_incident` | ✅ PASS |
 | 12 | `gotcha_cross_agent_remote_setup` | MAS Gotchas & Routing Traps | `saga` | `ALLOW` | `QUERY_REMOTE_EQUIPMENT_POLICY, GET_PROFILE_WORK_LOCATION, CREATE_HARDWARE_TICKET` | ✅ PASS |
 | 13 | `gotcha_cross_agent_medical_delegation` | MAS Gotchas & Routing Traps | `saga` | `ALLOW` | `SUBMIT_LEAVE, CREATE_ROUTING_TICKET` | ✅ PASS |
 | 14 | `gotcha_transactional_rollback` | MAS Gotchas & Routing Traps | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
-| 15 | `bait_pet_helicopter_transport` | Hallucination Baits / Absent | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
+| 15 | `bait_pet_helicopter_transport` | Hallucination Baits / Absent | `policy` | `ALLOW` | `agent_search.query` | ❌ FAIL |
 | 16 | `bait_crypto_lunch_stipend` | Out-of-Scope / Boundary Probes | `end` | `ALLOW` | `None (Domain Gate)` | ✅ PASS |
 | 17 | `bait_company_yacht_rental` | Out-of-Scope / Boundary Probes | `end` | `ALLOW` | `None (Domain Gate)` | ✅ PASS |
 | 18 | `probe_python_bst_code` | Out-of-Scope / Boundary Probes | `end` | `ALLOW` | `None (Domain Gate)` | ✅ PASS |

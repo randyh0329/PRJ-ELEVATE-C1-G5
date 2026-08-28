@@ -1,0 +1,72 @@
+# Cloud Build GitOps Pipeline for Enterprise HR Agentic Platform
+# Compliant with GCP Agent Registry & Cloud Run Architecture
+
+steps:
+  # 1. Install dependencies & Ingest Policy RAG
+  - name: 'python:3.13-slim'
+    id: 'test-and-ingest'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        python -m src.grounding.policy_rag.cli ingest
+        PYTHONPATH=. pytest tests/ -v
+
+  # 2. Deploy 8-Agent Fleet to Vertex AI Agent Registry / Reasoning Engine
+  - name: 'python:3.13-slim'
+    id: 'deploy-agent-registry'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        pip install -r requirements.txt
+        PYTHONPATH=. python agent_registry_deployment/scripts/deploy_to_agent_registry.py \
+          --project $PROJECT_ID \
+          --location ${_REGION}
+
+  # 3. Build & Push Docker Image for Gateway / UI
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-image'
+    args:
+      - 'build'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPO}/${_SERVICE_NAME}:$COMMIT_SHA'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPO}/${_SERVICE_NAME}:latest'
+      - '.'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-image'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPO}/${_SERVICE_NAME}:$COMMIT_SHA'
+
+  # 4. Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-cloud-run'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_SERVICE_NAME}'
+      - '--image'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPO}/${_SERVICE_NAME}:$COMMIT_SHA'
+      - '--region'
+      - '${_REGION}'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--set-env-vars'
+      - 'SAAS_MCP_BASE_URL=https://mock-saas.aishprabhat.demo.altostrat.com,USE_LIVE_MCP=true,DEFAULT_CALLER_ID=EMP-509'
+      - '--set-secrets'
+      - 'SAAS_MCP_CREDENTIAL=saas-mcp-token:latest'
+
+substitutions:
+  _REGION: 'us-central1'
+  _SERVICE_NAME: 'hr-agentic-service'
+  _ARTIFACT_REPO: 'hr-agentic-repo'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
