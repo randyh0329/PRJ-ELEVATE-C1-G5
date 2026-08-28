@@ -183,6 +183,13 @@ class WorkWeekMockService:
     def cancel_leave(self, request_id: str) -> bool:
         """Cancel leave request and restore leave balance (Saga compensation)."""
         record = self._leave_requests.get(request_id)
+        if not record:
+            # Fuzzy match by prefix or substring
+            for k, v in self._leave_requests.items():
+                if k.lower() == str(request_id).lower() or k.endswith(str(request_id)) or str(request_id) in k:
+                    record = v
+                    break
+
         if not record or record.status == "CANCELLED":
             return False
 
