@@ -1,10 +1,12 @@
 """Enterprise HR Agent Orchestrator (Reasoning Engine runtime)."""
+import concurrent.futures
 import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from src.core.agents.hcm import workweek_autonomous_specialist
+from src.core.agents.itsm import service_immediately_autonomous_specialist
 from src.core.clock import business_today
 from src.core.safety import DLPRedactor, ModelArmor, dlp_redactor, model_armor
 from src.core.saga import SagaCoordinator, saga_coordinator
@@ -66,23 +68,36 @@ class HREnterpriseAgent:
         sess_id = session_id or f"sess_{caller_employee_id}"
         today = reference_date or business_today()
 
-        # --- STAGE 1: INGRESS SAFETY & DLP SCANNING (<120ms) ---
-        redaction_res = self._dlp.redact(user_prompt)
+        # --- STAGE 1: INGRESS SAFETY & DLP SCANNING (Group G1 Concurrency, p95 <= 80ms) ---
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            future_dlp = executor.submit(self._dlp.redact, user_prompt)
+            future_armor = executor.submit(self._armor.scan_prompt, user_prompt, 150)
+
+            redaction_res = future_dlp.result()
+            armor_res = future_armor.result()
+
         sanitized_prompt = redaction_res.sanitized_text
 
-        armor_res = self._armor.scan_prompt(sanitized_prompt)
         if not armor_res.is_safe:
             self._logger.log_event(
                 caller_employee_id=caller_employee_id,
-                action_type="SAFETY_VIOLATION_BLOCKED",
+                action_type="ARMOR_INBOUND_BLOCK",
                 status="REFUSED",
-                details={"reason": armor_res.refusal_reason, "threat": armor_res.threat_category}
+                details={
+                    "reason": armor_res.refusal_reason,
+                    "threat": armor_res.threat_category,
+                    "filter_details": armor_res.filter_details,
+                }
             )
             return AgentResponse(
-                response_text=armor_res.refusal_reason or "Request refused by safety guardrails.",
+                response_text=armor_res.refusal_reason or "I am unable to process this request as it falls outside acceptable corporate usage policies.",
                 intent="SAFETY_REFUSAL",
                 is_refusal=True,
-                processing_metadata={"dlp_ms": redaction_res.processing_time_ms, "armor_ms": armor_res.processing_time_ms}
+                processing_metadata={
+                    "dlp_ms": redaction_res.processing_time_ms,
+                    "armor_in_ms": armor_res.processing_time_ms,
+                    "guardrail_verdict_in": getattr(armor_res, "verdict", "BLOCK"),
+                }
             )
 
         # --- STAGE 2: INTENT CLASSIFICATION (Gemini 3.7 Flash Supervisor Router) ---
@@ -110,7 +125,11 @@ class HREnterpriseAgent:
                 original_prompt=user_prompt
             )
         elif intent == "UC_1_3_SERVICE_IMMEDIATELY_INCIDENT":
-            response = self._handle_service_incident(caller_employee_id, sanitized_prompt)
+            response = self._handle_service_incident(
+                caller_employee_id,
+                sanitized_prompt,
+                original_prompt=user_prompt
+            )
         elif intent == "UC_1_1_POLICY_QA":
             response = self._handle_policy_qa(caller_employee_id, sanitized_prompt)
         elif intent == "OUT_OF_DOMAIN":
@@ -118,9 +137,37 @@ class HREnterpriseAgent:
         else:
             response = self._handle_general_or_fallback(caller_employee_id, sanitized_prompt)
 
-        # --- STAGE 4: SESSION STORAGE & AUDIT LOG EMISSION ---
+        # --- STAGE 4: EGRESS SAFETY SCAN (Group G2 Outbound) & RELEASE (Group G3) ---
+        outbound_armor_res = self._armor.scan_response(response.response_text, timeout_ms=150)
+        if not outbound_armor_res.is_safe:
+            self._logger.log_event(
+                caller_employee_id=caller_employee_id,
+                action_type="ARMOR_OUTBOUND_BLOCK",
+                status="REFUSED",
+                details={
+                    "reason": outbound_armor_res.refusal_reason,
+                    "threat": outbound_armor_res.threat_category,
+                    "filter_details": outbound_armor_res.filter_details,
+                }
+            )
+            response.response_text = outbound_armor_res.refusal_reason or "I could not produce a safe answer to that request. Please contact the HR helpdesk directly."
+            response.is_refusal = True
+            response.intent = "SAFETY_REFUSAL"
+            response.citations = []
+            response.action_performed = None
+
         self._sessions.add_message(sess_id, "assistant", response.response_text, response.citations)
+
+        safety_overhead = round(
+            max(redaction_res.processing_time_ms, armor_res.processing_time_ms) + outbound_armor_res.processing_time_ms,
+            3
+        )
         response.processing_metadata["dlp_ms"] = redaction_res.processing_time_ms
+        response.processing_metadata["armor_in_ms"] = armor_res.processing_time_ms
+        response.processing_metadata["armor_out_ms"] = outbound_armor_res.processing_time_ms
+        response.processing_metadata["safety_overhead_ms"] = safety_overhead
+        response.processing_metadata["guardrail_verdict_in"] = getattr(armor_res, "verdict", "ALLOW")
+        response.processing_metadata["guardrail_verdict_out"] = getattr(outbound_armor_res, "verdict", "ALLOW")
         response.processing_metadata["detected_spii"] = redaction_res.detected_types
         response.processing_metadata["router_confidence"] = routing_decision.confidence
         response.processing_metadata["router_reasoning"] = routing_decision.reasoning
@@ -247,42 +294,24 @@ class HREnterpriseAgent:
         )
 
 
-    def _handle_service_incident(self, caller_id: str, prompt: str) -> AgentResponse:
-        """UC-1.3: ServiceImmediately Support Desk Incident Management."""
-        category = "IT_NETWORK"
-        priority = "3 - Moderate"
-        desc = "VPN connection dropping intermittently"
-
-        if "vpn" in prompt.lower():
-            desc = "VPN connection dropping intermittently"
-            category = "IT_NETWORK"
-        elif "wifi" in prompt.lower():
-            desc = "Office WiFi authentication error"
-            category = "IT_NETWORK"
-        else:
-            desc = prompt[:80]
-            category = "IT_GENERAL"
-
-        try:
-            ticket = self._sn_client.create_incident_ticket(
-                caller_employee_id=caller_id,
-                category=category,
-                requested_priority=priority,
-                short_description=desc
-            )
-            msg = f"Support Incident Ticket [{ticket.ticket_id}] has been created in ServiceImmediately with Priority '{ticket.priority}'. An IT specialist will investigate."
-            return AgentResponse(
-                response_text=msg,
-                intent="UC_1_3_SERVICE_IMMEDIATELY_INCIDENT",
-                action_performed="CREATE_INCIDENT",
-                transaction_reference=ticket.ticket_id
-            )
-        except ValueError as ve:
-            return AgentResponse(
-                response_text=f"Unable to create ticket: {ve!s}",
-                intent="UC_1_3_SERVICE_IMMEDIATELY_INCIDENT",
-                action_performed="CREATE_INCIDENT_FAILED"
-            )
+    def _handle_service_incident(
+        self,
+        caller_id: str,
+        prompt: str,
+        original_prompt: str | None = None
+    ) -> AgentResponse:
+        """UC-1.3: Autonomous ServiceImmediately ITSM Tool-Calling Agent."""
+        raw_prompt = original_prompt or prompt
+        res = service_immediately_autonomous_specialist.plan_and_execute(
+            prompt=raw_prompt,
+            caller_id=caller_id
+        )
+        return AgentResponse(
+            response_text=res["response_text"],
+            intent="UC_1_3_SERVICE_IMMEDIATELY_INCIDENT",
+            action_performed=res["action_performed"],
+            transaction_reference=res.get("transaction_reference")
+        )
 
     # --- HANDLERS FOR CROSS-SYSTEM ORCHESTRATION USE CASES ---
 

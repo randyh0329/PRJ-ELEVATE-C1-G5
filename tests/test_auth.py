@@ -134,3 +134,91 @@ def test_quick_login_with_invalid_token_rejects(client):
     assert "WorkWeek Authentication Failed" in login_resp.json()["detail"]
 
 
+def test_quick_login_auto_secret_manager_lookup(client):
+    """Verify registered user can log in with only email, auto-resolving token from Secret Manager."""
+    from config.settings import get_settings
+    login_resp = client.post(
+        "/auth/quick-login",
+        json={"email": "romij@google.com"}
+    )
+    assert login_resp.status_code == 200
+    data = login_resp.json()
+    assert data["success"] is True
+    assert data["user"]["email"] == "romij@google.com"
+    assert data["user"]["mcp_token"] == get_settings().SAAS_MCP_CREDENTIAL
+    assert "token_masked" in data
+    assert data["token_masked"].startswith("mcp_")
+
+
+def test_quick_login_unregistered_user_needs_token(client):
+    """Verify unregistered user logging in without token receives needs_mcp_token prompt."""
+    login_resp = client.post(
+        "/auth/quick-login",
+        json={"email": "brandnew.employee@corp.example.com"}
+    )
+    assert login_resp.status_code == 200
+    data = login_resp.json()
+    assert data["success"] is False
+    assert data.get("needs_mcp_token") is True
+    assert "No FastMCP token found in Secret Manager" in data["detail"]
+
+
+def test_quick_login_first_time_registration_saves_token(client):
+    """Verify unregistered user supplying token gets registered in Secret Manager and can log in without token next time."""
+    new_email = "onboarded.tester@google.com"
+    test_token = "test_onboarding_token_xyz987"
+
+    # 1. First time registration with token provided
+    first_resp = client.post(
+        "/auth/quick-login",
+        json={"email": new_email, "mcp_token": test_token}
+    )
+    assert first_resp.status_code == 200
+    data1 = first_resp.json()
+    assert data1["success"] is True
+    assert data1["user"]["mcp_token"] == test_token
+
+    # 2. Subsequent login with ZERO token provided (auto-resolved from Secret Manager)
+    subsequent_resp = client.post(
+        "/auth/quick-login",
+        json={"email": new_email}
+    )
+    assert subsequent_resp.status_code == 200
+    data2 = subsequent_resp.json()
+    assert data2["success"] is True
+    assert data2["user"]["mcp_token"] == test_token
+
+
+def test_update_mcp_token_endpoint(client):
+    """Verify authenticated user can update their FastMCP token in Secret Manager."""
+    from config.settings import get_settings
+    initial_token = get_settings().SAAS_MCP_CREDENTIAL
+
+    # 1. Log in
+    login_resp = client.post(
+        "/auth/quick-login",
+        json={"email": "teammate@google.com", "mcp_token": initial_token}
+    )
+    session_token = login_resp.json()["token"]
+
+    # 2. Update token
+    new_test_token = "test_updated_mcp_token_777"
+    update_resp = client.post(
+        "/auth/update-mcp-token",
+        headers={"Authorization": f"Bearer {session_token}"},
+        json={"mcp_token": new_test_token}
+    )
+    assert update_resp.status_code == 200
+    up_data = update_resp.json()
+    assert up_data["success"] is True
+    assert up_data["user"]["mcp_token"] == new_test_token
+    assert "token_masked" in up_data
+
+    # 3. Verify session was refreshed
+    new_session_token = up_data["token"]
+    me_resp = client.get("/auth/me", headers={"Authorization": f"Bearer {new_session_token}"})
+    assert me_resp.status_code == 200
+    assert me_resp.json()["user"]["mcp_token"] == new_test_token
+
+
+

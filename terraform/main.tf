@@ -26,7 +26,8 @@ locals {
     "cloudresourcemanager.googleapis.com",
     "orgpolicy.googleapis.com",
     "logging.googleapis.com",
-    "monitoring.googleapis.com"
+    "monitoring.googleapis.com",
+    "modelarmor.googleapis.com"
   ]
 }
 
@@ -40,7 +41,6 @@ resource "google_project_service" "enabled_apis" {
 
 # -----------------------------------------------------------------------------
 # 2. Artifact Registry Docker Repository
-
 # -----------------------------------------------------------------------------
 resource "google_artifact_registry_repository" "docker_repo" {
   depends_on    = [google_project_service.enabled_apis]
@@ -69,8 +69,24 @@ resource "google_secret_manager_secret_version" "saas_mcp_token_version" {
   secret_data = var.saas_mcp_token
 }
 
+# User-level FastMCP Token Mapping (JSON Map: email -> token)
+resource "google_secret_manager_secret" "mcp_user_tokens" {
+  depends_on = [google_project_service.enabled_apis]
+  project    = var.project_id
+  secret_id  = "mcp-user-tokens"
+
+  replication {
+    auto {}
+  }
+}
+
+resource "google_secret_manager_secret_version" "mcp_user_tokens_initial" {
+  secret      = google_secret_manager_secret.mcp_user_tokens.id
+  secret_data = var.initial_mcp_user_tokens
+}
+
 # -----------------------------------------------------------------------------
-# 4. Service Account for Cloud Run Runtime (Least Privilege - SDD §7.2)
+# 4. Service Account for Cloud Run Runtime (Least Privilege - SDD §4.9 & §7.2)
 # -----------------------------------------------------------------------------
 resource "google_service_account" "cloud_run_sa" {
   depends_on   = [google_project_service.enabled_apis]
@@ -87,6 +103,22 @@ resource "google_secret_manager_secret_iam_member" "token_accessor" {
   member    = "serviceAccount:${google_service_account.cloud_run_sa.email}"
 }
 
+# Grant Cloud Run SA read & write access to user token mapping in Secret Manager
+resource "google_secret_manager_secret_iam_member" "user_tokens_accessor" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.mcp_user_tokens.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.cloud_run_sa.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "user_tokens_version_adder" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.mcp_user_tokens.secret_id
+  role      = "roles/secretmanager.secretVersionAdder"
+  member    = "serviceAccount:${google_service_account.cloud_run_sa.email}"
+}
+
+
 # Grant Cloud Run SA logging and monitoring writer roles
 resource "google_project_iam_member" "cloud_run_logging" {
   project = var.project_id
@@ -97,6 +129,13 @@ resource "google_project_iam_member" "cloud_run_logging" {
 resource "google_project_iam_member" "cloud_run_monitoring" {
   project = var.project_id
   role    = "roles/monitoring.metricWriter"
+  member  = "serviceAccount:${google_service_account.cloud_run_sa.email}"
+}
+
+# Grant Cloud Run SA Model Armor user role (§4.3, §4.9)
+resource "google_project_iam_member" "cloud_run_model_armor" {
+  project = var.project_id
+  role    = "roles/modelarmor.user"
   member  = "serviceAccount:${google_service_account.cloud_run_sa.email}"
 }
 
@@ -230,6 +269,17 @@ resource "google_cloud_run_v2_service" "hr_agentic_service" {
           }
         }
       }
+
+      env {
+        name  = "MCP_USER_TOKENS_SECRET_ID"
+        value = google_secret_manager_secret.mcp_user_tokens.secret_id
+      }
+
+      env {
+        name  = "GCP_PROJECT_ID"
+        value = var.project_id
+      }
+
 
       startup_probe {
         http_get {

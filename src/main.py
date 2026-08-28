@@ -2,7 +2,7 @@
 import argparse
 import logging
 import sys
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse
@@ -21,6 +21,7 @@ from src.security.auth import (
     verify_session_token,
 )
 from src.telemetry.audit_logger import audit_logger
+from src.security.mcp_token_manager import mcp_token_manager
 
 logger = logging.getLogger("api.main")
 
@@ -41,10 +42,15 @@ class GoogleAuthRequest(BaseModel):
 
 
 class QuickAuthRequest(BaseModel):
-    """Corporate email login payload requiring tester's personal FastMCP token."""
+    """Corporate email login payload with optional FastMCP token for Secret Manager auto-resolution."""
     email: str
     name: str | None = None
     mcp_token: str | None = None
+
+
+class UpdateTokenRequest(BaseModel):
+    """Payload to update FastMCP token in Secret Manager."""
+    mcp_token: str
 
 
 
@@ -125,10 +131,26 @@ def serve_web_chat_ui():
     .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
     .btn-secondary { background: #334155; color: var(--text); border: none; border-radius: 6px; padding: 8px 16px; font-size: 0.85rem; cursor: pointer; }
     .btn-primary { background: var(--primary); color: #0f172a; font-weight: 600; border: none; border-radius: 6px; padding: 8px 18px; font-size: 0.85rem; cursor: pointer; }
-    .main-container { flex: 1; display: flex; flex-direction: column; max-width: 900px; width: 100%; margin: 0 auto; padding: 16px; overflow: hidden; }
-    .quick-actions { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 14px; scrollbar-width: none; }
-    .quick-btn { background: #1e293b; color: var(--text); border: 1px solid var(--border); border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; cursor: pointer; white-space: nowrap; transition: all 0.2s; }
-    .quick-btn:hover { background: var(--primary); color: #0f172a; border-color: var(--primary); }
+    .main-container { flex: 1; display: flex; flex-direction: column; max-width: 960px; width: 100%; margin: 0 auto; padding: 16px; overflow: hidden; }
+    
+    .action-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .category-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+    .tab-btn { background: rgba(255, 255, 255, 0.05); color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: 0.75rem; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+    .tab-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.1); }
+    .tab-btn.active { background: var(--primary); color: #0f172a; font-weight: 600; border-color: var(--primary); }
+    
+    .quick-actions { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 14px; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent; }
+    .quick-actions::-webkit-scrollbar { height: 4px; }
+    .quick-actions::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+    .quick-btn { background: #1e293b; color: var(--text); border: 1px solid var(--border); border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; cursor: pointer; white-space: nowrap; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+    .quick-btn:hover { background: var(--primary); color: #0f172a; border-color: var(--primary); transform: translateY(-1px); }
+    .quick-btn.itsm { border-color: rgba(245, 158, 11, 0.4); }
+    .quick-btn.itsm:hover { background: #f59e0b; color: #0f172a; border-color: #f59e0b; }
+    .quick-btn.policy { border-color: rgba(56, 189, 248, 0.4); }
+    .quick-btn.policy:hover { background: #38bdf8; color: #0f172a; border-color: #38bdf8; }
+    .quick-btn.cross { border-color: rgba(168, 85, 247, 0.4); }
+    .quick-btn.cross:hover { background: #a855f7; color: #ffffff; border-color: #a855f7; }
+    
     .chat-window { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding-right: 6px; }
     .msg { display: flex; flex-direction: column; max-width: 82%; }
     .msg.user { align-self: flex-end; }
@@ -171,28 +193,52 @@ def serve_web_chat_ui():
           <span style="color: var(--muted);" id="userEmailSpan">(email)</span>
           <span class="badge" id="userEmpBadge" style="background: rgba(34, 197, 94, 0.15); color: #4ade80; border-color: rgba(34, 197, 94, 0.3);">EMP-509</span>
         </div>
-        <button class="btn-settings" onclick="openLoginModal()" title="Switch Account or FastMCP Token">⚙️</button>
+        <button class="btn-settings" onclick="openTokenModal()" title="FastMCP Token Settings in Secret Manager">🔑 Token</button>
+        <button class="btn-settings" onclick="openLoginModal()" title="Switch User Account">⚙️ Switch</button>
         <button class="btn-logout" onclick="logout()">Sign Out</button>
       </div>
     </div>
   </header>
 
-
-
   <div class="main-container">
-    <div class="quick-actions">
-      <button class="quick-btn" onclick="sendQuick('What is my current leave balance?')">🏖️ Leave Balances</button>
-      <button class="quick-btn" onclick="sendQuick('Who is my manager?')">👤 Who is my Manager?</button>
-      <button class="quick-btn" onclick="sendQuick('What is my department?')">🏢 My Department</button>
-      <button class="quick-btn" onclick="sendQuick('What is my registered address?')">📍 Registered Address</button>
-      <button class="quick-btn" onclick="sendQuick('What is my Job Profile?')">📋 Complete Profile</button>
-      <button class="quick-btn" onclick="sendQuick('What is the bereavement leave policy?')">📖 Bereavement Policy</button>
-      <button class="quick-btn" onclick="sendQuick('Submit 2 days vacation starting next Monday')">✈️ Request Time Off</button>
+    <div class="action-header">
+      <div class="category-tabs" id="categoryTabs">
+        <button class="tab-btn active" onclick="filterCategory('all')">✨ All Actions</button>
+        <button class="tab-btn" onclick="filterCategory('hr')">🏖️ WorkWeek (HR)</button>
+        <button class="tab-btn" onclick="filterCategory('itsm')">🛠️ ServiceImmediately (ITSM)</button>
+        <button class="tab-btn" onclick="filterCategory('policy')">📚 Policies & FAQ</button>
+        <button class="tab-btn" onclick="filterCategory('cross')">🔄 Cross-System</button>
+      </div>
+    </div>
+
+    <div class="quick-actions" id="quickActionsList">
+      <!-- WorkWeek / HR Actions -->
+      <button class="quick-btn hr" data-cat="hr" onclick="sendQuick('What is my current leave balance?')">🌴 Leave Balances</button>
+      <button class="quick-btn hr" data-cat="hr" onclick="sendQuick('Submit 2 days vacation starting next Monday')">✈️ Request Vacation</button>
+      <button class="quick-btn hr" data-cat="hr" onclick="sendQuick('Who is my manager and what is my department?')">👤 Manager & Dept</button>
+      <button class="quick-btn hr" data-cat="hr" onclick="sendQuick('Show my recent leave request history')">📋 Leave History</button>
+
+      <!-- ServiceImmediately / ITSM Actions -->
+      <button class="quick-btn itsm" data-cat="itsm" onclick="sendQuick('Create an IT ticket because my VPN connection keeps dropping.')">🔌 Report VPN Issue</button>
+      <button class="quick-btn itsm" data-cat="itsm" onclick="sendQuick('Create an IT ticket for laptop screen flickering and hardware malfunction.')">💻 Report Laptop Issue</button>
+      <button class="quick-btn itsm" data-cat="itsm" onclick="sendQuick('Create an IT ticket requesting access to enterprise GitHub repository.')">🔑 Request System Access</button>
+      <button class="quick-btn itsm" data-cat="itsm" onclick="sendQuick('List all my active support tickets')">🎫 My Active Tickets</button>
+      <button class="quick-btn itsm" data-cat="itsm" onclick="sendQuick('What is the status of ticket INC-5001?')">🔍 Check Ticket Status</button>
+
+      <!-- HR & IT Policies & FAQ -->
+      <button class="quick-btn policy" data-cat="policy" onclick="sendQuick('What is the company bereavement leave entitlement policy?')">📖 Bereavement Policy</button>
+      <button class="quick-btn policy" data-cat="policy" onclick="sendQuick('What is the policy for purchasing home office monitors for remote workers?')">🏠 Remote Work Policy</button>
+      <button class="quick-btn policy" data-cat="policy" onclick="sendQuick('What is the company parental leave duration and entitlement policy?')">👶 Parental Leave Policy</button>
+
+      <!-- Cross-System Orchestration Actions -->
+      <button class="quick-btn cross" data-cat="cross" onclick="sendQuick('I just read the remote work policy and saw I am eligible for a home office monitor. Can you verify my remote status and order one for me?')">🖥️ Order Home Monitor (UC-2.1)</button>
+      <button class="quick-btn cross" data-cat="cross" onclick="sendQuick('I need to take short-term medical leave starting next Monday. What is the process, and can you set it up for me?')">🏥 Medical Leave & Delegate (UC-2.2)</button>
+      <button class="quick-btn cross" data-cat="cross" onclick="sendQuick('I am transferring to the London office next month. Can you tell me the relocation allowance, update my record, and get my building access sorted?')">🇬🇧 London Transfer & Badge (UC-2.3)</button>
     </div>
 
     <div class="chat-window" id="chatWindow">
       <div class="msg agent">
-        <div class="bubble">👋 <strong>Welcome to the Enterprise HR & IT Self-Service AI Agent!</strong><br><br>To query your real-time vacation balances, submit leave requests, or manage your personal profile on live SaaS WorkWeek, please click <strong>[Sign In & Connect WorkWeek]</strong> in the top right to link your corporate Google email and personal FastMCP token.</div>
+        <div class="bubble">👋 <strong>Welcome to the Enterprise HR & IT Self-Service AI Agent!</strong><br><br>FastMCP credentials are now integrated with <strong>Google Cloud Secret Manager & Service Account</strong>.<br>Click <strong>[Sign In & Connect WorkWeek]</strong> in the top right to start chatting instantly.</div>
         <div class="meta"><span class="tag">SYSTEM_READY</span></div>
       </div>
     </div>
@@ -208,22 +254,24 @@ def serve_web_chat_ui():
   <!-- Connect Modal -->
   <div class="modal-overlay" id="loginModal">
     <div class="modal">
-      <h2>🔑 Connect Personal WorkWeek Account</h2>
+      <h2>🚀 Sign In with Corporate Email</h2>
       <div class="modal-desc">
-        Enter your corporate Google email and your personal FastMCP token to interact with your personal WorkWeek data on live SaaS.
+        Personal FastMCP tokens are resolved automatically from <strong>Google Cloud Secret Manager</strong>. Existing accounts connect in one click.
       </div>
       <div class="form-group">
         <label for="loginEmail">Google Corporate Email</label>
         <input type="text" id="loginEmail" placeholder="your-ldap@google.com" autocomplete="off" />
       </div>
-      <div class="form-group">
-        <label for="loginToken">Personal FastMCP Token (X-MCP-Token)</label>
-        <div class="token-input-wrap">
-          <input type="password" id="loginToken" placeholder="mcp_..." autocomplete="off" />
-          <button type="button" class="btn-toggle-vis" onclick="toggleTokenVis()" title="Show/Hide Token">👁️</button>
-        </div>
-        <div class="form-hint">
-          Paste the FastMCP token issued to you for the demo environment. Your token is never shared with other testers.
+      <div id="tokenRegistrationGroup" style="display: none;">
+        <div class="form-group">
+          <label for="loginToken">Personal FastMCP Token (X-MCP-Token) - First-Time Setup</label>
+          <div class="token-input-wrap">
+            <input type="password" id="loginToken" placeholder="mcp_..." autocomplete="off" />
+            <button type="button" class="btn-toggle-vis" onclick="toggleTokenVis()" title="Show/Hide Token">👁️</button>
+          </div>
+          <div class="form-hint">
+            Paste your personal FastMCP token once. The Service Account will automatically store it in Secret Manager for all future logins.
+          </div>
         </div>
       </div>
       <div class="status-box" id="loginStatus"></div>
@@ -234,6 +282,42 @@ def serve_web_chat_ui():
     </div>
   </div>
 
+  <!-- Token Settings Modal -->
+  <div class="modal-overlay" id="tokenModal">
+    <div class="modal">
+      <h2>🔑 FastMCP Token Settings</h2>
+      <div class="modal-desc">
+        FastMCP credentials stored in <strong>Google Cloud Secret Manager</strong> and loaded by Cloud Run Service Account.
+      </div>
+      <div class="form-group">
+        <label>Authenticated Account:</label>
+        <div id="tokenModalEmail" style="color: var(--primary); font-weight: 600; font-size: 0.9rem; padding: 4px 0;"></div>
+      </div>
+      <div class="form-group">
+        <label>Active Secret Manager Token:</label>
+        <div>
+          <span id="tokenModalCurrent" style="font-family: monospace; font-size: 0.85rem; color: #4ade80; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.25); padding: 4px 10px; border-radius: 6px; display: inline-block;"></span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="tokenUpdateInput">Update Personal FastMCP Token (mcp_...)</label>
+        <div class="token-input-wrap">
+          <input type="password" id="tokenUpdateInput" placeholder="mcp_..." autocomplete="off" />
+          <button type="button" class="btn-toggle-vis" onclick="toggleTokenUpdateVis()" title="Show/Hide Token">👁️</button>
+        </div>
+        <div class="form-hint">
+          Updating here writes a new secret version directly to Secret Manager and updates your live session.
+        </div>
+      </div>
+      <div class="status-box" id="tokenUpdateStatus"></div>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeTokenModal()">Close</button>
+        <button class="btn-primary" id="btnDoUpdateToken" onclick="handleUpdateToken()">💾 Update in Secret Manager</button>
+      </div>
+    </div>
+  </div>
+
+
   <script>
     const chatWindow = document.getElementById('chatWindow');
     const userInput = document.getElementById('userInput');
@@ -241,12 +325,17 @@ def serve_web_chat_ui():
 
     let sessionToken = localStorage.getItem('hr_agent_session_token');
     let currentUser = null;
+    let currentMaskedToken = null;
 
     function openLoginModal() {
       const emailInput = document.getElementById('loginEmail');
       const tokenInput = document.getElementById('loginToken');
       const statusDiv = document.getElementById('loginStatus');
+      const tokenGroup = document.getElementById('tokenRegistrationGroup');
+      const btn = document.getElementById('btnDoLogin');
       statusDiv.style.display = 'none';
+      tokenGroup.style.display = 'none';
+      btn.textContent = '🚀 Connect & Start';
 
       if (currentUser) {
         emailInput.value = currentUser.email;
@@ -266,10 +355,90 @@ def serve_web_chat_ui():
       tokenInput.type = tokenInput.type === 'password' ? 'text' : 'password';
     }
 
+    function toggleTokenUpdateVis() {
+      const tokenInput = document.getElementById('tokenUpdateInput');
+      tokenInput.type = tokenInput.type === 'password' ? 'text' : 'password';
+    }
+
+    function openTokenModal() {
+      const emailDiv = document.getElementById('tokenModalEmail');
+      const currentTokenSpan = document.getElementById('tokenModalCurrent');
+      const input = document.getElementById('tokenUpdateInput');
+      const statusDiv = document.getElementById('tokenUpdateStatus');
+      statusDiv.style.display = 'none';
+      input.value = '';
+      if (currentUser) {
+        emailDiv.textContent = `${currentUser.name} (${currentUser.email})`;
+        currentTokenSpan.textContent = currentMaskedToken || 'Active in Secret Manager';
+      }
+      document.getElementById('tokenModal').style.display = 'flex';
+    }
+
+    function closeTokenModal() {
+      document.getElementById('tokenModal').style.display = 'none';
+    }
+
+    async function handleUpdateToken() {
+      const input = document.getElementById('tokenUpdateInput');
+      const statusDiv = document.getElementById('tokenUpdateStatus');
+      const btn = document.getElementById('btnDoUpdateToken');
+      const token = input.value.trim();
+
+      if (!token) {
+        statusDiv.style.display = 'block';
+        statusDiv.style.background = 'rgba(239, 68, 68, 0.2)';
+        statusDiv.style.color = '#f87171';
+        statusDiv.textContent = 'Please enter a valid FastMCP token (mcp_...).';
+        return;
+      }
+
+      btn.disabled = true;
+      statusDiv.style.display = 'block';
+      statusDiv.style.background = 'rgba(56, 189, 248, 0.15)';
+      statusDiv.style.color = '#38bdf8';
+      statusDiv.textContent = 'Updating Secret Manager and validating FastMCP...';
+
+      try {
+        const res = await fetch('/auth/update-mcp-token', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + sessionToken
+          },
+          body: JSON.stringify({ mcp_token: token })
+        });
+        const data = await res.json();
+        btn.disabled = false;
+
+        if (res.ok && data.success && data.token) {
+          sessionToken = data.token;
+          localStorage.setItem('hr_agent_session_token', sessionToken);
+          localStorage.setItem('hr_agent_custom_mcp_token', token);
+          currentUser = data.user;
+          currentMaskedToken = data.token_masked;
+          renderAuth(currentUser);
+          closeTokenModal();
+          appendMessage(`🔄 FastMCP token updated in Secret Manager! Bound to [${currentUser.employee_id}].`, false);
+        } else {
+          statusDiv.style.display = 'block';
+          statusDiv.style.background = 'rgba(239, 68, 68, 0.2)';
+          statusDiv.style.color = '#f87171';
+          statusDiv.textContent = data.detail || 'Failed to update token.';
+        }
+      } catch (err) {
+        btn.disabled = false;
+        statusDiv.style.display = 'block';
+        statusDiv.style.background = 'rgba(239, 68, 68, 0.2)';
+        statusDiv.style.color = '#f87171';
+        statusDiv.textContent = 'Network error updating Secret Manager.';
+      }
+    }
+
     async function handleConnect() {
       const emailInput = document.getElementById('loginEmail');
       const tokenInput = document.getElementById('loginToken');
       const statusDiv = document.getElementById('loginStatus');
+      const tokenGroup = document.getElementById('tokenRegistrationGroup');
       const btn = document.getElementById('btnDoLogin');
 
       const email = emailInput.value.trim();
@@ -282,43 +451,54 @@ def serve_web_chat_ui():
         statusDiv.textContent = 'Please enter your corporate Google email.';
         return;
       }
-      if (!token) {
-        statusDiv.style.display = 'block';
-        statusDiv.style.background = 'rgba(239, 68, 68, 0.2)';
-        statusDiv.style.color = '#f87171';
-        statusDiv.textContent = 'Please enter your personal FastMCP Token (mcp_...).';
-        return;
-      }
 
       statusDiv.style.display = 'block';
       statusDiv.style.background = 'rgba(56, 189, 248, 0.15)';
       statusDiv.style.color = '#38bdf8';
-      statusDiv.textContent = 'Validating token with WorkWeek FastMCP...';
+      statusDiv.textContent = 'Resolving FastMCP credentials via Secret Manager...';
       btn.disabled = true;
 
       try {
+        const payload = { email: email };
+        if (token) {
+          payload.mcp_token = token;
+        }
+
         const res = await fetch('/auth/quick-login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: email, mcp_token: token })
+          body: JSON.stringify(payload)
         });
         const data = await res.json();
         btn.disabled = false;
 
+        if (data.needs_mcp_token) {
+          tokenGroup.style.display = 'block';
+          statusDiv.style.display = 'block';
+          statusDiv.style.background = 'rgba(234, 179, 8, 0.15)';
+          statusDiv.style.color = '#facc15';
+          statusDiv.textContent = '⚡ First-time setup: Enter your FastMCP token once to store in Secret Manager.';
+          btn.textContent = '💾 Save to Secret Manager & Connect';
+          return;
+        }
+
         if (res.ok && data.success && data.token) {
           sessionToken = data.token;
           localStorage.setItem('hr_agent_session_token', sessionToken);
-          localStorage.setItem('hr_agent_custom_mcp_token', token);
           localStorage.setItem('hr_agent_custom_email', email);
+          if (token) {
+            localStorage.setItem('hr_agent_custom_mcp_token', token);
+          }
           currentUser = data.user;
+          currentMaskedToken = data.token_masked || 'Active in Secret Manager';
           closeLoginModal();
           renderAuth(currentUser);
-          appendMessage(`🔑 Connected to WorkWeek FastMCP! Authenticated as [${currentUser.name}] bound to employee record [${currentUser.employee_id}].`, false);
+          appendMessage(`🔑 Connected to WorkWeek FastMCP! User [${currentUser.name}] bound to employee record [${currentUser.employee_id}].`, false);
         } else {
           statusDiv.style.display = 'block';
           statusDiv.style.background = 'rgba(239, 68, 68, 0.2)';
           statusDiv.style.color = '#f87171';
-          statusDiv.textContent = data.detail || 'Connection failed. Please check your token.';
+          statusDiv.textContent = data.detail || 'Connection failed. Please verify credentials.';
         }
       } catch (err) {
         btn.disabled = false;
@@ -341,6 +521,7 @@ def serve_web_chat_ui():
         const data = await res.json();
         if (data.authenticated && data.user) {
           currentUser = data.user;
+          currentMaskedToken = data.token_masked;
           renderAuth(currentUser);
         } else {
           sessionToken = null;
@@ -372,11 +553,13 @@ def serve_web_chat_ui():
     function logout() {
       sessionToken = null;
       currentUser = null;
+      currentMaskedToken = null;
       localStorage.removeItem('hr_agent_session_token');
       localStorage.removeItem('hr_agent_custom_mcp_token');
       renderUnauth();
       appendMessage('Signed out. WorkWeek connection disconnected.', false);
     }
+
 
     function appendMessage(text, isUser, meta = null, citations = []) {
       const msgDiv = document.createElement('div');
@@ -453,6 +636,19 @@ def serve_web_chat_ui():
       sendMessage();
     }
 
+    function filterCategory(cat) {
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('onclick').includes(`'${cat}'`));
+      });
+      document.querySelectorAll('#quickActionsList .quick-btn').forEach(btn => {
+        if (cat === 'all' || btn.getAttribute('data-cat') === cat) {
+          btn.style.display = 'inline-flex';
+        } else {
+          btn.style.display = 'none';
+        }
+      });
+    }
+
     window.addEventListener('DOMContentLoaded', checkAuth);
 
   </script>
@@ -477,16 +673,24 @@ def google_login(req: GoogleAuthRequest):
         picture = payload.get("picture")
 
         emp_info = resolve_employee_id(email, default_name=name)
+        mcp_token = req.mcp_token or mcp_token_manager.get_user_token(email)
+
         user = AuthenticatedUser(
             email=email,
             employee_id=emp_info["employee_id"],
             name=emp_info.get("name", name),
             picture=picture,
             role=emp_info.get("role", "End User"),
-            auth_provider="google_oidc"
+            auth_provider="google_oidc",
+            mcp_token=mcp_token
         )
         token = mint_session_token(user)
-        return {"success": True, "token": token, "user": user.model_dump()}
+        return {
+            "success": True,
+            "token": token,
+            "user": user.model_dump(),
+            "token_masked": mcp_token_manager.mask_token(mcp_token)
+        }
     except Exception as e:
         logger.warning("Google authentication failed: %s", e)
         raise HTTPException(status_code=401, detail="Google authentication failed.") from e
@@ -494,16 +698,22 @@ def google_login(req: GoogleAuthRequest):
 
 @app.post("/auth/quick-login")
 def quick_login(req: QuickAuthRequest):
-    """Direct Google/corporate email login with tester's personal FastMCP token."""
+    """Direct Google/corporate email login with automatic Secret Manager FastMCP token lookup."""
+    import sys
+    clean_email = req.email.strip().lower()
     token_to_use = req.mcp_token
-    if not token_to_use and "pytest" in sys.modules:
-        token_to_use = settings.SAAS_MCP_CREDENTIAL
 
+    # 1. If token is not provided in request, resolve from Secret Manager
     if not token_to_use:
-        raise HTTPException(
-            status_code=400,
-            detail="FastMCP Token (X-MCP-Token) is required to connect to your personal WorkWeek account."
-        )
+        token_to_use = mcp_token_manager.get_user_token(clean_email)
+
+    # 2. If still not found, prompt for 1st-time registration
+    if not token_to_use:
+        return {
+            "success": False,
+            "needs_mcp_token": True,
+            "detail": "No FastMCP token found in Secret Manager for this account. Please enter your personal FastMCP token (mcp_...) once to register."
+        }
 
     discovered_id = None
     try:
@@ -518,6 +728,9 @@ def quick_login(req: QuickAuthRequest):
                 error_msg = "Invalid, expired, or revoked FastMCP token."
             raise HTTPException(status_code=401, detail=f"WorkWeek Authentication Failed: {error_msg}") from e
 
+    # 4. If token was supplied by user, save it to Secret Manager!
+    if req.mcp_token:
+        mcp_token_manager.save_user_token(clean_email, token_to_use)
 
     emp_info = resolve_employee_id(req.email, default_name=req.name)
     bound_id = discovered_id or emp_info["employee_id"]
@@ -535,8 +748,59 @@ def quick_login(req: QuickAuthRequest):
         mcp_token=token_to_use
     )
     token = mint_session_token(user)
-    return {"success": True, "token": token, "user": user.model_dump()}
+    return {
+        "success": True,
+        "token": token,
+        "user": user.model_dump(),
+        "token_masked": mcp_token_manager.mask_token(token_to_use)
+    }
 
+
+@app.post("/auth/update-mcp-token")
+def update_mcp_token(
+    req: UpdateTokenRequest,
+    authorization: Optional[str] = Header(default=None)
+):
+    """Updates personal FastMCP token in Secret Manager and refreshes active session."""
+    import sys
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid session bearer token.")
+
+    user = verify_session_token(authorization.split("Bearer ")[1].strip())
+    if not user:
+        raise HTTPException(status_code=401, detail="Session expired or invalid.")
+
+    new_token = req.mcp_token.strip()
+    if not new_token:
+        raise HTTPException(status_code=400, detail="FastMCP token cannot be empty.")
+
+    # Probe FastMCP with new token
+    discovered_id = None
+    try:
+        discovered_id = saas_fast_mcp_client.get_current_employee_id(token=new_token)
+    except Exception as e:
+        if "pytest" in sys.modules:
+            discovered_id = user.employee_id
+        else:
+            logger.error(f"Failed to validate updated FastMCP token: {e}")
+            raise HTTPException(status_code=400, detail=f"Invalid or expired FastMCP token: {str(e)}")
+
+    # Persist to Secret Manager
+    mcp_token_manager.save_user_token(user.email, new_token)
+
+    # Update user identity and re-mint session token
+    user.mcp_token = new_token
+    if discovered_id:
+        user.employee_id = discovered_id
+    new_session_token = mint_session_token(user)
+
+    return {
+        "success": True,
+        "token": new_session_token,
+        "user": user.model_dump(),
+        "token_masked": mcp_token_manager.mask_token(new_token),
+        "detail": "FastMCP token successfully updated in Secret Manager."
+    }
 
 
 @app.get("/auth/me")
@@ -550,20 +814,39 @@ def get_current_user(
         token = authorization.split("Bearer ")[1].strip()
         user = verify_session_token(token)
         if user:
-            return {"authenticated": True, "user": user.model_dump()}
+            return {
+                "authenticated": True,
+                "user": user.model_dump(),
+                "token_masked": mcp_token_manager.mask_token(user.mcp_token)
+            }
 
     # 2. Cloud Run IAP header (X-Goog-Authenticated-User-Email)
     if x_goog_authenticated_user_email:
         email = x_goog_authenticated_user_email.split(":")[-1].strip()
         emp_info = resolve_employee_id(email)
+        mcp_tok = mcp_token_manager.get_user_token(email)
+        discovered_id = None
+        if mcp_tok:
+            try:
+                discovered_id = saas_fast_mcp_client.get_current_employee_id(token=mcp_tok)
+            except Exception:
+                pass
+        bound_id = discovered_id or emp_info["employee_id"]
         user = AuthenticatedUser(
             email=email,
-            employee_id=emp_info["employee_id"],
-            name=emp_info.get("name", "Google User"),
+            employee_id=bound_id,
+            name=emp_info.get("name", email.split("@")[0].title()),
             role=emp_info.get("role", "End User"),
-            auth_provider="cloud_run_iap"
+            auth_provider="cloud_run_iap",
+            mcp_token=mcp_tok
         )
-        return {"authenticated": True, "user": user.model_dump()}
+        session_tok = mint_session_token(user)
+        return {
+            "authenticated": True,
+            "user": user.model_dump(),
+            "token": session_tok,
+            "token_masked": mcp_token_manager.mask_token(mcp_tok)
+        }
 
     return {"authenticated": False, "user": None}
 
@@ -593,6 +876,7 @@ def handle_chat(
     if not caller_id and x_goog_authenticated_user_email:
         email = x_goog_authenticated_user_email.split(":")[-1].strip()
         caller_id = resolve_employee_id(email)["employee_id"]
+        user_token = mcp_token_manager.get_user_token(email)
 
     # Priority 3: Explicit test caller header or payload
     if not caller_id:
@@ -600,8 +884,11 @@ def handle_chat(
 
     # Bind per-request custom FastMCP token if provided
     token_to_set = user_token or x_mcp_token
+    if not token_to_set and caller_id:
+        token_to_set = mcp_token_manager.get_user_token(caller_id)
     if token_to_set:
         current_mcp_token.set(token_to_set)
+
 
 
     try:

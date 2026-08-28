@@ -77,7 +77,20 @@ class ServiceImmediatelyClient:
 
     def get_ticket_details(self, caller_employee_id: str, ticket_id: str) -> IncidentTicket | None:
         """Fetch incident ticket details."""
-        ticket = self._service.get_ticket(ticket_id)
+        clean_tid = ticket_id.replace("-", "").upper()
+        # 1. Check user tickets (from live FastMCP or mock)
+        for t in self.list_tickets_for_user(caller_employee_id):
+            if t.ticket_id.replace("-", "").upper() == clean_tid or t.ticket_id.upper() == ticket_id.upper():
+                self._logger.log_event(
+                    caller_employee_id=caller_employee_id,
+                    action_type="SERVICE_IMMEDIATELY_GET_TICKET",
+                    status="SUCCESS",
+                    details={"ticket_id": ticket_id}
+                )
+                return t
+
+        # 2. Check mock service registry
+        ticket = self._service.get_ticket(ticket_id) or self._service.get_ticket(clean_tid)
         self._logger.log_event(
             caller_employee_id=caller_employee_id,
             action_type="SERVICE_IMMEDIATELY_GET_TICKET",

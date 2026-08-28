@@ -177,9 +177,16 @@ def test_the_employee_id_is_discovered_from_the_supplied_mcp_token(
     assert body["user"]["auth_provider"] == "corporate_federation"
 
 
-def test_a_test_run_without_a_token_borrows_the_configured_demo_credential(
+def test_a_returning_user_is_logged_in_on_their_stored_token(
     client, monkeypatch, offline_mcp, signing_key
 ):
+    """The token comes from Secret Manager, keyed on the email being logged in.
+
+    Keyed on the *email*, which is why the lookup argument is asserted and not
+    just the outcome: a manager who resolved one shared credential for every
+    caller would let anyone log in and read anyone's records, and the response
+    body would look identical.
+    """
     seen = {}
 
     def _probe(token=None):
@@ -187,21 +194,36 @@ def test_a_test_run_without_a_token_borrows_the_configured_demo_credential(
         return "EMP-509"
 
     monkeypatch.setattr(offline_mcp, "get_current_employee_id", _probe)
+    monkeypatch.setattr(
+        main.mcp_token_manager,
+        "get_user_token",
+        lambda email: "mcp-from-secret-manager" if email == "jane@altostrat.com" else None,
+    )
 
-    body = client.post("/auth/quick-login", json={"email": "jane@altostrat.com"}).json()
+    body = client.post("/auth/quick-login", json={"email": "Jane@Altostrat.com"}).json()
 
-    assert seen["token"] == main.settings.SAAS_MCP_CREDENTIAL
+    assert seen["token"] == "mcp-from-secret-manager"
     assert body["user"]["employee_id"] == "EMP-509"
 
 
-def test_outside_a_test_run_a_login_without_a_token_is_refused(client, monkeypatch):
-    """In deployment there is no fallback credential to borrow."""
+def test_a_first_time_user_is_asked_to_register_a_token_rather_than_refused(
+    client, monkeypatch
+):
+    """Nothing in the request and nothing in Secret Manager.
+
+    This is a new joiner, not an intruder, so the endpoint answers 200 with the
+    flag the UI needs to show the one-time token field. It used to borrow a
+    configured demo credential here, which logged the caller in as whoever that
+    credential belonged to.
+    """
     monkeypatch.delitem(sys.modules, "pytest")
+    monkeypatch.setattr(main.mcp_token_manager, "get_user_token", lambda email: None)
 
-    response = client.post("/auth/quick-login", json={"email": "jane@altostrat.com"})
+    body = client.post("/auth/quick-login", json={"email": "jane@altostrat.com"}).json()
 
-    assert response.status_code == 400
-    assert "FastMCP Token" in response.json()["detail"]
+    assert body["success"] is False
+    assert body["needs_mcp_token"] is True
+    assert "token" not in body
 
 
 def test_an_unreachable_probe_under_test_still_yields_the_demo_subject(

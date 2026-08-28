@@ -359,40 +359,61 @@ def test_a_comment_on_a_ticket_with_no_comment_list_yet_starts_one():
     assert len(node._incidents["INC-5002"]["comments"]) == 1
 
 
-@pytest.mark.parametrize(
-    "question",
-    [
-        "what is the status of INC-5001",
-        "what is the status of inc-5001?",
-        "any news on (inc-5001)?",
-        "checking on 'INC-5001'.",
-    ],
-)
-async def test_a_ticket_named_in_the_question_is_the_one_looked_up(question):
-    """Punctuation has to come off first - "inc-5001?" matches no ticket, and the
-    node would answer about the real number with a stranger's placeholder record."""
-    result = await ITSMSpecialistNode().execute(
-        {"employee_id": "EMP-44210", "user_input": question}
-    )
+class RecordingSpecialist:
+    """The autonomous specialist, stubbed.
 
-    assert "**INC-5001**" in result["final_response"]
-    assert "In Progress" in result["final_response"]
+    The node holds a reference to the module-level singleton, so an unstubbed
+    `execute` reaches the live ServiceImmediately client and files a real
+    ticket per test. Which tool a question earns is settled in
+    `test_itsm_tool_selection.py`; here the node is the subject.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    def plan_and_execute(self, prompt: str, caller_id: str) -> dict:
+        self.calls.append({"prompt": prompt, "caller_id": caller_id})
+        return {"response_text": "Ticket **[INC-5001]** is In Progress.", "action_performed": "X"}
+
+
+@pytest.fixture
+def specialist(monkeypatch):
+    stub = RecordingSpecialist()
+    node = ITSMSpecialistNode()
+    monkeypatch.setattr(node, "specialist", stub)
+    return node, stub
+
+
+async def test_the_node_hands_the_question_to_the_specialist_and_returns_its_answer(
+    specialist,
+):
+    """Ticket-id extraction moved into the specialist's tool selection, so the
+    node's own job is now only to pass the question on and route the reply."""
+    node, stub = specialist
+
+    result = await node.execute({"employee_id": "EMP-44210", "user_input": "status of inc-5001?"})
+
+    assert stub.calls == [{"prompt": "status of inc-5001?", "caller_id": "EMP-44210"}]
+    assert result["final_response"] == "Ticket **[INC-5001]** is In Progress."
     assert result["next_node"] == "guardrails_out"
 
 
-async def test_a_question_naming_no_ticket_summarises_what_is_open():
-    result = await ITSMSpecialistNode().execute({"user_input": "any open tickets for me?"})
+async def test_the_itsm_node_reads_the_masked_text_in_preference_to_the_raw(specialist):
+    """Graph nodes run downstream of the guardrails, so the masked text is the
+    text: sending the raw string on would put the SPII the DLP stage removed
+    straight back into the tool-selection prompt."""
+    node, stub = specialist
 
-    assert "INC-5001" in result["final_response"]
-    assert "1 active IT incident" in result["final_response"]
+    await node.execute(
+        {"user_input": "inc-5001 for jane.doe@altostrat.com", "masked_input": "any tickets?"}
+    )
+
+    assert stub.calls[0]["prompt"] == "any tickets?"
 
 
-async def test_the_itsm_node_also_reads_the_masked_text():
-    state = {
-        "user_input": "inc-5001 for jane.doe@altostrat.com",
-        "masked_input": "any tickets?",
-    }
+async def test_a_state_with_no_employee_id_falls_back_to_the_demo_caller(specialist):
+    node, stub = specialist
 
-    result = await ITSMSpecialistNode().execute(state)
+    await node.execute({"user_input": "any tickets?"})
 
-    assert "1 active IT incident" in result["final_response"]
+    assert stub.calls[0]["caller_id"] == "EMP-44210"
