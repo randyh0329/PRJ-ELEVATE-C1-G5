@@ -4,7 +4,11 @@ import re
 import pytest
 
 from src.core.agent import HREnterpriseAgent
-from src.core.models.routing import SupervisorRoutingDecision, WorkWeekToolSelection
+from src.core.models.routing import (
+    ITSMToolSelection,
+    SupervisorRoutingDecision,
+    WorkWeekToolSelection,
+)
 from src.core.session import session_store
 from src.integrations.service_immediately.mock_service import service_immediately_mock_service
 from src.integrations.vertex.client import VertexGeminiClient
@@ -177,6 +181,41 @@ class MockVertexGeminiClient:
             reasoning="Mock: Balances query."
         )
 
+    def select_itsm_tool(self, prompt: str, **kwargs) -> ITSMToolSelection:
+        from src.models.routing import ITSMToolSelection
+        p = prompt.lower()
+        tid_match = re.search(r'\b(INC[-_]?\d{3,8})\b', prompt, re.IGNORECASE)
+
+        if tid_match or (any(k in p for k in ["status", "check", "details", "lookup", "how is"]) and not any(k in p for k in ["create", "open", "new", "report"])):
+            tid = tid_match.group(1).upper() if tid_match else "INC-5001"
+            return ITSMToolSelection(
+                tool_name="get_ticket_details",
+                ticket_id=tid,
+                reasoning="Mock: ticket lookup."
+            )
+
+        if any(k in p for k in ["list", "show my tickets", "active tickets", "my tickets", "all tickets"]):
+            return ITSMToolSelection(
+                tool_name="list_tickets",
+                reasoning="Mock: list user tickets."
+            )
+
+        cat = "IT_GENERAL"
+        if any(k in p for k in ["vpn", "wifi", "network", "internet", "dns", "connection"]):
+            cat = "IT_NETWORK"
+        elif any(k in p for k in ["laptop", "screen", "keyboard", "battery", "hardware", "monitor", "display", "mouse"]):
+            cat = "IT_HARDWARE"
+        elif any(k in p for k in ["access", "permission", "password", "login", "github", "account", "unlock"]):
+            cat = "IT_ACCESS"
+
+        return ITSMToolSelection(
+            tool_name="create_incident",
+            category=cat,
+            short_description=prompt[:100],
+            priority="3 - Moderate",
+            reasoning="Mock: create incident ticket."
+        )
+
 
 @pytest.fixture(autouse=True)
 def mock_vertex_gemini(monkeypatch):
@@ -184,6 +223,7 @@ def mock_vertex_gemini(monkeypatch):
     mock_client = MockVertexGeminiClient()
     monkeypatch.setattr(VertexGeminiClient, "route_intent", lambda self, prompt, **kwargs: mock_client.route_intent(prompt, **kwargs))
     monkeypatch.setattr(VertexGeminiClient, "select_workweek_tool", lambda self, prompt, **kwargs: mock_client.select_workweek_tool(prompt, **kwargs))
+    monkeypatch.setattr(VertexGeminiClient, "select_itsm_tool", lambda self, prompt, **kwargs: mock_client.select_itsm_tool(prompt, **kwargs))
 
 
 @pytest.fixture(autouse=True)
