@@ -12,12 +12,19 @@ SERVICE_NAME="${SERVICE_NAME:-hr-agentic-service}"
 REPO_NAME="${REPO_NAME:-hr-agentic-repo}"
 IMAGE_TAG="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${SERVICE_NAME}:latest"
 
+# The commit this deploy is cutting, reported by /health and the UI header.
+# `gcloud builds submit --tag` takes no --build-arg, so unlike the CI path this
+# arrives as a Cloud Run env var rather than baked into the image. A hand-cut
+# deploy is exactly when "which version is up?" is hardest to answer otherwise.
+GIT_COMMIT_SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+
 echo "================================================================="
 echo "🚀 Deploying HR Agentic Solution to Google Cloud Run"
 echo "Project ID:    ${PROJECT_ID}"
 echo "Region:        ${REGION}"
 echo "Service Name:  ${SERVICE_NAME}"
 echo "Target Image:  ${IMAGE_TAG}"
+echo "Commit:        ${GIT_COMMIT_SHA}"
 echo "================================================================="
 
 # 1. Run local test validation
@@ -38,7 +45,7 @@ gcloud run deploy "${SERVICE_NAME}" \
   --project "${PROJECT_ID}" \
   --platform managed \
   --allow-unauthenticated \
-  --set-env-vars "SAAS_MCP_BASE_URL=https://mock-saas.aishprabhat.demo.altostrat.com,USE_LIVE_MCP=true,DEFAULT_CALLER_ID=EMP-509" \
+  --set-env-vars "SAAS_MCP_BASE_URL=https://mock-saas.aishprabhat.demo.altostrat.com,USE_LIVE_MCP=true,DEFAULT_CALLER_ID=EMP-509,GIT_COMMIT_SHA=${GIT_COMMIT_SHA}" \
   --set-secrets "SAAS_MCP_CREDENTIAL=saas-mcp-token:latest" \
   --port 8080
 

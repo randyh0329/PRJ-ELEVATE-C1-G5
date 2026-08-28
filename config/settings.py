@@ -40,7 +40,13 @@ class Settings(BaseSettings):
 
     # SaaS FastMCP Settings (WorkWeek & ServiceImmediately)
     SAAS_MCP_BASE_URL: str = "https://mock-saas.aishprabhat.demo.altostrat.com"
-    SAAS_MCP_CREDENTIAL: str = "mcp_3DpwwQTaG6eV5SJpTA-QIV7aUqDblj-Qkn8bDkeiHWk"
+    # Placeholder only. The real token comes from Secret Manager in every
+    # deployed environment (`--set-secrets SAAS_MCP_CREDENTIAL=saas-mcp-token:latest`
+    # in .github/workflows/deploy-cloud-run.yml and scripts/deploy-cloud-run.sh);
+    # locally, export SAAS_MCP_CREDENTIAL or put it in .env, which is gitignored.
+    # Do not paste a live token here - this repository is public, and the value
+    # that used to sit on this line had to be rotated.
+    SAAS_MCP_CREDENTIAL: str = "mcp_local_dev_placeholder_set_SAAS_MCP_CREDENTIAL"
     USE_LIVE_MCP: bool = True
     GCP_PROJECT_ID: str = "pe-group5"
     MCP_USER_TOKENS_SECRET_ID: str = "mcp-user-tokens"
