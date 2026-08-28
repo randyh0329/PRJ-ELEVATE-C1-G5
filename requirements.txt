@@ -24,6 +24,5 @@ a2a-sdk[http-server]>=1.1,<2
 # Not needed when running with POLICY_RAG_EMBEDDING_PROVIDER=hash.
 sentence-transformers>=3.0
 
-# Optional:
-#   google-cloud-aiplatform   -> embedding.provider: vertex
-#   google-genai              -> POLICY_RAG_COMPOSER=gemini
+# Google GenAI SDK (unified standard)
+google-genai>=1.0.0

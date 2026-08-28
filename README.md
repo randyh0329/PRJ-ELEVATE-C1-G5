@@ -43,7 +43,8 @@ Production-grade, multi-agent AI architecture implementing cross-system enterpri
 │   │   ├── __init__.py
 │   │   ├── token_minter.py                 # Two-Layer Composite Token Minter (IAM signJwt Layer 2)
 │   │   ├── dlp.py                          # Cloud DLP SPII/PII de-identification & re-identification
-│   │   └── model_armor.py                  # Vertex AI Model Armor prompt injection & jailbreak filter
+│   │   ├── model_armor.py                  # Dual-Engine Model Armor prompt injection & jailbreak filter
+│   │   └── mcp_token_manager.py            # FastMCP token resolution via Secret Manager (mcp-user-tokens)
 │   ├── guardrails/                         # Business rules & operational constraints
 │   │   ├── __init__.py
 │   │   └── operation_guardrails.py         # 30-min deduplication, positive leave days, temporal checks
@@ -85,14 +86,24 @@ Production-grade, multi-agent AI architecture implementing cross-system enterpri
 │   ├── run_policy_rag_eval.py              # Policy RAG recall/MRR, refusal & guard harness
 │   └── golden/
 │       ├── golden_mas_eval.evalset.json    # 20-case 4-tier stratified ADK evaluation dataset
+│       ├── redteam_model_armor.json        # 100-vector red-team safety evaluation dataset (SM-02)
 │       ├── policy_rag_golden.json          # 45 policy questions with expected disposition
 │       └── v1.jsonl                        # Versioned JSONL golden benchmark cases
-├── tests/                                  # Pytest suite: 1,053 cases, 100% statement & branch coverage
+├── scripts/                                # Automation & deployment scripts
+│   ├── deploy-cloud-run.sh                 # Multi-region Cloud Run container deployment
+│   ├── eval_retrieval.py                   # Policy retrieval benchmark script
+│   └── setup_model_armor_templates.py      # GCP Model Armor ingress/egress template automation
+├── tests/                                  # Pytest suite: 1,192 unit/integration cases (100% pass)
 │   ├── __init__.py
 │   ├── conftest.py                         # Pytest test fixtures & state isolation
 │   ├── test_api_server.py                  # FastAPI REST endpoints & HTTP assertions
+│   ├── test_auth.py                        # Google OIDC & session authentication
 │   ├── test_cross_system_orchestration.py  # UC-2.1 Equipment & UC-2.3 Relocation workflows
 │   ├── test_guardrails.py                  # Deduplication, balance limits & state machine checks
+│   ├── test_itsm_tool_selection.py         # Read vs mutation intent tool selection
+│   ├── test_mcp_client.py                  # FastMCP JSON-RPC client tests
+│   ├── test_mcp_token_manager.py           # Secret Manager user token auto-resolution
+│   ├── test_model_armor.py                 # Model Armor dual-engine, circuit breaker & 100-vector red-team
 │   ├── test_policy_graph_node.py           # PolicySpecialistNode grounding gate, escalation & fallback
 │   ├── test_policy_qa.py                   # UC-1.1 Grounded Policy Q&A & zero-hallucination refusals
 │   ├── test_saas_mcp_integration.py        # Live SaaS FastMCP client integration tests
@@ -101,8 +112,9 @@ Production-grade, multi-agent AI architecture implementing cross-system enterpri
 │   ├── test_service_immediately_flow.py    # UC-1.3 IT incident creation & priority assignment
 │   ├── test_state_and_security.py          # Two-layer token minting & DLP cryptographic assertions
 │   ├── test_trajectory_harness.py          # Synthetic fault injection across UC-2.1/2.2/2.3
+│   ├── test_vertex_client.py               # Vertex AI Gemini client & token management
 │   ├── test_workweek_flow.py               # UC-1.2 Leave balance inquiry & submission
-│   └── policy_rag/                         # FAISS policy RAG suite (312 tests, hash embeddings)
+│   └── policy_rag/                         # FAISS policy RAG suite (hash embeddings)
 │       ├── conftest.py                     # Hermetic corpus, index & service fixtures
 │       ├── test_config.py                  # corpus.yaml, ACL overrides & environment overrides
 │       ├── test_loaders.py                 # OKF frontmatter & handbook section parsing
@@ -152,7 +164,12 @@ Protects enterprise data integrity during partial system outages and network fai
 * **Layer 1 (Workload Identity):** Google-signed OIDC token authenticating Cloud Run orchestrator (`Authorization: Bearer <oidc>`).
 * **Layer 2 (Subject Assertion):** RS256/asymmetric JWT minted via IAM `signJwt` carrying immutable server-side bound employee identity (`X-Subject-Assertion: <jwt>`), 120-second TTL, and JTI nonce replay defense.
 * **Cloud DLP Ingress/Egress Interceptor:** Sub-15ms real-time surrogate masking of Singapore NRIC/FIN, US SSN, phone numbers, and email addresses before LLM invocation, with trust-boundary re-identification.
-* **Vertex AI Model Armor:** Fail-closed inspection blocking prompt injection, DAN jailbreaks, and system prompt override attempts.
+* **Dual-Engine Vertex AI Model Armor Service (`src/security/model_armor.py`):**
+  * **Live GCP Model Armor Client (`LiveModelArmorClient`):** Interacts with regional REST endpoints (`https://modelarmor.{location}.rep.googleapis.com/v1/...`) via in-process ADC token resolution and pre-warmed connection pooling, evaluating `hr-ingress-template` (PI/jailbreak & RAI filters: `SEXUALLY_EXPLICIT`, `HATE_SPEECH`, `HARASSMENT`, `DANGEROUS`) and `hr-egress-template`.
+  * **Local Stand-in (`LocalModelArmorStandin`):** Sub-millisecond deterministic offline surrogate and immediate failover engine (DEP-09) covering 50+ adversarial jailbreaks, prompt injection, and credential leak patterns.
+  * **Fail-Closed Circuit Breaker (`SafetyCircuitBreaker`):** Trips if error or timeout rate exceeds 2% over a 5-minute sliding window (`ALRT-08`), failing closed to guarantee security.
+  * **100-Vector Red-Team Golden Dataset (`eval/golden/redteam_model_armor.json`):** 50 Inbound Attacks, 25 Outbound Threats, 25 Benign Controls (100% defense, 0.0% false positives).
+* **FastMCP Secret Manager Token Resolution (`src/security/mcp_token_manager.py`):** Dynamic resolution of caller employee tokens via Google Cloud Secret Manager (`mcp-user-tokens`), ensuring least-privilege tenant access.
 
 ### 2.4 FAISS Semantic Retrieval over the Handbook Corpus
 A second, working `BaseRAGPipeline` backend alongside the deferred Vertex AI
@@ -282,7 +299,7 @@ methodology.
 
 ## 5. Running Tests & Evaluation
 
-### 5.1 Run Full Pytest Suite (1,053 Unit, Integration & Trajectory Tests)
+### 5.1 Run Full Pytest Suite (1,192 Unit, Integration & Trajectory Tests)
 ```bash
 # Run all tests with verbose output
 PYTHONPATH=. pytest tests/ -v
@@ -304,41 +321,46 @@ is absent or expired.
 #### Test Suite Breakdown
 | Test Module | Coverage Area | Cases |
 | :--- | :--- | :---: |
-| [`tests/test_orchestration_graph.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_orchestration_graph.py) | Graph runtime: guardrail gate, supervisor routing, node dispatch | 44 |
-| [`tests/test_agent_orchestrator.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_agent_orchestrator.py) | The four-stage `HREnterpriseAgent` loop, every collaborator faked | 48 |
+| [`tests/test_orchestration_graph.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_orchestration_graph.py) | Graph runtime: guardrail gate, supervisor routing, node dispatch | 41 |
+| [`tests/test_agent_orchestrator.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_agent_orchestrator.py) | The four-stage `HREnterpriseAgent` loop, every collaborator faked | 47 |
 | [`tests/test_supervisor_routing.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_supervisor_routing.py) | Supervisor intent routing & domain containment | 3 |
 | [`tests/test_routing_models.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_routing_models.py) | Routing schemas and the argument consolidation they perform | 21 |
-| [`tests/test_cross_system_orchestration.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_cross_system_orchestration.py) | UC-2.1 equipment procurement & UC-2.3 relocation allowance | 3 |
-| [`tests/test_runtime_primitives.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_runtime_primitives.py) | Session, audit log and surrogate helpers every path leans on | 30 |
+| [`tests/test_cross_system_orchestration.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_cross_system_orchestration.py) | UC-2.1 equipment procurement & UC-2.3 relocation allowance | 6 |
+| [`tests/test_runtime_primitives.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_runtime_primitives.py) | Session, audit log and surrogate helpers every path leans on | 33 |
 | [`tests/test_compat_and_boilerplate.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_compat_and_boilerplate.py) | Compatibility shims & deferred-integration placeholders | 23 |
 | [`tests/test_saga_ledger_and_dispatcher.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_saga_ledger_and_dispatcher.py) | Saga ledger (§4.6) and the Cloud Tasks dispatcher (§5.2, §4.8) | 50 |
 | [`tests/test_saga_coordinator_node.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_saga_coordinator_node.py) | Graph-path saga coordinator & the §5.4 compensation matrix | 33 |
 | [`tests/test_saga_compensation.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_saga_compensation.py) | UC-2.2 medical leave happy path and backward rollback | 2 |
 | [`tests/test_trajectory_harness.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_trajectory_harness.py) | Synthetic fault injection & consequence-aware saga verification | 8 |
-| [`tests/test_hcm_specialist.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_hcm_specialist.py) | WorkWeek HCM specialist: tool execution & response formatting | 80 |
+| [`tests/test_hcm_specialist.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_hcm_specialist.py) | WorkWeek HCM specialist: tool execution & response formatting | 82 |
 | [`tests/test_workweek_client_adapter.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_workweek_client_adapter.py) | WorkWeek adapter: caller isolation, live/mock split, audit trail | 51 |
 | [`tests/test_workweek_mock_service.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_workweek_mock_service.py) | The in-memory WorkWeek backend standing in for the HCM tenant | 22 |
 | [`tests/test_workweek_flow.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_workweek_flow.py) | UC-1.2 leave balance inquiries & caller isolation | 3 |
 | [`tests/test_service_immediately_client_adapter.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_service_immediately_client_adapter.py) | ServiceImmediately adapter: the four FR-4.2 operations end to end | 50 |
 | [`tests/test_service_immediately_flow.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_service_immediately_flow.py) | UC-1.3 incident creation & deduplication | 2 |
+| [`tests/test_itsm_tool_selection.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_itsm_tool_selection.py) | Read vs mutation intent tool selection & question parsing | 42 |
 | [`tests/test_mcp_client.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_mcp_client.py) | The SaaS FastMCP client, offline | 56 |
+| [`tests/test_mcp_token_manager.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_mcp_token_manager.py) | Secret Manager dynamic FastMCP token resolution | 4 |
+| [`tests/test_model_armor.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_model_armor.py) | Model Armor dual-engine, circuit breaker & 100-vector red-team | 9 |
 | [`tests/test_saas_mcp_integration.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_saas_mcp_integration.py) | FastMCP communication via `X-MCP-Token` (skips without a token) | 3 |
 | [`tests/test_vertex_client.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_vertex_client.py) | Vertex AI Gemini client: credentials, model fallback, schema shaping | 25 |
 | [`tests/test_security_auth.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_security_auth.py) | Identity federation and the session token (§4.1) | 29 |
-| [`tests/test_auth.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_auth.py) | Google OIDC, identity federation & session authentication | 7 |
+| [`tests/test_auth.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_auth.py) | Google OIDC, identity federation & session authentication | 11 |
 | [`tests/test_api_auth_endpoints.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_api_auth_endpoints.py) | Login, session and caller-binding endpoints (§4.1) | 40 |
 | [`tests/test_api_server.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_api_server.py) | FastAPI `/health`, `/chat`, `/audit-logs` REST endpoints | 6 |
 | [`tests/test_guardrails.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_guardrails.py) | Deduplication window, balance limits, temporal ordering | 27 |
 | [`tests/test_privacy_gates.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_privacy_gates.py) | §4.10 E6 de-identification bypass & §4.11 audit allow-list | 17 |
 | [`tests/test_safety.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_safety.py) | Singapore NRIC / US SSN / phone / email DLP redaction | 5 |
-| [`tests/test_state_and_security.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_state_and_security.py) | Two-layer composite token minting, DLP masking, Model Armor | 3 |
-| [`tests/test_policy_graph_node.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_policy_graph_node.py) | `PolicySpecialistNode` grounding gate, escalation & fallback | 10 |
+| [`tests/test_state_and_security.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_state_and_security.py) | Two-layer composite token minting, DLP masking, Model Armor | 4 |
+| [`tests/test_okf_register.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_okf_register.py) | OKF curated handbook concept store & keyword search | 29 |
+| [`tests/test_policy_graph_node.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_policy_graph_node.py) | `PolicySpecialistNode` grounding gate, escalation & fallback | 11 |
 | [`tests/test_policy_qa.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_policy_qa.py) | UC-1.1 policy grounding, deep-link citations & refusals | 8 |
 | [`tests/test_eval_suite_runner.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_eval_suite_runner.py) | The ADK golden-evalset runner | 32 |
 | [`tests/policy_rag/test_config.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_config.py) | `corpus.yaml`, ACL overrides and environment overrides | 12 |
 | [`tests/policy_rag/test_loaders.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_loaders.py) | OKF frontmatter & raw-handbook section parsing | 25 |
 | [`tests/policy_rag/test_chunking.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_chunking.py) | Heading-boundary chunking, overflow split, determinism | 17 |
-| [`tests/policy_rag/test_embeddings.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_embeddings.py) | `local` / `vertex` / `hash` providers behind one interface | 20 |
+| [`tests/policy_rag/test_embeddings.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_embeddings.py) | `local` / `vertex` / `hash` providers behind one interface | 31 |
+| [`tests/policy_rag/test_language.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_language.py) | Language detection & multi-lingual query routing | 33 |
 | [`tests/policy_rag/test_index.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_index.py) | FAISS store, deterministic ids, eviction, disk round trip | 19 |
 | [`tests/policy_rag/test_ingest.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_ingest.py) | load → chunk → embed → verify → publish, and drift detection | 20 |
 | [`tests/policy_rag/test_retriever.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_retriever.py) | Score fusion, calibration, ACL / corpus / doc-type filters | 32 |
@@ -351,7 +373,7 @@ is absent or expired.
 | [`tests/policy_rag/test_a2a.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_a2a.py) | A2A card discovery, JSON-RPC round trips, header entitlements | 14 |
 | [`tests/policy_rag/test_a2a_executor.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_a2a_executor.py) | Request parsing & the entitlement trust boundary (§4.1) | 23 |
 | [`tests/policy_rag/test_a2a_client_demo.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_a2a_client_demo.py) | The reference consumer, driven against the real app | 11 |
-| **Total** | | **1,053** |
+| **Total** | | **1,192** |
 
 ---
 

@@ -2,6 +2,12 @@ README.md
 pyproject.toml
 src/__init__.py
 src/main.py
+src/adk/__init__.py
+src/adk/guardrails.py
+src/adk/session.py
+src/adk/specialists.py
+src/adk/supervisor.py
+src/adk/toolsets.py
 src/core/__init__.py
 src/core/agent.py
 src/core/clock.py
@@ -79,6 +85,7 @@ src/security/token_minter.py
 src/telemetry/__init__.py
 src/telemetry/audit_logger.py
 src/telemetry/compensation_event.py
+tests/test_adk_smoke.py
 tests/test_api_server.py
 tests/test_auth.py
 tests/test_compat_and_boilerplate.py
