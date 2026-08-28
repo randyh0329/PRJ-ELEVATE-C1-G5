@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import argparse
-from html import escape
 import logging
 import sys
+from html import escape
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException
@@ -197,13 +197,13 @@ _CHAT_UI_HTML = """<!DOCTYPE html>
     .btn-secondary { background: #334155; color: var(--text); border: none; border-radius: 6px; padding: 8px 16px; font-size: 0.85rem; cursor: pointer; }
     .btn-primary { background: var(--primary); color: #0f172a; font-weight: 600; border: none; border-radius: 6px; padding: 8px 18px; font-size: 0.85rem; cursor: pointer; }
     .main-container { flex: 1; display: flex; flex-direction: column; max-width: 960px; width: 100%; margin: 0 auto; padding: 16px; overflow: hidden; }
-    
+
     .action-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
     .category-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
     .tab-btn { background: rgba(255, 255, 255, 0.05); color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: 0.75rem; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
     .tab-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.1); }
     .tab-btn.active { background: var(--primary); color: #0f172a; font-weight: 600; border-color: var(--primary); }
-    
+
     .quick-actions { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 14px; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent; }
     .quick-actions::-webkit-scrollbar { height: 4px; }
     .quick-actions::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
@@ -215,7 +215,7 @@ _CHAT_UI_HTML = """<!DOCTYPE html>
     .quick-btn.policy:hover { background: #38bdf8; color: #0f172a; border-color: #38bdf8; }
     .quick-btn.cross { border-color: rgba(168, 85, 247, 0.4); }
     .quick-btn.cross:hover { background: #a855f7; color: #ffffff; border-color: #a855f7; }
-    
+
     .chat-window { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding-right: 6px; }
     .msg { display: flex; flex-direction: column; max-width: 82%; }
     .msg.user { align-self: flex-end; }
