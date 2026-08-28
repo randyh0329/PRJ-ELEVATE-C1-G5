@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     SAAS_MCP_BASE_URL: str = "https://mock-saas.aishprabhat.demo.altostrat.com"
     SAAS_MCP_CREDENTIAL: str = "mcp_3DpwwQTaG6eV5SJpTA-QIV7aUqDblj-Qkn8bDkeiHWk"
     USE_LIVE_MCP: bool = True
+    GCP_PROJECT_ID: str = "pe-group5"
+    MCP_USER_TOKENS_SECRET_ID: str = "mcp-user-tokens"
+    USE_SECRET_MANAGER: bool = True
 
     # Model Armor Settings (§4.3, FR-1.3, NFR-1.1, NFR-2.1, ALRT-08)
     PROJECT_ID: str = "pe-group5"

@@ -53,4 +53,12 @@ variable "invoker_user" {
   default     = "user:romij@google.com"
 }
 
+variable "initial_mcp_user_tokens" {
+  description = "Initial JSON mapping of user emails to FastMCP tokens in Secret Manager."
+  type        = string
+  sensitive   = true
+  default     = "{\"romij@google.com\": \"mcp_3DpwwQTaG6eV5SJpTA-QIV7aUqDblj-Qkn8bDkeiHWk\", \"teammate@google.com\": \"mcp_3DpwwQTaG6eV5SJpTA-QIV7aUqDblj-Qkn8bDkeiHWk\"}"
+}
+
+
 
