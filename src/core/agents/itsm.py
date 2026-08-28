@@ -97,9 +97,19 @@ class ITSMSpecialistNode:
         logger.info("[%s] Executing ITSM request for caller %s", self.AGENT_ID, employee_id)
 
         if "inc-" in query.lower():
-            # Extract ticket ID
-            words = query.split()
-            ticket_id = next((w for w in words if "inc-" in w.lower()), "INC-5001").upper()
+            # Lift the reference out of the prose. The surrounding punctuation has
+            # to come off before the lookup: "status of inc-5001?" is how people
+            # actually write it, and "INC-5001?" matches no ticket, so the node
+            # would answer about the real ticket's number with a stranger's
+            # placeholder record.
+            ticket_id = next(
+                (
+                    word.strip("?!.,;:()[]\"'")
+                    for word in query.split()
+                    if "inc-" in word.lower()
+                ),
+                "INC-5001",
+            ).upper()
             incident = self.get_incident(ticket_id)
             state["final_response"] = (
                 f"Status for **{ticket_id}**: State is **{incident.get('state')}**, "
