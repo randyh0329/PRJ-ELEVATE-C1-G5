@@ -89,6 +89,12 @@ ignore = [
 "scripts/**" = ["T20"]
 "src/grounding/policy_rag/cli.py" = ["T20"]
 "src/grounding/policy_rag/a2a_app/client_demo.py" = ["T20"]
+# The portal's translation table is Chinese, Japanese, Korean and Indonesian
+# UI copy. RUF001 flags fullwidth punctuation - `（`, `）`, `，`, `、` - as
+# "ambiguous" with its ASCII lookalike, but fullwidth is the correct form in
+# CJK typography and narrowing it would be a copy bug, not a fix. Scoped to
+# this one file so the rule keeps working everywhere it should.
+"src/ui/portal.py" = ["RUF001"]
 # Re-export shims: the wildcard and the unused names are the point.
 "app/**" = ["F401", "F403", "PLC0414"]
 "**/__init__.py" = ["F401", "PLC0414"]
