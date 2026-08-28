@@ -56,6 +56,34 @@ class TestSecurityAndIdentity(unittest.TestCase):
         self.assertIn("act", payload)
         self.assertEqual(payload["exp"] - payload["iat"], 120)  # 120s TTL
 
+    def test_token_cache_holds_only_replay_defence_metadata(self):
+        """FR-3.4 cache inspection: no employee *data* in the orchestration layer.
+
+        §4.6 permits the `employeeId` and `jti` the replay check is built on, and
+        nothing else. The risk this guards is incremental: the cache entry is the
+        natural place for a future change to stash a profile or a balance it just
+        fetched, and that would turn "every read hits WorkWeek live" into a claim
+        the design still makes and the code no longer honours. Asserting the
+        exact key set is what makes such an addition fail here rather than in a
+        privacy review.
+        """
+        self.token_minter.mint_layer2_subject_assertion(
+            target_audience="https://workweek-adapter-prod-uc.a.run.app",
+            employee_id="EMP-44210",
+            session_id="session-uuid-v4",
+            turn_id="turn-001",
+            agent_id="hcm-1.4.0",
+            model_id="gemini-3.7-flash@2026-08",
+            scopes=["ww.balances.read"],
+        )
+
+        (entry,) = self.token_minter.token_cache.values()
+        self.assertEqual(set(entry), {"employee_id", "jti", "exp"})
+
+        # The key is a digest, so the cache cannot be enumerated by employee.
+        (key,) = self.token_minter.token_cache
+        self.assertNotIn("EMP-44210", key)
+
     def test_cloud_dlp_deidentification_and_reidentification(self):
         """Tests Pre-LLM PII masking and trust boundary re-identification (§4.3, §4.4)."""
         input_text = "Please send updates to sarah.chen@elevate-corp.internal or call +15550198234 at 742 Evergreen Terrace."

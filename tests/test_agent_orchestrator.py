@@ -28,6 +28,7 @@ import pytest
 from src.core.agent import AgentResponse, HREnterpriseAgent, hr_enterprise_agent
 from src.core.safety import RedactionResult, SafetyScanResult
 from src.core.saga import SagaResult
+from src.grounding.okf_store import PolicyDocument
 from src.grounding.policy_engine import PolicyQueryResult
 from src.integrations.service_immediately.models import (
     FacilitiesTicket,
@@ -89,6 +90,36 @@ class FakeRouter:
         return self._decision
 
 
+def _fake_document(**overrides) -> PolicyDocument:
+    """A register document shaped like the real ones, with an invented rule.
+
+    The wording matters: the two saga handlers quote a bullet out of `details`
+    and read the eligible WorkWeek statuses off that same bullet, so a fake that
+    omitted the rule text would exercise the ungrounded branch rather than the
+    happy path. The figures here are deliberately not the handbook's - this
+    module fakes every collaborator, and asserting a real allowance against a
+    fake register would make the corpus tests in
+    `test_cross_system_orchestration.py` look duplicated when they are the ones
+    actually pinning it.
+    """
+    fields = {
+        "section_id": "9.9",
+        "title": "Fake Policy",
+        "category": "WORKPLACE",
+        "summary": "A fake policy.",
+        "details": (
+            "# Allowances\n"
+            "* **Home office equipment allowance:** staff with an approved 'Remote' or\n"
+            "  'Hybrid' location status may claim **US$1 allowance**.\n"
+            "* **Relocation allowance:** international transfers are **capped at US$2**.\n"
+        ),
+        "citation_title": "Fake Policy - Handbook Section 9.9",
+        "citation_url": "https://example.invalid/fake.md",
+        "path": "okf/fake.md",
+    }
+    return PolicyDocument(**{**fields, **overrides})
+
+
 class FakeGrounding:
     def __init__(self, result=None):
         self._result = result or PolicyQueryResult(
@@ -98,6 +129,7 @@ class FakeGrounding:
             confidence_score=0.91,
             source="faiss",
             decision="answer",
+            documents=[_fake_document()],
         )
         self.calls: list[dict] = []
 
@@ -713,7 +745,11 @@ def test_an_eligible_remote_employee_gets_a_hardware_request(harness):
 
     created = h.sn.calls[0]["create_hardware_request"]
     assert created["shipping_address"] == "1 Marina Bay, Singapore"
-    assert created["referenced_policy_section"] == "Sec 08.3"
+    # The section on the ITSM record comes from the document the register
+    # returned, so the ticket and the answer cite the same rule. It was the
+    # literal "Sec 08.3" until the register started reading the real corpus,
+    # which has no Section 08.3.
+    assert created["referenced_policy_section"] == "Sec 9.9"
     assert response.transaction_reference == "HW-0007"
     assert response.action_performed == "CROSS_SYSTEM_PROCUREMENT"
 
@@ -740,7 +776,14 @@ def test_procurement_stops_if_the_profile_cannot_be_read(harness):
     assert h.sn.calls == []
 
 
-def test_a_corpus_with_no_citation_falls_back_to_the_named_policy_section(harness):
+def test_a_corpus_with_no_rule_orders_nothing(harness):
+    """This used to fall back to a hard-coded "[View Policy Section 08.3](...)".
+
+    A fallback citation is worse than no citation: it names a section that does
+    not exist and a host that does not resolve, so the response looks grounded
+    and is not. With no rule there is no entitlement, and with no entitlement
+    there is nothing authorising a hardware order.
+    """
     h = harness(
         decision=_procurement(),
         grounding=FakeGrounding(
@@ -750,7 +793,9 @@ def test_a_corpus_with_no_citation_falls_back_to_the_named_policy_section(harnes
 
     response = h.send("I need a monitor")
 
-    assert "Section 08.3" in response.citations[0]
+    assert response.action_performed == "PROCUREMENT_UNGROUNDED"
+    assert response.citations == []
+    assert h.sn.calls == []
 
 
 # --- stage 3: UC-2.2 medical leave saga ---------------------------------------
@@ -823,7 +868,10 @@ def test_the_relocation_allowance_citation_is_also_pinned(harness):
     assert h.grounding.calls[0]["curated_only"] is True
 
 
-def test_relocation_falls_back_to_the_named_section_without_a_citation(harness):
+def test_relocation_without_a_grounded_cap_writes_nothing(harness):
+    """The office update and the badge ticket are both downstream of an allowance
+    the saga is supposed to quote first (SDD §3.4 Path 6). Without it the old
+    code carried on, wrote to WorkWeek, and cited an invented Section 14.1."""
     h = harness(
         decision=_relocation(),
         grounding=FakeGrounding(
@@ -831,4 +879,9 @@ def test_relocation_falls_back_to_the_named_section_without_a_citation(harness):
         ),
     )
 
-    assert "Section 14.1" in h.send("I am relocating to London").citations[0]
+    response = h.send("I am relocating to London")
+
+    assert response.action_performed == "RELOCATION_UNGROUNDED"
+    assert response.citations == []
+    assert h.ww.contact_updates == []
+    assert h.sn.calls == []

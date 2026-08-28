@@ -19,6 +19,8 @@ inverted, in the past) changes what a real employee gets booked.
 from __future__ import annotations
 
 import datetime
+import re
+import typing
 
 import pytest
 
@@ -28,13 +30,14 @@ from src.core.agents.hcm import (
     WorkWeekAutonomousSpecialist,
     workweek_autonomous_specialist,
 )
+from src.integrations.vertex.client import VertexGeminiClient
 from src.integrations.workweek.models import (
     ContactUpdateResponse,
     EmployeeProfile,
     LeaveBalances,
     LeaveSubmissionResponse,
 )
-from src.models.routing import WorkWeekToolSelection
+from src.models.routing import SupervisorRoutingDecision, WorkWeekToolSelection
 
 REF = datetime.date(2026, 3, 2)
 CALLER = "EMP-1001"
@@ -179,6 +182,59 @@ def test_no_schema_accepts_an_employee_id_argument():
     """§4.1 subject binding: the model must have no way to name a subject."""
     for schema in WORKWEEK_TOOL_SCHEMAS:
         assert "employee_id" not in schema["parameters"].get("properties", {})
+
+
+def _literal_options(model, field: str) -> set[str]:
+    """The `Literal` members of a field's annotation, through any `| None`."""
+    found: set[str] = set()
+
+    def walk(annotation) -> None:
+        if typing.get_origin(annotation) is typing.Literal:
+            found.update(typing.get_args(annotation))
+            return
+        for arg in typing.get_args(annotation):
+            walk(arg)
+
+    walk(model.model_fields[field].annotation)
+    return found
+
+
+def test_the_registry_and_both_routing_schemas_name_the_same_tools():
+    """FR-1.1 registry diff: four declarations of one tool set must agree.
+
+    `WORKWEEK_TOOL_SCHEMAS` is what the model is *offered*; the two `tool_name`
+    literals are what it is *allowed to answer*; the prompt in the Vertex client
+    is what it is *told about*. They are written out separately, so they drift
+    separately, and each direction of drift fails somewhere different: a tool
+    missing from a literal is rejected by pydantic after the model chose it, and
+    a tool missing from the registry is chosen and then has no schema to call.
+    Both surface at runtime, on a live request, which is too late.
+    """
+    registry = {schema["name"] for schema in WORKWEEK_TOOL_SCHEMAS}
+
+    # `none` is a routing outcome ("answer conversationally"), not a tool, so it
+    # is the one member the registry is expected not to have.
+    assert _literal_options(SupervisorRoutingDecision, "tool_name") == registry | {"none"}
+    assert _literal_options(WorkWeekToolSelection, "tool_name") == registry | {"none"}
+
+    described = set(re.findall(r"^- ([a-z_]+):", VertexGeminiClient.WORKWEEK_TOOL_SYSTEM_INSTRUCTION, re.MULTILINE))
+    assert described == registry | {"none"}
+
+
+def test_the_supervisor_may_only_delegate_to_a_registered_agent():
+    """The other half of FR-1.1: the agent registry, not the tool registry.
+
+    `DOMAIN_CONTAINMENT` is on the list because refusing is a destination like
+    any other - an out-of-domain prompt has to route *somewhere* nameable, or
+    the supervisor's only way to decline is to invent a target.
+    """
+    assert _literal_options(SupervisorRoutingDecision, "target_agent") == {
+        "POLICY_SPECIALIST",
+        "WORKWEEK_SPECIALIST",
+        "ITSM_SPECIALIST",
+        "SAGA_COORDINATOR",
+        "DOMAIN_CONTAINMENT",
+    }
 
 
 def test_the_module_singleton_is_wired_to_the_shared_adapter():

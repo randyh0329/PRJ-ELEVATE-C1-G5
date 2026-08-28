@@ -21,7 +21,15 @@ def test_uc_2_2_medical_leave_saga_success(agent: HREnterpriseAgent):
     assert "Medical leave booked in WorkWeek (Ref: WW-LV-" in response.response_text
     assert "ServiceImmediately ticket [INC" in response.response_text
     assert "route email access to your manager" in response.response_text
-    assert "[View Policy Section 19.2](https://hr.corp.internal/policies/19.2-medical-leave)" in response.response_text
+    # Handbook Section 19 (Sick Time & Hospitalisation Leave), cited to the file
+    # it lives in. The literal this replaced - "Section 19.2" at
+    # `hr.corp.internal` - named a subsection the handbook does not have, on a
+    # host that does not resolve, so nobody reading the answer could check it.
+    assert (
+        "https://github.com/randyh0329/PRJ-ELEVATE-C1-G5/blob/main/"
+        "okf/altostrat-sg-handbook/leave/sick-and-hospitalisation.md" in response.response_text
+    )
+    assert "Handbook Section 19" in response.response_text
 
     # Verify balance was deducted (Sick balance 12.0 - 5.0 = 7.0)
     balances = workweek_mock_service.get_balances("EMP-1001")
