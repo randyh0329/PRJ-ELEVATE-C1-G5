@@ -60,6 +60,7 @@ class HREnterpriseAgent:
         self._sn_client = sn_client or service_immediately_client
         self._saga = saga or saga_coordinator
         self._sessions = sessions or session_store
+        self._logger = logger or audit_logger
         if router is None:
             try:
                 from src.integrations.vertex.client import vertex_gemini_client
