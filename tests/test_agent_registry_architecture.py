@@ -18,8 +18,8 @@ def test_agent_card_endpoint() -> None:
     assert "policy_search" in skill_ids
 
 
-def test_legacy_mode_zero_impact() -> None:
-    """Verify that use_agent_registry=False strictly executes the legacy path."""
+def test_dev_mode_zero_impact() -> None:
+    """Verify that use_agent_registry=False strictly executes the Dev mode monolithic path."""
     resp = client.post("/chat", json={
         "employee_id": "EMP-1001",
         "message": "What is my current leave balance?",

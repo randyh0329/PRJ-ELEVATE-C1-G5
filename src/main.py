@@ -254,13 +254,13 @@ _CHAT_UI_HTML = """<!DOCTYPE html>
       <span class="badge">Google Cloud MVP 1</span>
       __BUILD_BADGE__
     </div>
-    <div class="registry-pill" title="Toggle between Legacy Architecture and live Agent Registry Architecture">
-      <span style="font-size: 0.78rem; font-weight: 600; color: var(--muted); display: flex; align-items: center; gap: 4px;">🧪 Agent Registry</span>
+    <div class="registry-pill" title="Toggle Architecture: Dev (In-Process) vs Production (Agent Registry)">
+      <span style="font-size: 0.78rem; font-weight: 600; color: var(--muted); display: flex; align-items: center; gap: 4px;">🏗️ Architecture</span>
       <label class="toggle-switch">
         <input type="checkbox" id="registryToggle" onchange="handleRegistryToggle(this.checked)">
         <span class="slider-toggle"></span>
       </label>
-      <span id="registryBadge" class="badge" style="background: rgba(148, 163, 184, 0.15); color: var(--muted); border-color: rgba(148, 163, 184, 0.3); font-size: 0.7rem;">OFF (Legacy)</span>
+      <span id="registryBadge" class="badge" style="background: rgba(148, 163, 184, 0.15); color: var(--muted); border-color: rgba(148, 163, 184, 0.3); font-size: 0.7rem;">Dev</span>
     </div>
     <div class="auth-section" id="authSection">
       <!-- Unauthenticated View -->
@@ -652,17 +652,17 @@ _CHAT_UI_HTML = """<!DOCTYPE html>
       isRegistryMode = checked;
       const badge = document.getElementById('registryBadge');
       if (checked) {
-        badge.textContent = 'ON (A2A+MCP)';
+        badge.textContent = 'Production';
         badge.style.background = 'rgba(56, 189, 248, 0.2)';
         badge.style.color = '#38bdf8';
         badge.style.borderColor = 'rgba(56, 189, 248, 0.4)';
-        appendMessage('⚡ [Agent Registry Mode Enabled]: Dynamic A2A Agent Card discovery and FastMCP tool binding active. Fail-Fast diagnostic mode is now LIVE.', false);
+        appendMessage('🚀 [Architecture: Production Mode]: Multi-service Agent Registry (A2A + FastMCP) architecture active. Fail-Fast diagnostic mode is now LIVE.', false);
       } else {
-        badge.textContent = 'OFF (Legacy)';
+        badge.textContent = 'Dev';
         badge.style.background = 'rgba(148, 163, 184, 0.15)';
         badge.style.color = 'var(--muted)';
         badge.style.borderColor = 'rgba(148, 163, 184, 0.3)';
-        appendMessage('⚪ [Agent Registry Mode Disabled]: Reverted to standard production legacy architecture.', false);
+        appendMessage('🛠️ [Architecture: Dev Mode]: Reverted to monolithic in-process development architecture.', false);
       }
     }
 
@@ -1090,7 +1090,7 @@ def handle_chat(
                      f"• **Failed Stage**: `{e.stage}`\n"
                      f"• **Target Endpoint**: `{e.endpoint}`\n"
                      f"• **Error**: {e.message}\n\n"
-                     f"*(Testing Mode: Switch the top toggle OFF to return to the stable legacy architecture)*",
+                     f"*(Testing Mode: Switch the top Architecture toggle to 'Dev' to return to the monolithic development architecture)*",
             intent="REGISTRY_FAIL_FAST",
             citations=[],
             action_performed="FAIL_FAST_REGISTRY_ERROR",
