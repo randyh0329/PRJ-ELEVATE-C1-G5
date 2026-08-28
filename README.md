@@ -87,7 +87,7 @@ Production-grade, multi-agent AI architecture implementing cross-system enterpri
 │       ├── golden_mas_eval.evalset.json    # 20-case 4-tier stratified ADK evaluation dataset
 │       ├── policy_rag_golden.json          # 45 policy questions with expected disposition
 │       └── v1.jsonl                        # Versioned JSONL golden benchmark cases
-├── tests/                                  # Comprehensive pytest test suite (162 test cases)
+├── tests/                                  # Pytest suite: 1,053 cases, 100% statement & branch coverage
 │   ├── __init__.py
 │   ├── conftest.py                         # Pytest test fixtures & state isolation
 │   ├── test_api_server.py                  # FastAPI REST endpoints & HTTP assertions
@@ -102,15 +102,24 @@ Production-grade, multi-agent AI architecture implementing cross-system enterpri
 │   ├── test_state_and_security.py          # Two-layer token minting & DLP cryptographic assertions
 │   ├── test_trajectory_harness.py          # Synthetic fault injection across UC-2.1/2.2/2.3
 │   ├── test_workweek_flow.py               # UC-1.2 Leave balance inquiry & submission
-│   └── policy_rag/                         # FAISS policy RAG suite (98 tests, hash embeddings)
+│   └── policy_rag/                         # FAISS policy RAG suite (312 tests, hash embeddings)
 │       ├── conftest.py                     # Hermetic corpus, index & service fixtures
+│       ├── test_config.py                  # corpus.yaml, ACL overrides & environment overrides
 │       ├── test_loaders.py                 # OKF frontmatter & handbook section parsing
 │       ├── test_chunking.py                # Heading boundaries, overflow split, determinism
+│       ├── test_embeddings.py              # local / vertex / hash providers behind one interface
+│       ├── test_index.py                   # FAISS store, deterministic ids, eviction, persistence
+│       ├── test_ingest.py                  # load → chunk → embed → verify → publish, and drift
 │       ├── test_retriever.py               # Fusion, calibration, ACL / corpus / doc-type filters
 │       ├── test_guards.py                  # Refuse & escalate rules and advisory notices
+│       ├── test_answer.py                  # Extractive & Gemini composition, groundedness gate
 │       ├── test_service.py                 # End-to-end retrieve → guard → compose + citations
+│       ├── test_cli.py                     # `policy-rag` ingest / search / ask / serve surface
+│       ├── test_eval_harness.py            # Recall/MRR arithmetic, CI exit codes, tuning sweep
 │       ├── test_faiss_pipeline.py          # BaseRAGPipeline adapter contract & ACL pass-through
-│       └── test_a2a.py                     # Live JSON-RPC round trips over ASGI transport
+│       ├── test_a2a.py                     # Live JSON-RPC round trips over ASGI transport
+│       ├── test_a2a_executor.py            # Request parsing & the entitlement trust boundary
+│       └── test_a2a_client_demo.py         # The reference consumer, driven against the real app
 ├── var/                                    # Build artefacts (git-ignored): FAISS index & manifest
 ├── artifacts/
 │   └── docs/
@@ -273,45 +282,76 @@ methodology.
 
 ## 5. Running Tests & Evaluation
 
-### 5.1 Run Full Pytest Suite (162 Unit, Integration & Trajectory Tests)
+### 5.1 Run Full Pytest Suite (1,053 Unit, Integration & Trajectory Tests)
 ```bash
 # Run all tests with verbose output
 PYTHONPATH=. pytest tests/ -v
 
 # Policy RAG subsystem only
 PYTHONPATH=. pytest tests/policy_rag -v
+
+# With coverage (100% statement and branch, enforced across src/, app/, eval/ and scripts/)
+PYTHONPATH=. pytest --cov
 ```
 
 The suite is hermetic: the policy RAG tests run on the deterministic `hash`
-embedding provider, so there is no model download and no network call. The two
+embedding provider, so there is no model download and no network call. The
+optional cloud and ML SDKs (`google-genai`, `sentence-transformers`, `vertexai`)
+are driven against stub modules for the same reason. The two
 `test_saas_mcp_integration.py` cases that need a live FastMCP token skip when it
 is absent or expired.
 
 #### Test Suite Breakdown
 | Test Module | Coverage Area | Cases |
 | :--- | :--- | :---: |
-| [`tests/test_api_server.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_api_server.py) | FastAPI `/health`, `/chat`, `/audit-logs` REST endpoints | 6 |
-| [`tests/test_state_and_security.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_state_and_security.py) | Two-layer composite token minting, DLP masking, Model Armor | 3 |
-| [`tests/test_trajectory_harness.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_trajectory_harness.py) | Synthetic fault injection & consequence-aware Saga verification | 7 |
-| [`tests/test_cross_system_orchestration.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_cross_system_orchestration.py) | UC-2.1 Equipment procurement & UC-2.3 Relocation allowance | 3 |
-| [`tests/test_saga_compensation.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_saga_compensation.py) | UC-2.2 Medical leave happy path and backward rollback | 2 |
-| [`tests/test_guardrails.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_guardrails.py) | Deduplication window, balance limits, temporal ordering | 4 |
-| [`tests/test_policy_qa.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_policy_qa.py) | UC-1.1 policy grounding, deep-link citations, refusals & the curated fallback | 8 |
-| [`tests/test_policy_graph_node.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_policy_graph_node.py) | `PolicySpecialistNode` grounding gate, escalation & mock-datastore fallback | 8 |
-| [`tests/test_saas_mcp_integration.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_saas_mcp_integration.py) | FastMCP communication via `X-MCP-Token` header | 3 |
-| [`tests/test_safety.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_safety.py) | Singapore NRIC / US SSN / phone / email DLP redaction | 5 |
-| [`tests/test_workweek_flow.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_workweek_flow.py) | WorkWeek balance inquiries & caller isolation security | 3 |
-| [`tests/test_service_immediately_flow.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_service_immediately_flow.py) | ServiceImmediately incident creation & deduplication | 2 |
-| [`tests/test_auth.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_auth.py) | Session authentication & caller identity binding | 7 |
+| [`tests/test_orchestration_graph.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_orchestration_graph.py) | Graph runtime: guardrail gate, supervisor routing, node dispatch | 44 |
+| [`tests/test_agent_orchestrator.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_agent_orchestrator.py) | The four-stage `HREnterpriseAgent` loop, every collaborator faked | 48 |
 | [`tests/test_supervisor_routing.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_supervisor_routing.py) | Supervisor intent routing & domain containment | 3 |
-| [`tests/policy_rag/test_guards.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_guards.py) | Policy RAG refuse/escalate rules & advisory notices | 27 |
-| [`tests/policy_rag/test_retriever.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_retriever.py) | Score fusion, calibration, ACL / corpus / doc-type filters | 17 |
-| [`tests/policy_rag/test_chunking.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_chunking.py) | Heading-boundary chunking, overflow split, determinism | 15 |
-| [`tests/policy_rag/test_a2a.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_a2a.py) | A2A card discovery, JSON-RPC round trips, header entitlements | 14 |
-| [`tests/policy_rag/test_faiss_pipeline.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_faiss_pipeline.py) | `BaseRAGPipeline` adapter contract & ACL pass-through | 10 |
+| [`tests/test_routing_models.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_routing_models.py) | Routing schemas and the argument consolidation they perform | 21 |
+| [`tests/test_cross_system_orchestration.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_cross_system_orchestration.py) | UC-2.1 equipment procurement & UC-2.3 relocation allowance | 3 |
+| [`tests/test_runtime_primitives.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_runtime_primitives.py) | Session, audit log and surrogate helpers every path leans on | 30 |
+| [`tests/test_compat_and_boilerplate.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_compat_and_boilerplate.py) | Compatibility shims & deferred-integration placeholders | 23 |
+| [`tests/test_saga_ledger_and_dispatcher.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_saga_ledger_and_dispatcher.py) | Saga ledger (§4.6) and the Cloud Tasks dispatcher (§5.2, §4.8) | 50 |
+| [`tests/test_saga_coordinator_node.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_saga_coordinator_node.py) | Graph-path saga coordinator & the §5.4 compensation matrix | 33 |
+| [`tests/test_saga_compensation.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_saga_compensation.py) | UC-2.2 medical leave happy path and backward rollback | 2 |
+| [`tests/test_trajectory_harness.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_trajectory_harness.py) | Synthetic fault injection & consequence-aware saga verification | 8 |
+| [`tests/test_hcm_specialist.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_hcm_specialist.py) | WorkWeek HCM specialist: tool execution & response formatting | 80 |
+| [`tests/test_workweek_client_adapter.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_workweek_client_adapter.py) | WorkWeek adapter: caller isolation, live/mock split, audit trail | 51 |
+| [`tests/test_workweek_mock_service.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_workweek_mock_service.py) | The in-memory WorkWeek backend standing in for the HCM tenant | 22 |
+| [`tests/test_workweek_flow.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_workweek_flow.py) | UC-1.2 leave balance inquiries & caller isolation | 3 |
+| [`tests/test_service_immediately_client_adapter.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_service_immediately_client_adapter.py) | ServiceImmediately adapter: the four FR-4.2 operations end to end | 50 |
+| [`tests/test_service_immediately_flow.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_service_immediately_flow.py) | UC-1.3 incident creation & deduplication | 2 |
+| [`tests/test_mcp_client.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_mcp_client.py) | The SaaS FastMCP client, offline | 56 |
+| [`tests/test_saas_mcp_integration.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_saas_mcp_integration.py) | FastMCP communication via `X-MCP-Token` (skips without a token) | 3 |
+| [`tests/test_vertex_client.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_vertex_client.py) | Vertex AI Gemini client: credentials, model fallback, schema shaping | 25 |
+| [`tests/test_security_auth.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_security_auth.py) | Identity federation and the session token (§4.1) | 29 |
+| [`tests/test_auth.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_auth.py) | Google OIDC, identity federation & session authentication | 7 |
+| [`tests/test_api_auth_endpoints.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_api_auth_endpoints.py) | Login, session and caller-binding endpoints (§4.1) | 40 |
+| [`tests/test_api_server.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_api_server.py) | FastAPI `/health`, `/chat`, `/audit-logs` REST endpoints | 6 |
+| [`tests/test_guardrails.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_guardrails.py) | Deduplication window, balance limits, temporal ordering | 27 |
+| [`tests/test_privacy_gates.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_privacy_gates.py) | §4.10 E6 de-identification bypass & §4.11 audit allow-list | 17 |
+| [`tests/test_safety.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_safety.py) | Singapore NRIC / US SSN / phone / email DLP redaction | 5 |
+| [`tests/test_state_and_security.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_state_and_security.py) | Two-layer composite token minting, DLP masking, Model Armor | 3 |
+| [`tests/test_policy_graph_node.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_policy_graph_node.py) | `PolicySpecialistNode` grounding gate, escalation & fallback | 10 |
+| [`tests/test_policy_qa.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_policy_qa.py) | UC-1.1 policy grounding, deep-link citations & refusals | 8 |
+| [`tests/test_eval_suite_runner.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_eval_suite_runner.py) | The ADK golden-evalset runner | 32 |
+| [`tests/policy_rag/test_config.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_config.py) | `corpus.yaml`, ACL overrides and environment overrides | 12 |
+| [`tests/policy_rag/test_loaders.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_loaders.py) | OKF frontmatter & raw-handbook section parsing | 25 |
+| [`tests/policy_rag/test_chunking.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_chunking.py) | Heading-boundary chunking, overflow split, determinism | 17 |
+| [`tests/policy_rag/test_embeddings.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_embeddings.py) | `local` / `vertex` / `hash` providers behind one interface | 20 |
+| [`tests/policy_rag/test_index.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_index.py) | FAISS store, deterministic ids, eviction, disk round trip | 19 |
+| [`tests/policy_rag/test_ingest.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_ingest.py) | load → chunk → embed → verify → publish, and drift detection | 20 |
+| [`tests/policy_rag/test_retriever.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_retriever.py) | Score fusion, calibration, ACL / corpus / doc-type filters | 32 |
+| [`tests/policy_rag/test_guards.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_guards.py) | Refuse & escalate rules and advisory notices | 30 |
+| [`tests/policy_rag/test_answer.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_answer.py) | Extractive & Gemini composition, the groundedness gate | 22 |
 | [`tests/policy_rag/test_service.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_service.py) | Retrieve → guard → compose, citation resolution, corpus stats | 8 |
-| [`tests/policy_rag/test_loaders.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_loaders.py) | OKF frontmatter & raw-handbook section parsing | 7 |
-| **Total** | | **162** |
+| [`tests/policy_rag/test_cli.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_cli.py) | The `policy-rag` ingest / search / ask / serve surface | 15 |
+| [`tests/policy_rag/test_eval_harness.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_eval_harness.py) | Recall/MRR arithmetic, CI exit codes, the tuning sweep | 29 |
+| [`tests/policy_rag/test_faiss_pipeline.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_faiss_pipeline.py) | `BaseRAGPipeline` adapter contract & ACL pass-through | 15 |
+| [`tests/policy_rag/test_a2a.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_a2a.py) | A2A card discovery, JSON-RPC round trips, header entitlements | 14 |
+| [`tests/policy_rag/test_a2a_executor.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_a2a_executor.py) | Request parsing & the entitlement trust boundary (§4.1) | 23 |
+| [`tests/policy_rag/test_a2a_client_demo.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_a2a_client_demo.py) | The reference consumer, driven against the real app | 11 |
+| **Total** | | **1,053** |
 
 ---
 

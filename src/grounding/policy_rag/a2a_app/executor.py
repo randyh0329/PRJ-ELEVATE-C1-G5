@@ -159,6 +159,24 @@ def _resolve_skill(payload: dict) -> str:
     return skill
 
 
+def _as_top_k(value: Any) -> int | None:
+    """Coerce a wire `top_k` to a positive int, or to None for "use the default".
+
+    JSON has one number type and a protobuf `Struct` follows it, so a `top_k` of
+    5 arrives here as `5.0` however the caller wrote it. Anything that is not a
+    usable count - a bool, a string, a negative - is dropped rather than guessed
+    at: retrieving the configured default is a sane outcome, retrieving zero
+    passages is not.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        return None
+    return count if count > 0 else None
+
+
 def _as_str_list(value: Any) -> list[str] | None:
     if value is None:
         return None
@@ -198,10 +216,9 @@ class PolicyRagExecutor(AgentExecutor):
             await self._emit(updater, body["answer"], body, skill)
             return
 
-        top_k = payload.get("top_k")
         common = {
             "entitlements": entitlements,
-            "top_k": int(top_k) if isinstance(top_k, (int, float, str)) and str(top_k).isdigit() else None,
+            "top_k": _as_top_k(payload.get("top_k")),
             "corpora": _as_str_list(payload.get("corpora")),
             "doc_types": _as_str_list(payload.get("doc_types")),
         }
