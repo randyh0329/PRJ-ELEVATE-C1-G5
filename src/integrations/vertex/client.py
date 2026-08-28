@@ -56,6 +56,14 @@ class VertexGeminiClient:
         "UC_1_3 incident report and 請假 is UC_1_2 leave. Extracted arguments "
         "(dates, ids, categories) are always emitted in the schema's own format, "
         "whatever language the request was written in.\n\n"
+        "COMPOUND REQUESTS: a turn may carry more than one request - 'my laptop is "
+        "broken, open a ticket, and I need sick leave 10/01-10/03' is an IT incident "
+        "AND a leave request. You still choose exactly ONE intent: the first request, "
+        "or the most urgent if one is clearly urgent. List every OTHER request in "
+        "unaddressed_requests as a short English noun phrase, so the reply can tell "
+        "the employee what it did not do. Do NOT use this field for a single request "
+        "split across clauses, and do NOT use it for the three UC_2_x cross-system "
+        "workflows, which are one intent covering both systems by design.\n\n"
         "Respond strictly with the provided JSON schema."
     )
 

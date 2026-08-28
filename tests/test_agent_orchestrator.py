@@ -951,3 +951,80 @@ def test_relocation_without_a_grounded_cap_writes_nothing(harness):
     assert response.citations == []
     assert h.ww.contact_updates == []
     assert h.sn.calls == []
+
+
+# --- stage 3b: the half of a compound turn that did not run -------------------
+#
+# `我的電腦壞了請開單 + 10/10 - 10/03 要請病假` is one turn carrying two
+# requests. The router picks one intent and one handler runs, so the leave half
+# was never actioned - and, until this stage existed, never mentioned either.
+# The employee read a confident ticket confirmation and had no way to tell that
+# the other half of their sentence had been dropped, which is the difference
+# between a limit and a defect.
+
+
+def _compound(**overrides):
+    fields = {"unaddressed_requests": ["a sick-leave request for 2026-10-01 to 2026-10-03"]}
+    fields.update(overrides)
+    return _decision(**fields)
+
+
+def test_the_request_that_was_not_actioned_is_disclosed(harness):
+    response = harness(decision=_compound()).send("laptop broken, and I need sick leave")
+
+    assert "a sick-leave request for 2026-10-01 to 2026-10-03" in response.response_text
+
+
+def test_the_answer_that_was_produced_still_comes_back_with_it(harness):
+    """A disclosure that swallowed the reply would trade one dropped half for
+    the other."""
+    h = harness(decision=_compound())
+
+    text = h.send().response_text
+
+    assert "Bereavement leave is up to 5 consecutive days." in text
+    assert text.index("Bereavement leave") < text.index("Still outstanding")
+
+
+def test_a_single_request_turn_is_untouched(harness):
+    h = harness(decision=_decision())
+
+    assert "Still outstanding" not in h.send().response_text
+
+
+def test_the_disclosure_is_scanned_on_the_way_out(harness):
+    """It is model-authored text describing what the employee asked for, so it
+    goes through the egress scan like any other model-authored text."""
+    h = harness(decision=_compound())
+
+    h.send()
+
+    assert "Still outstanding" in h.armor.scanned_responses[-1]
+
+
+def test_nothing_is_appended_to_a_refusal(harness):
+    """A refusal has already declined the whole turn. `I have handled one part of
+    that request` would be untrue, and would read as a partial success."""
+    h = harness(
+        decision=_compound(),
+        grounding=FakeGrounding(
+            PolicyQueryResult(
+                is_grounded=False,
+                answer_text="I could not find that in the handbook.",
+                confidence_score=0.1,
+                decision="refuse",
+            )
+        ),
+    )
+
+    assert "Still outstanding" not in h.send().response_text
+
+
+def test_nothing_is_appended_to_a_containment_refusal(harness):
+    """Same reasoning, and the routing is what makes it likelier: a turn mixing
+    an in-domain request with an out-of-domain one lands here."""
+    h = harness(
+        decision=_compound(intent="OUT_OF_DOMAIN", target_agent="DOMAIN_CONTAINMENT")
+    )
+
+    assert "Still outstanding" not in h.send("what's the weather, and book me leave").response_text

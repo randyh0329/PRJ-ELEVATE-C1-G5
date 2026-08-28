@@ -92,6 +92,17 @@ class AgentOrchestrationGraph:
                 "A support ticket with your de-identified conversation context has been opened."
             )
 
+        # Stage 3b: Disclose the requests this turn did not action.
+        #
+        # Exactly one node runs per turn (`test_exactly_one_node_runs_per_turn`),
+        # so the second request in a compound sentence is not served. That is a
+        # limit; not saying so is a defect. Only appended where a node actually
+        # did something - a containment refusal and an escalation have both
+        # already accounted for the whole turn.
+        note = state.get("unaddressed_note", "")
+        if note and route in {"policy", "hcm", "itsm", "saga"} and state.get("final_response"):
+            state["final_response"] = state["final_response"] + note
+
         # Stage 4: Outbound Security Guardrails
         raw_response = state.get("final_response", "")
         out_verdict, out_reason = self.model_armor.sanitize_model_response(raw_response)

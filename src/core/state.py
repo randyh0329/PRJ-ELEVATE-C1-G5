@@ -89,6 +89,9 @@ class AgentState(TypedDict):
     messages: list[dict[str, Any]]
     route: Literal["supervisor", "policy", "hcm", "itsm", "saga", "escalate", "end"]
     next_node: str | None
+    # What the chosen route will not serve. A turn carrying two requests is
+    # routed to one specialist; this is the sentence that admits it.
+    unaddressed_note: str
 
     # 3. Cross-System Saga Ledger State (§4.6, §5.4)
     saga_id: str | None

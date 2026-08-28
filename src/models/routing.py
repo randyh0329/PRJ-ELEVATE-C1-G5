@@ -47,6 +47,17 @@ class SupervisorRoutingDecision(BaseModel):
         default=None,
         description="Specific sub-action identified if applicable."
     )
+    unaddressed_requests: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Any OTHER distinct requests present in the same turn that the chosen intent "
+            "does not cover, each written as a short English noun phrase, e.g. "
+            "'a sick-leave request for 2026-10-01 to 2026-10-03'. Empty for the normal "
+            "single-request turn. One turn is routed to exactly one specialist, so a "
+            "compound request leaves the remainder unactioned; naming them here is what "
+            "lets the reply say so instead of dropping them silently."
+        )
+    )
 
     # WorkWeek tool parameters for single-turn fast-path execution
     tool_name: Literal["get_employee_balances", "get_leave_requests", "request_time_off", "cancel_leave_request", "update_personal_info", "get_employee_profile", "none"] | None = Field(
@@ -85,6 +96,29 @@ class SupervisorRoutingDecision(BaseModel):
         default=None,
         description="New phone number for update_personal_info."
     )
+
+    def unaddressed_note(self) -> str:
+        """The sentence that stops a compound request being dropped in silence.
+
+        `我的電腦壞了請開單 + 10/10 - 10/03 要請病假` is one turn carrying two
+        requests. The router picks one intent, the graph dispatches one node, and
+        the employee receives a confident ticket confirmation with nothing to
+        suggest that the leave half was ever read - so they discover the missing
+        sick leave when payroll does. Actioning both is a saga-level design
+        change; saying which one was actioned is a sentence, and it is the part
+        that stops the employee being misled in the meantime.
+
+        Appended to the answer rather than replacing it: the half that did run
+        really did run, and the receipt for it is still owed.
+        """
+        items = [str(r).strip() for r in self.unaddressed_requests if str(r).strip()]
+        if not items:
+            return ""
+        return (
+            "\n\n_I have handled one part of that request. Still outstanding: "
+            + "; ".join(items)
+            + ". Send it to me on its own and I will take care of it._"
+        )
 
     def get_tool_arguments(self) -> dict[str, Any]:
         """Consolidates extracted fields into a unified argument dictionary."""

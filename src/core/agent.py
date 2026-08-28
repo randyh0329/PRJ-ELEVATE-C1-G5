@@ -141,6 +141,17 @@ class HREnterpriseAgent:
         else:
             response = self._handle_general_or_fallback(caller_employee_id, sanitized_prompt)
 
+        # --- STAGE 3b: SAY WHAT THIS TURN DID NOT DO ---
+        # One turn is routed to one specialist, so the second request in a
+        # compound sentence is not actioned. Before this it was not mentioned
+        # either, which is the part that misleads: the employee reads a
+        # confident receipt for the half that ran and assumes both halves did.
+        # Placed before the egress scan so the note is inspected like any other
+        # outbound text, and skipped on a refusal, which has nothing to append to.
+        note = routing_decision.unaddressed_note()
+        if note and not response.is_refusal and intent != "OUT_OF_DOMAIN":
+            response.response_text = (response.response_text or "") + note
+
         # --- STAGE 4: EGRESS SAFETY SCAN (Group G2 Outbound) & RELEASE (Group G3) ---
         outbound_armor_res = self._armor.scan_response(
             response.response_text,

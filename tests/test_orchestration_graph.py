@@ -27,8 +27,9 @@ from src.models.routing import SupervisorRoutingDecision
 
 
 class FakeRouter:
-    def __init__(self, intent="UC_1_1_POLICY_QA"):
+    def __init__(self, intent="UC_1_1_POLICY_QA", unaddressed=()):
         self.intent = intent
+        self.unaddressed = list(unaddressed)
         self.prompts: list[str] = []
 
     def route_intent(self, prompt, reference_date=None):
@@ -38,6 +39,7 @@ class FakeRouter:
             target_agent="POLICY_SPECIALIST",
             reasoning="Test routing.",
             confidence=0.87,
+            unaddressed_requests=self.unaddressed,
         )
 
 
@@ -419,6 +421,70 @@ async def test_a_state_with_no_employee_id_falls_back_to_the_demo_caller(special
     await node.execute({"user_input": "any tickets?"})
 
     assert stub.calls[0]["caller_id"] == "EMP-44210"
+
+
+# --- stage 3b: what the turn did not action -----------------------------------
+#
+# `test_exactly_one_node_runs_per_turn` above is the invariant that makes this
+# necessary: a turn carrying two requests reaches one node, so the second is not
+# served. Serving both is a saga-level design change; admitting it is a
+# sentence, and it is what stops the employee reading a confident receipt for
+# half a request as a receipt for all of it.
+
+
+LEAVE = "a sick-leave request for 2026-10-01 to 2026-10-03"
+
+
+async def test_the_supervisor_carries_the_dropped_request_on_the_state(graph):
+    state = await graph.invoke(_state())
+    assert "Still outstanding" not in state["final_response"]
+
+    graph.supervisor = SupervisorAgentNode(router=FakeRouter(unaddressed=[LEAVE]))
+
+    state = await graph.invoke(_state(user_input="laptop broken, and sick leave 10/01-10/03"))
+
+    assert LEAVE in state["unaddressed_note"]
+
+
+async def test_the_reply_says_which_half_of_the_turn_ran(graph):
+    graph.supervisor = SupervisorAgentNode(router=FakeRouter(unaddressed=[LEAVE]))
+
+    state = await graph.invoke(_state())
+
+    assert state["final_response"].startswith("policy handled it.")
+    assert LEAVE in state["final_response"]
+
+
+async def test_the_disclosure_is_inspected_by_the_outbound_guard(graph):
+    """It goes out to the employee, so it is guarded like everything else that does."""
+    graph.supervisor = SupervisorAgentNode(
+        router=FakeRouter(unaddressed=["password = 'hunter2'"])
+    )
+
+    state = await graph.invoke(_state())
+
+    assert state["guardrail_verdict"] == "BLOCK"
+    assert "hunter2" not in state["final_response"]
+
+
+async def test_a_containment_refusal_is_not_told_it_handled_one_part(graph):
+    """Route `end`: no node ran, so there is no part that was handled."""
+    graph.supervisor = SupervisorAgentNode(
+        router=FakeRouter("OUT_OF_DOMAIN", unaddressed=[LEAVE])
+    )
+
+    state = await graph.invoke(_state(user_input="who won the game, and book me leave"))
+
+    assert "Still outstanding" not in state["final_response"]
+
+
+async def test_an_escalation_is_not_told_it_handled_one_part(graph):
+    """§5.7 hands the whole turn to a person, dropped requests included."""
+    graph.supervisor = SupervisorAgentNode(router=FakeRouter(unaddressed=[LEAVE]))
+
+    state = await graph.invoke(_state(user_input="I want to speak to a human"))
+
+    assert "Still outstanding" not in state["final_response"]
 
 
 # --- stage 5: answering in the language the employee wrote in -----------------
