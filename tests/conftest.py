@@ -163,11 +163,15 @@ class MockVertexGeminiClient:
                 days = 3.0
             elif "5 days" in p or "five days" in p or "5일" in p:
                 days = 5.0
+            # Start date and duration only, with the end date left for the
+            # specialist to derive. The mock used to pin end_date to 2026-09-04
+            # regardless of `days`, so "3 days" arrived as a three-day request
+            # against a two-working-day span - an extraction no real extractor
+            # would produce, and one the duration/span guardrail now refuses.
             return WorkWeekToolSelection(
                 tool_name="request_time_off",
                 arguments={
                     "start_date": "2026-09-03",
-                    "end_date": "2026-09-04",
                     "days": days,
                     "leave_type": "Sick" if "sick" in p or "병가" in p else "Vacation",
                 },

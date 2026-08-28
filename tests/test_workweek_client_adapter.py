@@ -622,7 +622,7 @@ def test_a_non_vacation_type_is_submitted_as_sick():
     )
 
     make_client(mcp=mcp).submit_leave_request(
-        LIVE, LIVE, "Medical Leave", SOON, SOON_END, 2.0, TODAY
+        LIVE, LIVE, "Medical Leave", SOON, SOON_END, 3.0, TODAY
     )
 
     assert mcp.named("request_time_off")[0]["leave_type"] == "Sick"
@@ -639,20 +639,74 @@ def test_the_request_id_is_lifted_out_of_the_response_prose():
     )
 
     assert res.request_id == "WW-LV-4012"
-    assert res.remaining_balance == 17.0
 
 
-def test_a_response_with_no_id_still_yields_a_usable_reference():
+def test_the_balance_reported_back_is_re_read_not_arithmetic():
+    """It used to answer `remaining - days`: a guess about what WorkWeek did
+    with the write, made from a read taken before it. WorkWeek is the authority
+    on the balance, so the number the employee plans their year around comes
+    from asking it again - here 15.5, which no subtraction from 20 would give."""
+    after_write = {"vacation_days_remaining": 15.5}
+    mcp = FakeMCP(
+        get_employee_balances={"vacation_days_remaining": 20.0},
+        request_time_off={"content": [{"text": "Created with ID: 4012"}]},
+    )
+    real_request_time_off = mcp.request_time_off
+
+    def request_then_debit(**kwargs):
+        result = real_request_time_off(**kwargs)
+        mcp.answers["get_employee_balances"] = after_write
+        return result
+
+    mcp.request_time_off = request_then_debit
+
+    res = make_client(mcp=mcp).submit_leave_request(
+        LIVE, LIVE, "Vacation", SOON, SOON_END, 3.0, TODAY
+    )
+
+    assert res.remaining_balance == 15.5
+
+
+def test_a_balance_re_read_that_fails_reports_no_balance_rather_than_a_guess():
+    """The write succeeded. Failing the whole submission because the follow-up
+    read broke would tell the employee to file it again; inventing a number
+    would be worse still. `None` is the only honest answer."""
+    mcp = FakeMCP(
+        get_employee_balances={"vacation_days_remaining": 20.0},
+        request_time_off={"content": [{"text": "Created with ID: 4012"}]},
+    )
+    real_request_time_off = mcp.request_time_off
+
+    def request_then_break(**kwargs):
+        result = real_request_time_off(**kwargs)
+        mcp.answers["get_employee_balances"] = ConnectionError("down")
+        return result
+
+    mcp.request_time_off = request_then_break
+
+    res = make_client(mcp=mcp).submit_leave_request(
+        LIVE, LIVE, "Vacation", SOON, SOON_END, 3.0, TODAY
+    )
+
+    assert res.success
+    assert res.request_id == "WW-LV-4012"
+    assert res.remaining_balance is None
+
+
+def test_a_response_with_no_id_carries_no_reference_rather_than_a_made_up_one():
+    """This used to fall back to the constant "WW-LV-MCP", handed to every
+    employee as their transaction reference. It matched no record in WorkWeek
+    and `cancel_leave_request` could do nothing with it."""
     mcp = FakeMCP(
         get_employee_balances={"vacation_days_remaining": 20.0},
         request_time_off={"content": [{"text": "Submitted"}]},
     )
 
     res = make_client(mcp=mcp).submit_leave_request(
-        LIVE, LIVE, "Vacation", SOON, SOON_END, 1.0, TODAY
+        LIVE, LIVE, "Vacation", SOON, SOON_END, 3.0, TODAY
     )
 
-    assert res.request_id == "WW-LV-MCP"
+    assert res.request_id is None
 
 
 def test_an_empty_submission_response_gets_a_default_message():
@@ -662,7 +716,7 @@ def test_an_empty_submission_response_gets_a_default_message():
     )
 
     res = make_client(mcp=mcp).submit_leave_request(
-        LIVE, LIVE, "Vacation", SOON, SOON_END, 1.0, TODAY
+        LIVE, LIVE, "Vacation", SOON, SOON_END, 3.0, TODAY
     )
 
     assert res.message == "Submitted to WorkWeek FastMCP"
@@ -676,8 +730,25 @@ def test_a_live_submission_failure_is_reported():
 
     with pytest.raises(RuntimeError, match="FastMCP communication error"):
         make_client(mcp=mcp).submit_leave_request(
-            LIVE, LIVE, "Vacation", SOON, SOON_END, 1.0, TODAY
+            LIVE, LIVE, "Vacation", SOON, SOON_END, 3.0, TODAY
         )
+
+
+def test_a_duration_that_does_not_match_its_span_never_reaches_workweek():
+    """The adapter is the last line before the write: even if the specialist is
+    bypassed, 10 days of balance cannot be charged against a one-day span."""
+    mcp = FakeMCP(
+        get_employee_balances={"vacation_days_remaining": 20.0},
+        request_time_off={"content": [{"text": "Created with ID: 4012"}]},
+    )
+
+    res = make_client(mcp=mcp).submit_leave_request(
+        LIVE, LIVE, "Vacation", SOON, SOON, 10.0, TODAY
+    )
+
+    assert not res.success
+    assert "must agree" in res.message
+    assert mcp.named("request_time_off") == []
 
 
 # --- leave history -----------------------------------------------------------

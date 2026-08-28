@@ -4,7 +4,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel
 
-from src.core.clock import business_today
+from src.core.clock import business_today, working_days_between
 
 
 class GuardrailValidationResult(BaseModel):
@@ -76,6 +76,38 @@ class OperationGuardrailEngine:
                 is_valid=False,
                 error_message="Leave requests cannot be submitted for dates in the past.",
                 rule_name="LEAVE_PAST_DATE_CONSTRAINT"
+            )
+
+        # 5. The duration must describe the span it is booked against.
+        #
+        # `days` decrements the balance; `start_date`..`end_date` is when the
+        # employee is actually away. Nothing tied them together, so both
+        # disagreements shipped: a 1-day span charging 10 days of balance, and a
+        # 10-day span charging 1. The second is the expensive one - away for two
+        # weeks, charged a day, and the discrepancy surfaces at year end or on
+        # separation, when the balance is settled in cash.
+        expected = working_days_between(start_date, end_date)
+        if expected == 0:
+            return GuardrailValidationResult(
+                is_valid=False,
+                error_message=(
+                    f"{start_date.isoformat()} to {end_date.isoformat()} contains no working "
+                    "days, so there is no leave to book."
+                ),
+                rule_name="LEAVE_EMPTY_SPAN_CONSTRAINT"
+            )
+        # A half-day is the one legitimate way to consume less than the span:
+        # it applies to a single working day. Anything else is a mismatch.
+        is_half_day = expected == 1 and days_requested == 0.5
+        if days_requested != expected and not is_half_day:
+            return GuardrailValidationResult(
+                is_valid=False,
+                error_message=(
+                    f"Requested {days_requested} days, but {start_date.isoformat()} to "
+                    f"{end_date.isoformat()} is {expected} working day"
+                    f"{'s' if expected != 1 else ''}. The duration and the dates must agree."
+                ),
+                rule_name="LEAVE_DURATION_SPAN_CONSTRAINT"
             )
 
         return GuardrailValidationResult(

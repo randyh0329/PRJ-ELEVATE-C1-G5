@@ -252,6 +252,33 @@ class WorkWeekClient:
         )
         return res
 
+    def _reread_remaining(
+        self,
+        caller_employee_id: str,
+        target_employee_id: str,
+        leave_type: str
+    ) -> float | None:
+        """The balance WorkWeek holds *after* a write, or `None` if unreadable.
+
+        Deliberately swallows its errors: the leave request already succeeded by
+        the time this runs, and failing the whole submission because a follow-up
+        read timed out would tell the employee their request failed when it did
+        not - the one report worse than an unknown balance, because it invites
+        them to file the request twice.
+        """
+        try:
+            balances = self.get_leave_balances(caller_employee_id, target_employee_id)
+        except Exception as exc:
+            logger.warning("Could not re-read leave balance after submission: %s", exc)
+            return None
+        if not balances:
+            return None
+        return (
+            balances.vacation_remaining
+            if "vacation" in leave_type.lower()
+            else balances.sick_remaining
+        )
+
     def submit_leave_request(
         self,
         caller_employee_id: str,
@@ -307,15 +334,29 @@ class WorkWeekClient:
                 # while testing with .lower() raised IndexError on the second
                 # form, and the except below reported an accepted request as a
                 # transport failure - which invites the employee to file twice.
-                req_id = "WW-LV-MCP"
+                #
+                # `None` when the reply carries no ID, rather than the constant
+                # "WW-LV-MCP" this used to fall back to. That constant was handed
+                # to employees as "Transaction Reference: [WW-LV-MCP]" - the same
+                # string for every request ever made, matching no record in
+                # WorkWeek and useless to `cancel_leave_request`. A reference we
+                # invented is worse than admitting we did not get one.
                 id_match = _LEAVE_ID_RE.search(text)
-                if id_match:
-                    req_id = f"WW-LV-{id_match.group(1)}"
+                req_id = f"WW-LV-{id_match.group(1)}" if id_match else None
+
                 res = LeaveSubmissionResponse(
                     success=True,
                     request_id=req_id,
                     message=text or "Submitted to WorkWeek FastMCP",
-                    remaining_balance=remaining - days
+                    # Re-read rather than compute `remaining - days`. The
+                    # subtraction is a guess about what WorkWeek did with the
+                    # write, made from a balance read before it; it is also the
+                    # number the employee plans their year around. If the re-read
+                    # fails we report no balance at all rather than a plausible
+                    # one - `None` is handled by the composer.
+                    remaining_balance=self._reread_remaining(
+                        caller_employee_id, target_employee_id, leave_type
+                    )
                 )
 
             except Exception as e:

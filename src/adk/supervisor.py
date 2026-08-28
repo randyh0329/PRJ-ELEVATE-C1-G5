@@ -18,6 +18,7 @@ from src.adk.specialists import (
     create_workweek_specialist_agent,
 )
 from src.core.clock import business_today
+from src.core.leave_request import Clarification, resolve_leave_span
 from src.integrations.vertex.client import vertex_gemini_client
 from src.models.routing import SupervisorRoutingDecision
 
@@ -197,30 +198,64 @@ class ADKHREnterpriseRunner:
                 response_text = res["message"]
                 action_performed = "UPDATE_CONTACT_INFO"
             elif tool_name == "request_time_off":
-                res = workweek_submit_leave(
-                    caller_id=caller_employee_id,
-                    leave_type=args.get("leave_type", "Vacation"),
-                    start_date=str(args.get("start_date", "2026-09-01")),
-                    end_date=str(args.get("end_date", "2026-09-02")),
-                    days=float(args.get("days", 2.0))
+                # The defaults these arguments used to carry - 2026-09-01 to
+                # 2026-09-02 for 2.0 days - booked a fixed fortnight-away span
+                # for anybody whose dates the extractor could not read, and then
+                # reported it as successfully submitted. Shared with the
+                # non-ADK specialist so the two cannot drift apart again.
+                resolved = resolve_leave_span(
+                    start_date=args.get("start_date"),
+                    end_date=args.get("end_date"),
+                    days=args.get("days"),
+                    today=today,
                 )
-                if res["success"]:
-                    response_text = f"Your time off request (ID: {res['request_id']}) has been successfully submitted in WorkWeek. Remaining balance: {res['remaining_balance']} days (vacation)."
-                    transaction_ref = str(res["request_id"])
+                if isinstance(resolved, Clarification):
+                    response_text = resolved.question
+                    action_performed = "CLARIFY_LEAVE_REQUEST"
                 else:
-                    response_text = f"Time-off submission rejected by WorkWeek: {res['message']}"
-                action_performed = "SUBMIT_LEAVE_REQUEST"
+                    res = workweek_submit_leave(
+                        caller_id=caller_employee_id,
+                        leave_type=args.get("leave_type", "Vacation"),
+                        start_date=resolved.start_date.isoformat(),
+                        end_date=resolved.end_date.isoformat(),
+                        days=resolved.days
+                    )
+                    if res["success"]:
+                        reference = (
+                            f" (ID: {res['request_id']})" if res["request_id"]
+                            else " - WorkWeek did not return a reference number for it"
+                        )
+                        balance = (
+                            f" Remaining balance: {res['remaining_balance']} days (vacation)."
+                            if res["remaining_balance"] is not None else ""
+                        )
+                        response_text = (
+                            f"Your time off request{reference} has been successfully "
+                            f"submitted in WorkWeek.{balance}"
+                        )
+                        transaction_ref = str(res["request_id"]) if res["request_id"] else None
+                    else:
+                        response_text = f"Time-off submission rejected by WorkWeek: {res['message']}"
+                    action_performed = "SUBMIT_LEAVE_REQUEST"
             elif tool_name == "cancel_leave_request":
                 req_id = args.get("request_id")
                 if not req_id or str(req_id) == "101":
                     import re
                     m = re.search(r'(WW-LV-[A-Z0-9]+|\b\d+\b)', sanitized_prompt)
-                    if m:
-                        req_id = m.group(1)
-                req_id = req_id or "101"
-                res = workweek_cancel_leave(caller_id=caller_employee_id, request_id=req_id)
-                response_text = res["message"]
-                action_performed = "CANCEL_LEAVE_REQUEST"
+                    req_id = m.group(1) if m else None
+                if not req_id:
+                    # This fell back to request 101 - a real id belonging to
+                    # whoever owned it - and cancelled it because the employee
+                    # said "cancel" without naming anything.
+                    response_text = (
+                        "I could not tell which leave request you would like to cancel. "
+                        "Which reference number should I use?"
+                    )
+                    action_performed = "CLARIFY_CANCELLATION"
+                else:
+                    res = workweek_cancel_leave(caller_id=caller_employee_id, request_id=req_id)
+                    response_text = res["message"]
+                    action_performed = "CANCEL_LEAVE_REQUEST"
             elif tool_name == "get_employee_profile":
                 field = str(args.get("field", "all"))
                 p_res = workweek_get_profile(caller_id=caller_employee_id, field=field)

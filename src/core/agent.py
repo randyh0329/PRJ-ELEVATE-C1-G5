@@ -415,7 +415,14 @@ class HREnterpriseAgent:
                 if args.get("phone_number") or args.get("home_address"):
                     can_use_fast_path = True
             elif tool == "request_time_off":
-                if args.get("start_date"):
+                # A duration is as load-bearing as the start date, and the fast
+                # path used to require only the latter. A router that read the
+                # date but not "999 days" was handed straight to the specialist,
+                # which defaulted the duration to 1.0 and submitted. Requiring
+                # both here sends an underspecified request down the slow path,
+                # where the specialist re-extracts from the *raw* prompt - one
+                # more chance to read it correctly before anyone is asked.
+                if args.get("start_date") and (args.get("days") is not None or args.get("end_date")):
                     can_use_fast_path = True
             elif tool == "cancel_leave_request":
                 if args.get("request_id"):

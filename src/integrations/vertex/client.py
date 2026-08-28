@@ -418,33 +418,70 @@ class VertexGeminiClient:
         )
 
     def _fallback_select_workweek_tool(self, prompt: str, ref_date: datetime.date) -> WorkWeekToolSelection:
+        """Deterministic tool routing for when the live selector is unreachable.
+
+        Two things this must get right, both of which it used to get wrong.
+
+        First, it has to *return*. Every branch omitted `reasoning`, which the
+        schema requires, so each one raised `ValidationError` out of the very
+        `except` clause that called it - the offline path had no offline path.
+        The suite never saw it because `conftest` replaces `select_workweek_tool`
+        wholesale, so the fallback only ever ran in production, during exactly
+        the Vertex outage it exists for.
+
+        Second, it must not fill in what it cannot read. Keyword matching can
+        pick the tool; it cannot extract a date, a duration, an address or a
+        request id. Each argument invented here is written to the HR system of
+        record as though the employee had supplied it. Omitting them lets the
+        specialist ask, which is the honest answer to "the extractor is down".
+        """
         import re
         p = prompt.lower()
         if any(k in p for k in ["cancel", "취소"]):
+            # No id, no arguments. This defaulted to request 101 - a real id
+            # belonging to whoever happened to own it, cancelled because the
+            # employee said "cancel" and the model was unreachable.
             req_match = re.search(r'\b(\d{3,6})\b', p)
-            req_id = int(req_match.group(1)) if req_match else 101
-            return WorkWeekToolSelection(tool_name="cancel_leave_request", arguments={"request_id": req_id})
+            return WorkWeekToolSelection(
+                tool_name="cancel_leave_request",
+                arguments={"request_id": int(req_match.group(1))} if req_match else {},
+                reasoning="Fallback: cancellation requested."
+            )
         if any(k in p for k in ["requests", "history", "list leaves", "show leaves"]):
-            return WorkWeekToolSelection(tool_name="get_leave_requests", arguments={})
+            return WorkWeekToolSelection(
+                tool_name="get_leave_requests",
+                arguments={},
+                reasoning="Fallback: leave history requested."
+            )
         if any(k in p for k in ["phone", "address", "update"]):
-            return WorkWeekToolSelection(tool_name="update_personal_info", arguments={"home_address": "Updated Address", "phone_number": "+65-6123-4567"})
+            # Previously "Updated Address" / "+65-6123-4567" - a placeholder and
+            # someone else's phone number, saved over the employee's real
+            # contact details. The adapter refuses an empty update in words.
+            return WorkWeekToolSelection(
+                tool_name="update_personal_info",
+                arguments={},
+                reasoning="Fallback: contact update requested; no values extractable offline."
+            )
         if any(k in p for k in ["profile", "manager", "department", "job", "title"]):
-            return WorkWeekToolSelection(tool_name="get_employee_profile", arguments={})
+            return WorkWeekToolSelection(
+                tool_name="get_employee_profile",
+                arguments={},
+                reasoning="Fallback: profile lookup."
+            )
         if any(k in p for k in ["vacation", "sick", "request", "take", "apply", "leave"]):
-            # Calculate next monday
-            days_ahead = (0 - ref_date.weekday() + 7) % 7 or 7
-            next_monday = ref_date + datetime.timedelta(days=days_ahead)
+            # No dates and no duration: this used to answer "2.0 days starting
+            # next Monday", which the specialist submitted as though the
+            # employee had asked for it.
             return WorkWeekToolSelection(
                 tool_name="request_time_off",
-                arguments={
-                    "start_date": next_monday.isoformat(),
-                    "end_date": (next_monday + datetime.timedelta(days=1)).isoformat(),
-                    "days": 2.0,
-                    "leave_type": "Vacation",
-                    "reason": "Personal time off"
-                }
+                arguments={"leave_type": "Sick" if "sick" in p else "Vacation"},
+                reasoning="Fallback: leave request; dates and duration need confirming."
             )
-        return WorkWeekToolSelection(tool_name="get_employee_balances", arguments={})
+        return WorkWeekToolSelection(
+            tool_name="get_employee_balances",
+            arguments={},
+            reasoning="Fallback: balance enquiry."
+        )
 
     #: Verbs that ask for something *new* to be raised. Matched before any read
     #: intent, because "open a ticket" and "open tickets" differ by one letter
