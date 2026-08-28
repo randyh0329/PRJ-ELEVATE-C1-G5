@@ -194,6 +194,21 @@ jobs:
           # code runs. Granting the deployer roles/run.admin would also silence
           # the warning, at the cost of letting CI change who can call production.
 
+          # The startup probe is set here, on every deploy, because nothing in
+          # this repository runs `terraform apply`. terraform/main.tf describes
+          # these services but is not the thing that creates their revisions -
+          # `gcloud run deploy` is, and it inherits whatever the live service
+          # already has. Raising the budget in Terraform alone changed no
+          # deployed setting: revision hr-policy-rag-service-00009-vgq was still
+          # created with "up to 35s for the configured startup probe" and still
+          # rejected. Whatever is not on this command line does not ship.
+          #
+          # 10 + 23*10 = 240s, the Cloud Run maximum, matching Terraform so the
+          # two do not disagree. A healthy container answers the first probe and
+          # the remaining attempts never happen; failure_threshold only bounds
+          # how long a broken container takes to be *declared* broken.
+          PROBE_TIMING="initialDelaySeconds=10,timeoutSeconds=5,periodSeconds=10,failureThreshold=23"
+
           IMAGE_TAG_RAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME_POLICY_RAG }}:${{ github.sha }}"
           gcloud run deploy ${{ env.SERVICE_NAME_POLICY_RAG }} \
             --image "${IMAGE_TAG_RAG}" \
@@ -202,6 +217,7 @@ jobs:
             --service-account "policy-rag-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
             --cpu 2 \
             --memory 2Gi \
+            --startup-probe "${PROBE_TIMING},httpGet.path=/healthz,httpGet.port=8080" \
             --quiet &
           PID_DEPLOY_RAG=$!
 
@@ -212,6 +228,7 @@ jobs:
             --platform managed \
             --service-account "saas-adapter-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
             --set-secrets "SAAS_MCP_CREDENTIAL=saas-mcp-token:latest" \
+            --startup-probe "${PROBE_TIMING},httpGet.path=/health,httpGet.port=8080" \
             --quiet &
           PID_DEPLOY_SAAS=$!
 
@@ -227,6 +244,7 @@ jobs:
             --service-account "hr-agent-runner-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
             --set-env-vars "ENABLE_AGENT_REGISTRY_API=true,GCP_PROJECT_ID=${{ env.PROJECT_ID }},AGENT_REGISTRY_LOCATION=${{ env.REGION }},USE_LIVE_MCP=true,DEFAULT_CALLER_ID=EMP-509" \
             --set-secrets "SAAS_MCP_CREDENTIAL=saas-mcp-token:latest" \
+            --startup-probe "${PROBE_TIMING},httpGet.path=/health,httpGet.port=8080" \
             --quiet &
           PID_DEPLOY_ORCH=$!
 
