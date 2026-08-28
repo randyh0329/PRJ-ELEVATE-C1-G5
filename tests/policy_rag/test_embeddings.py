@@ -19,12 +19,14 @@ import pytest
 
 from src.grounding.policy_rag.config import EmbeddingConfig
 from src.grounding.policy_rag.embeddings import (
+    MULTILINGUAL_MODELS,
     HashEmbeddingProvider,
     LocalEmbeddingProvider,
     VertexEmbeddingProvider,
     _cached_provider,
     build_provider,
     l2_normalise,
+    supports_cross_lingual,
 )
 
 BGE = "BAAI/bge-small-en-v1.5"
@@ -290,3 +292,27 @@ def test_providers_are_cached_so_a_model_loads_once(sentence_transformers):
     cfg = EmbeddingConfig(provider="local", model=BGE)
 
     assert build_provider(cfg) is build_provider(cfg)
+
+
+# --- cross-lingual capability ------------------------------------------------
+
+
+@pytest.mark.parametrize("model", sorted(MULTILINGUAL_MODELS))
+def test_every_listed_checkpoint_reports_itself_cross_lingual(model):
+    assert supports_cross_lingual(model) is True
+
+
+def test_the_naming_rule_catches_checkpoints_not_on_the_list():
+    """Both vendors put `multilingual` in the name, so a release the list has
+    not caught up with is still recognised."""
+    assert supports_cross_lingual("intfloat/multilingual-e5-xl") is True
+    assert supports_cross_lingual("text-multilingual-embedding-003") is True
+
+
+@pytest.mark.parametrize("model", [BGE, "text-embedding-005", "hash", ""])
+def test_an_unrecognised_checkpoint_is_reported_as_monolingual(model):
+    """The failure being guarded is a silent quality collapse - a Japanese query
+    embedded by an English-only model lands nowhere near the passage that answers
+    it, and the index returns a confident wrong chunk rather than an error. An
+    unnecessary warning is the cheaper mistake."""
+    assert supports_cross_lingual(model) is False

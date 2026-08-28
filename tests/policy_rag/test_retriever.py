@@ -8,9 +8,11 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import unquote
 
 import pytest
 
+from src.grounding.citations import citation_base_url
 from src.grounding.policy_rag.config import GENERAL_ENTITLEMENT
 from src.grounding.policy_rag.documents import Chunk
 from src.grounding.policy_rag.embeddings import build_provider
@@ -226,8 +228,19 @@ def test_every_returned_hit_has_a_resolvable_citation(retriever):
 
 
 def test_citation_points_at_a_real_anchor(config, retriever):
+    """The uri is a link the employee can open; the file it names has to exist.
+
+    Those are separate claims and both are checked here, because the uri stopped
+    being a filesystem path: it is a blob URL now, so "renders as a link" and
+    "the target is real" can no longer fail together in a way one assertion
+    would catch.
+    """
+    base = citation_base_url()
+
     for hit in _all(retriever, query="sick leave medical certificate"):
-        path, _, anchor = hit.citation.uri.partition("#")
+        assert hit.citation.uri.startswith(base)
+        url, _, anchor = hit.citation.uri.partition("#")
+        path = unquote(url.removeprefix(base))
         assert (config.repo_root / path).is_file()
         if anchor:
             assert anchor == hit.chunk.anchor
