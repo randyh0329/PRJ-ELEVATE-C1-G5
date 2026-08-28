@@ -22,7 +22,25 @@ COPY okf/ ./okf/
 COPY ["ALTOSTRAT SINGAPORE EMPLOYEE POLICY HANDBOOK & CONDUCT GUIDELINES.md", "./"]
 COPY pyproject.toml .
 
+# The corpus is the floor. Without it the curated register loads empty, every
+# policy question answers "I could not find an approved policy on this topic in
+# our handbook", and the service still reports HEALTHY - so the outage looks
+# like a handbook that does not cover the question. That shipped once, in
+# ee7189e, where this image copied `config/` and `src/` and nothing else.
+#
+# Unlike the ingest below this check is offline and deterministic, so it cannot
+# flake and is safe to hard-fail on.
+RUN python -c "\
+from src.grounding.okf_store import okf_store; \
+n = len(okf_store.all_policies()); \
+print(f'policy corpus: {n} documents'); \
+raise SystemExit(0 if n else 'FATAL: okf/ corpus missing or empty in image')"
+
 ENV HF_HOME=/app/.cache/huggingface
+# `|| true` is deliberate: the embedding model is fetched from the HF Hub, which
+# rate-limits unauthenticated builds, and a degraded semantic index is survivable
+# where a missing corpus is not - `src/grounding/policy_rag/service.py` retries
+# the ingest at runtime. The corpus check above is what must not be soft.
 RUN python -m src.grounding.policy_rag.cli ingest || true
 
 ARG GIT_COMMIT_SHA=unknown

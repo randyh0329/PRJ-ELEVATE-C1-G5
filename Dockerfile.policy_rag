@@ -22,7 +22,17 @@ COPY okf/ ./okf/
 COPY ["ALTOSTRAT SINGAPORE EMPLOYEE POLICY HANDBOOK & CONDUCT GUIDELINES.md", "./"]
 COPY pyproject.toml .
 
+# See the note in Dockerfile.orchestrator: an absent corpus is silent at
+# runtime, so it is caught here instead. Offline and deterministic.
+RUN python -c "\
+from src.grounding.okf_store import okf_store; \
+n = len(okf_store.all_policies()); \
+print(f'policy corpus: {n} documents'); \
+raise SystemExit(0 if n else 'FATAL: okf/ corpus missing or empty in image')"
+
 ENV HF_HOME=/app/.cache/huggingface
+# Soft by design; the corpus check above is the hard one. This service retries
+# the ingest on startup (src/grounding/policy_rag/service.py).
 RUN python -m src.grounding.policy_rag.cli ingest || true
 ARG GIT_COMMIT_SHA=unknown
 ENV GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
