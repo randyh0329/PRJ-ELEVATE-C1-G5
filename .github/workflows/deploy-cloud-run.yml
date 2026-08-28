@@ -1,4 +1,4 @@
-name: Build & Deploy Multi-Agent Platform (Agent Runtime & Cloud Run)
+name: Build & Deploy Multi-Agent Service to Cloud Run
 
 on:
   push:
@@ -11,7 +11,6 @@ on:
       - 'Dockerfile'
       - 'tests/**'
       - 'terraform/**'
-      - 'agent_registry_deployment/**'
       - 'agents-cli-manifest.yaml'
       - '.github/workflows/deploy-cloud-run.yml'
   workflow_dispatch:
