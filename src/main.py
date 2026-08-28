@@ -131,10 +131,26 @@ def serve_web_chat_ui():
     .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
     .btn-secondary { background: #334155; color: var(--text); border: none; border-radius: 6px; padding: 8px 16px; font-size: 0.85rem; cursor: pointer; }
     .btn-primary { background: var(--primary); color: #0f172a; font-weight: 600; border: none; border-radius: 6px; padding: 8px 18px; font-size: 0.85rem; cursor: pointer; }
-    .main-container { flex: 1; display: flex; flex-direction: column; max-width: 900px; width: 100%; margin: 0 auto; padding: 16px; overflow: hidden; }
-    .quick-actions { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 14px; scrollbar-width: none; }
-    .quick-btn { background: #1e293b; color: var(--text); border: 1px solid var(--border); border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; cursor: pointer; white-space: nowrap; transition: all 0.2s; }
-    .quick-btn:hover { background: var(--primary); color: #0f172a; border-color: var(--primary); }
+    .main-container { flex: 1; display: flex; flex-direction: column; max-width: 960px; width: 100%; margin: 0 auto; padding: 16px; overflow: hidden; }
+    
+    .action-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .category-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+    .tab-btn { background: rgba(255, 255, 255, 0.05); color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: 0.75rem; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+    .tab-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.1); }
+    .tab-btn.active { background: var(--primary); color: #0f172a; font-weight: 600; border-color: var(--primary); }
+    
+    .quick-actions { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 14px; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent; }
+    .quick-actions::-webkit-scrollbar { height: 4px; }
+    .quick-actions::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+    .quick-btn { background: #1e293b; color: var(--text); border: 1px solid var(--border); border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; cursor: pointer; white-space: nowrap; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+    .quick-btn:hover { background: var(--primary); color: #0f172a; border-color: var(--primary); transform: translateY(-1px); }
+    .quick-btn.itsm { border-color: rgba(245, 158, 11, 0.4); }
+    .quick-btn.itsm:hover { background: #f59e0b; color: #0f172a; border-color: #f59e0b; }
+    .quick-btn.policy { border-color: rgba(56, 189, 248, 0.4); }
+    .quick-btn.policy:hover { background: #38bdf8; color: #0f172a; border-color: #38bdf8; }
+    .quick-btn.cross { border-color: rgba(168, 85, 247, 0.4); }
+    .quick-btn.cross:hover { background: #a855f7; color: #ffffff; border-color: #a855f7; }
+    
     .chat-window { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding-right: 6px; }
     .msg { display: flex; flex-direction: column; max-width: 82%; }
     .msg.user { align-self: flex-end; }
@@ -184,17 +200,40 @@ def serve_web_chat_ui():
     </div>
   </header>
 
-
-
   <div class="main-container">
-    <div class="quick-actions">
-      <button class="quick-btn" onclick="sendQuick('What is my current leave balance?')">🏖️ Leave Balances</button>
-      <button class="quick-btn" onclick="sendQuick('Who is my manager?')">👤 Who is my Manager?</button>
-      <button class="quick-btn" onclick="sendQuick('What is my department?')">🏢 My Department</button>
-      <button class="quick-btn" onclick="sendQuick('What is my registered address?')">📍 Registered Address</button>
-      <button class="quick-btn" onclick="sendQuick('What is my Job Profile?')">📋 Complete Profile</button>
-      <button class="quick-btn" onclick="sendQuick('What is the bereavement leave policy?')">📖 Bereavement Policy</button>
-      <button class="quick-btn" onclick="sendQuick('Submit 2 days vacation starting next Monday')">✈️ Request Time Off</button>
+    <div class="action-header">
+      <div class="category-tabs" id="categoryTabs">
+        <button class="tab-btn active" onclick="filterCategory('all')">✨ All Actions</button>
+        <button class="tab-btn" onclick="filterCategory('hr')">🏖️ WorkWeek (HR)</button>
+        <button class="tab-btn" onclick="filterCategory('itsm')">🛠️ ServiceImmediately (ITSM)</button>
+        <button class="tab-btn" onclick="filterCategory('policy')">📚 Policies & FAQ</button>
+        <button class="tab-btn" onclick="filterCategory('cross')">🔄 Cross-System</button>
+      </div>
+    </div>
+
+    <div class="quick-actions" id="quickActionsList">
+      <!-- WorkWeek / HR Actions -->
+      <button class="quick-btn hr" data-cat="hr" onclick="sendQuick('What is my current leave balance?')">🌴 Leave Balances</button>
+      <button class="quick-btn hr" data-cat="hr" onclick="sendQuick('Submit 2 days vacation starting next Monday')">✈️ Request Vacation</button>
+      <button class="quick-btn hr" data-cat="hr" onclick="sendQuick('Who is my manager and what is my department?')">👤 Manager & Dept</button>
+      <button class="quick-btn hr" data-cat="hr" onclick="sendQuick('Show my recent leave request history')">📋 Leave History</button>
+
+      <!-- ServiceImmediately / ITSM Actions -->
+      <button class="quick-btn itsm" data-cat="itsm" onclick="sendQuick('Create an IT ticket because my VPN connection keeps dropping.')">🔌 Report VPN Issue</button>
+      <button class="quick-btn itsm" data-cat="itsm" onclick="sendQuick('Create an IT ticket for laptop screen flickering and hardware malfunction.')">💻 Report Laptop Issue</button>
+      <button class="quick-btn itsm" data-cat="itsm" onclick="sendQuick('Create an IT ticket requesting access to enterprise GitHub repository.')">🔑 Request System Access</button>
+      <button class="quick-btn itsm" data-cat="itsm" onclick="sendQuick('List all my active support tickets')">🎫 My Active Tickets</button>
+      <button class="quick-btn itsm" data-cat="itsm" onclick="sendQuick('What is the status of ticket INC-5001?')">🔍 Check Ticket Status</button>
+
+      <!-- HR & IT Policies & FAQ -->
+      <button class="quick-btn policy" data-cat="policy" onclick="sendQuick('What is the company bereavement leave entitlement policy?')">📖 Bereavement Policy</button>
+      <button class="quick-btn policy" data-cat="policy" onclick="sendQuick('What is the policy for purchasing home office monitors for remote workers?')">🏠 Remote Work Policy</button>
+      <button class="quick-btn policy" data-cat="policy" onclick="sendQuick('What is the company parental leave duration and entitlement policy?')">👶 Parental Leave Policy</button>
+
+      <!-- Cross-System Orchestration Actions -->
+      <button class="quick-btn cross" data-cat="cross" onclick="sendQuick('I just read the remote work policy and saw I\'m eligible for a home office monitor. Can you verify my remote status and order one for me?')">🖥️ Order Home Monitor (UC-2.1)</button>
+      <button class="quick-btn cross" data-cat="cross" onclick="sendQuick('I need to take short-term medical leave starting next Monday. What is the process, and can you set it up for me?')">🏥 Medical Leave & Delegate (UC-2.2)</button>
+      <button class="quick-btn cross" data-cat="cross" onclick="sendQuick('I\'m transferring to the London office next month. Can you tell me the relocation allowance, update my record, and get my building access sorted?')">🇬🇧 London Transfer & Badge (UC-2.3)</button>
     </div>
 
     <div class="chat-window" id="chatWindow">
@@ -595,6 +634,19 @@ def serve_web_chat_ui():
       }
       userInput.value = prompt;
       sendMessage();
+    }
+
+    function filterCategory(cat) {
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('onclick').includes(`'${cat}'`));
+      });
+      document.querySelectorAll('#quickActionsList .quick-btn').forEach(btn => {
+        if (cat === 'all' || btn.getAttribute('data-cat') === cat) {
+          btn.style.display = 'inline-flex';
+        } else {
+          btn.style.display = 'none';
+        }
+      });
     }
 
     window.addEventListener('DOMContentLoaded', checkAuth);
