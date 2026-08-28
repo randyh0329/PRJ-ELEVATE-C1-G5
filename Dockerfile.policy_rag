@@ -31,9 +31,28 @@ print(f'policy corpus: {n} documents'); \
 raise SystemExit(0 if n else 'FATAL: okf/ corpus missing or empty in image')"
 
 ENV HF_HOME=/app/.cache/huggingface
-# Soft by design; the corpus check above is the hard one. This service retries
-# the ingest on startup (src/grounding/policy_rag/service.py).
-RUN python -m src.grounding.policy_rag.cli ingest || true
+# Hard-failing, unlike the orchestrator's copy of this line. The orchestrator can
+# lose its index and still answer from the curated register; this service *is*
+# the index, and the runtime auto-ingest that would rebuild it
+# (src/grounding/policy_rag/service.py) takes ~48s with the model already on
+# disk. `build_app` runs it before uvicorn binds the port, so the container
+# never opens 8080 inside the startup-probe budget and the revision is rejected
+# with ERROR_CONNECTION_FAILED - which reads as a crashed container rather than
+# a slow one.
+#
+# A failed build is strictly better than that: it is visible, it names the real
+# problem, and the layer cache makes the retry cheap.
+RUN python -m src.grounding.policy_rag.cli ingest
+
+# Ingest can succeed and still emit nothing if the corpus globs stop matching.
+# An empty index serves confident silence: every retrieval returns no hits and
+# the composer reports that the handbook covers nothing.
+RUN python -c "\
+from src.grounding.policy_rag.config import load_config; \
+from src.grounding.policy_rag.index import PolicyIndex; \
+idx = PolicyIndex.load(load_config().index.path); \
+print(f'faiss index: {len(idx)} chunks'); \
+raise SystemExit(0 if len(idx) else 'FATAL: index built but empty')"
 ARG GIT_COMMIT_SHA=unknown
 ENV GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
 
