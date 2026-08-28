@@ -1,7 +1,8 @@
 """Safety perimeter: Cloud DLP SPII Redactor and Vertex AI Model Armor filter."""
 import re
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import ClassVar
+
 from pydantic import BaseModel
 
 
@@ -9,15 +10,15 @@ class RedactionResult(BaseModel):
     """Result of DLP sanitization."""
     sanitized_text: str
     original_text: str
-    detected_types: List[str]
+    detected_types: list[str]
     processing_time_ms: float
 
 
 class SafetyScanResult(BaseModel):
     """Result of Model Armor input/output inspection."""
     is_safe: bool
-    refusal_reason: Optional[str] = None
-    threat_category: Optional[str] = None
+    refusal_reason: str | None = None
+    threat_category: str | None = None
     processing_time_ms: float
 
 
@@ -33,7 +34,7 @@ class DLPRedactor:
     def redact(self, text: str) -> RedactionResult:
         """De-identify sensitive SPII into typed surrogate tokens."""
         start_time = time.perf_counter()
-        detected_types: List[str] = []
+        detected_types: list[str] = []
         sanitized = text
 
         # 1. Singapore NRIC / FIN
@@ -70,7 +71,7 @@ class ModelArmor:
     """Simulates Vertex AI Model Armor for prompt injection & jailbreak prevention."""
 
     # Adversarial & Jailbreak patterns
-    INJECTION_PATTERNS = [
+    INJECTION_PATTERNS: ClassVar[list[re.Pattern[str]]] = [
         re.compile(r"ignore\s+(all\s+)?(previous|prior)\s+instructions?", re.IGNORECASE),
         re.compile(r"you\s+are\s+now\s+(DAN|unrestricted|god\s+mode)", re.IGNORECASE),
         re.compile(r"override\s+(all\s+)?(system|safety)\s+(rules|prompts|guardrails)", re.IGNORECASE),

@@ -19,10 +19,102 @@ dependencies = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.5",
     "httpx>=0.27.0",
+    # Policy RAG (src/grounding/policy_rag): FAISS retrieval + A2A server.
+    "faiss-cpu>=1.9,<2",
+    "numpy>=1.26",
+    "PyYAML>=6",
+    "a2a-sdk[http-server]>=1.1,<2",
 ]
+
+[project.optional-dependencies]
+# Everything needed to run the suite the way CI runs it.
+dev = ["pytest-cov>=5.0", "ruff>=0.6"]
+# Default embedding provider (`embedding.provider: local` in config/corpus.yaml).
+# Not needed when running with POLICY_RAG_EMBEDDING_PROVIDER=hash.
+local-embeddings = ["sentence-transformers>=3.0"]
+# embedding.provider: vertex
+vertex = ["google-cloud-aiplatform>=1.60"]
+# POLICY_RAG_COMPOSER=gemini
+gemini = ["google-genai>=1.0"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+# `okf/` is the handbook corpus. The .py files under references/ are documents
+# the RAG indexes, not application code, and are linted by nobody on purpose.
+extend-exclude = ["mcp-saas-draft", "terraform", ".venv", "var", "okf"]
+
+[tool.ruff.lint]
+# Correctness and hygiene, not style dogma. `UP` is included because the
+# codebase already targets 3.10+ and mixing `Optional[str]` with `str | None`
+# in the same package is the kind of inconsistency that makes a diff hard to read.
+select = [
+    "F",     # pyflakes - undefined names, unused imports, redefinitions
+    "E", "W", # pycodestyle
+    "I",     # import ordering
+    "UP",    # pyupgrade
+    "B",     # bugbear
+    "C4",    # comprehensions
+    "SIM",   # simplify
+    "PIE",   # misc lints
+    "RUF",   # ruff-specific
+    "PL",    # pylint subset
+    "DTZ",   # naive datetimes - this system writes audit timestamps
+    "G",     # logging format
+    "ASYNC", # blocking calls in async defs
+    "T20",   # stray print()
+]
+ignore = [
+    "E501",     # line length is handled by the formatter, not enforced here
+    "PLR0911", "PLR0912", "PLR0913", "PLR0915",  # arity/branch counts: the
+                # saga and guardrail dispatchers are wide by nature
+    "PLR2004",  # magic values read fine in guardrail thresholds
+    "SIM108",   # ternaries are not always clearer than an if/else
+    "PLC0415",  # function-level imports are deliberate: faiss, sentence-transformers
+                # and google-genai are optional extras, and importing them at module
+                # scope would make `import src.core.agent` pull in torch.
+    "PLR0917",  # positional arity - the adapter signatures mirror vendor APIs
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert on literals and print progress; the eval harnesses are CLIs.
+"tests/**" = ["T20", "S101"]
+# The harnesses are scripts: they print a report and read fixtures synchronously.
+"eval/**" = ["T20", "ASYNC230", "ASYNC240"]
+# `run_interactive_cli` is a terminal console; print is its output channel.
+"src/main.py" = ["T20"]
+"scripts/**" = ["T20"]
+"src/grounding/policy_rag/cli.py" = ["T20"]
+"src/grounding/policy_rag/a2a_app/client_demo.py" = ["T20"]
+# Re-export shims: the wildcard and the unused names are the point.
+"app/**" = ["F401", "F403", "PLC0414"]
+"**/__init__.py" = ["F401", "PLC0414"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
 addopts = "-ra -q"
 testpaths = ["tests"]
 pythonpath = ["."]
+# The A2A surface tests are bare `async def test_*` with no explicit marker.
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["src", "app", "config", "eval", "scripts", "a2a_app"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = [
+    # Script entry guards: the body is one call, and reaching it means running
+    # the module as a subprocess, which measures the shell rather than the code.
+    'if __name__ == "__main__":',
+    # Typing-only imports never execute.
+    "if TYPE_CHECKING:",
+    # A raised NotImplementedError in an ABC is the contract, not a branch.
+    "raise NotImplementedError$",
+    "@(abc\\.)?abstractmethod",
+    # Unreachable-by-construction guards. These assert an invariant the type
+    # system cannot; a test that covers one is a test of the impossible.
+    "raise AssertionError",
+]

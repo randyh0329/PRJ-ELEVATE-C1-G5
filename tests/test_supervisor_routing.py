@@ -3,9 +3,7 @@ Unit and integration tests for LLM-based Supervisor Router and Tool Calling.
 Compliant with Enterprise Agentic Solution Design Document (MVP 1) §3.1 & §3.2 (FR-1.1, FR-2.1).
 """
 
-import pytest
 from src.core.agent import HREnterpriseAgent
-from src.core.models.routing import SupervisorRoutingDecision, WorkWeekToolSelection
 from src.core.agents.hcm import workweek_autonomous_specialist
 
 

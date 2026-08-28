@@ -1,10 +1,11 @@
 """Cross-System Saga Coordinator implementing backward compensation and escalation ticketing."""
 import datetime
-import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
+
 from pydantic import BaseModel, Field
-from src.integrations.workweek.client import WorkWeekClient, workweek_client
+
 from src.integrations.service_immediately.client import ServiceImmediatelyClient, service_immediately_client
+from src.integrations.workweek.client import WorkWeekClient, workweek_client
 from src.telemetry.audit_logger import AuditLogger, audit_logger
 
 
@@ -14,17 +15,17 @@ class SagaStep(BaseModel):
     target_system: str
     action_type: str
     status: str = "PENDING"  # PENDING, COMPLETED, FAILED, COMPENSATED
-    step_result: Dict[str, Any] = Field(default_factory=dict)
-    error: Optional[str] = None
+    step_result: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
 
 
 class SagaResult(BaseModel):
     """Final result of a Saga orchestrated transaction."""
     success: bool
     message: str
-    steps_executed: List[SagaStep] = Field(default_factory=list)
+    steps_executed: list[SagaStep] = Field(default_factory=list)
     compensated: bool = False
-    escalation_ticket_id: Optional[str] = None
+    escalation_ticket_id: str | None = None
 
 
 class SagaCoordinator:
@@ -32,9 +33,9 @@ class SagaCoordinator:
 
     def __init__(
         self,
-        ww_client: Optional[WorkWeekClient] = None,
-        sn_client: Optional[ServiceImmediatelyClient] = None,
-        logger: Optional[AuditLogger] = None
+        ww_client: WorkWeekClient | None = None,
+        sn_client: ServiceImmediatelyClient | None = None,
+        logger: AuditLogger | None = None
     ) -> None:
         self._ww_client = ww_client or workweek_client
         self._sn_client = sn_client or service_immediately_client
@@ -47,10 +48,10 @@ class SagaCoordinator:
         end_date: datetime.date,
         days: float,
         manager_id: str = "MGR-2001",
-        reference_date: Optional[datetime.date] = None
+        reference_date: datetime.date | None = None
     ) -> SagaResult:
         """Execute Path 5 (UC-2.2): Submit medical leave in WorkWeek + create email routing in ServiceImmediately."""
-        steps: List[SagaStep] = []
+        steps: list[SagaStep] = []
 
         # Step 1: Submit Sick_LOA Leave in WorkWeek
         step1 = SagaStep(step_name="Submit_Medical_Leave", target_system="WorkWeek", action_type="SUBMIT_LEAVE")
@@ -85,7 +86,7 @@ class SagaCoordinator:
             step1.error = str(e)
             return SagaResult(
                 success=False,
-                message=f"WorkWeek leave submission threw an exception: {str(e)}",
+                message=f"WorkWeek leave submission threw an exception: {e!s}",
                 steps_executed=steps,
                 compensated=False
             )
@@ -120,7 +121,7 @@ class SagaCoordinator:
                 caller_employee_id=caller_employee_id,
                 action_type="SAGA_BACKWARD_COMPENSATION",
                 status="TRIGGERED",
-                details={"reason": f"Step 2 failed ({str(e)}). Rolling back Step 1 ({leave_request_id})."}
+                details={"reason": f"Step 2 failed ({e!s}). Rolling back Step 1 ({leave_request_id})."}
             )
 
             # Roll back WorkWeek leave
@@ -131,7 +132,7 @@ class SagaCoordinator:
             # Create escalated support ticket for manual PeopleOps setup
             escalation_ticket = self._sn_client.create_escalated_incident(
                 priority="2 - High",
-                description=f"Automated Saga rollback occurred. Manual medical leave setup required for {caller_employee_id} (WorkWeek ref {leave_request_id} was cancelled due to error: {str(e)})"
+                description=f"Automated Saga rollback occurred. Manual medical leave setup required for {caller_employee_id} (WorkWeek ref {leave_request_id} was cancelled due to error: {e!s})"
             )
             escalation_id = escalation_ticket.ticket_id
 

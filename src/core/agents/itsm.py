@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from src.security.token_minter import CompositeTokenMinter
 from src.core.state import AgentState
+from src.security.token_minter import CompositeTokenMinter
 
 logger = logging.getLogger("agents.itsm")
 
@@ -26,9 +26,9 @@ class ITSMSpecialistNode:
     MODEL_ID = "gemini-3.7-flash@2026-08"
     ADAPTER_URL = "https://serviceimmediately-adapter-prod-uc.a.run.app"
 
-    def __init__(self, token_minter: Optional[CompositeTokenMinter] = None):
+    def __init__(self, token_minter: CompositeTokenMinter | None = None):
         self.token_minter = token_minter or CompositeTokenMinter()
-        self._incidents: Dict[str, Dict[str, Any]] = {
+        self._incidents: dict[str, dict[str, Any]] = {
             "INC-5001": {
                 "ticketId": "INC-5001",
                 "callerId": "EMP-44210",
@@ -41,7 +41,7 @@ class ITSMSpecialistNode:
             }
         }
 
-    def get_incident(self, ticket_id: str) -> Dict[str, Any]:
+    def get_incident(self, ticket_id: str) -> dict[str, Any]:
         """si.get_incident (FR-4.2)"""
         return self._incidents.get(
             ticket_id,
@@ -60,7 +60,7 @@ class ITSMSpecialistNode:
         short_description: str,
         priority: str = "4-Low",
         description: str = "",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """si.create_incident (FR-4.2) - Records automation source attribution"""
         prefix = "REQ" if category.lower() in ["hardware", "facilities", "hardware request"] else "INC"
         ticket_id = f"{prefix}-{uuid.uuid4().hex[:6].upper()}"
@@ -78,7 +78,7 @@ class ITSMSpecialistNode:
         self._incidents[ticket_id] = incident_doc
         return {"status": "SUCCESS", "ticketId": ticket_id, "state": "New"}
 
-    def post_comment(self, ticket_id: str, author: str, body: str) -> Dict[str, Any]:
+    def post_comment(self, ticket_id: str, author: str, body: str) -> dict[str, Any]:
         """si.post_comment (FR-4.2)"""
         if ticket_id in self._incidents:
             self._incidents[ticket_id].setdefault("comments", []).append({
@@ -94,7 +94,7 @@ class ITSMSpecialistNode:
         """
         employee_id = state.get("employee_id", "EMP-44210")
         query = state.get("masked_input", state.get("user_input", ""))
-        logger.info(f"[{self.AGENT_ID}] Executing ITSM request for caller {employee_id}")
+        logger.info("[%s] Executing ITSM request for caller %s", self.AGENT_ID, employee_id)
 
         if "inc-" in query.lower():
             # Extract ticket ID

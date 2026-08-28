@@ -7,3 +7,17 @@ tenacity>=8.2.3
 pytest>=8.0.0
 pytest-asyncio>=0.23.5
 httpx>=0.27.0
+
+# Policy RAG (src/grounding/policy_rag): FAISS retrieval + A2A server
+faiss-cpu>=1.9,<2
+numpy>=1.26
+PyYAML>=6
+a2a-sdk[http-server]>=1.1,<2
+
+# Default embedding provider (`embedding.provider: local`).
+# Not needed when running with POLICY_RAG_EMBEDDING_PROVIDER=hash.
+sentence-transformers>=3.0
+
+# Optional:
+#   google-cloud-aiplatform   -> embedding.provider: vertex
+#   google-genai              -> POLICY_RAG_COMPOSER=gemini

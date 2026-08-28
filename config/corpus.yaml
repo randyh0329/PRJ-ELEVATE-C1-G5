@@ -1,0 +1,113 @@
+# Policy RAG corpus configuration.
+#
+# This file is the single declaration of what is ingested, how it is chunked and
+# embedded, and which entitlement is required to retrieve it. Nothing outside
+# this file may add a corpus at runtime - the same discipline SDD §3.2 applies to
+# the agent/tool registry.
+
+version: 1
+
+embedding:
+  # local  - sentence-transformers, runs on CPU, no cloud credentials (default)
+  # vertex - Vertex AI text embeddings, for parity with the SDD target platform
+  # hash   - deterministic hashed n-grams, zero model download, for CI and tests
+  provider: local
+  # bge-small-en-v1.5 over all-MiniLM-L6-v2: same 384 dimensions and roughly the
+  # same CPU cost, but measurably better on this corpus (see README, "Choosing
+  # the embedding model"). It is an asymmetric model - the query-side instruction
+  # prefix is applied in embeddings.py, keyed on this name.
+  model: BAAI/bge-small-en-v1.5
+  dimension: 384
+  batch_size: 64
+
+index:
+  # Directory holding faiss.index + chunks.jsonl + manifest.json
+  path: var/index
+  # flat - IndexFlatIP wrapped in IndexIDMap2: exact cosine, supports remove_ids
+  #        (needed for the SLA-04 stale-embedding eviction path)
+  # hnsw - IndexHNSWFlat, approximate; only worth it above ~100k chunks
+  type: flat
+  hnsw_m: 32
+
+chunking:
+  # Chunks follow markdown heading boundaries first and only split on size when a
+  # single section exceeds max_chars. A policy answer that straddles a heading is
+  # worse than a slightly long chunk.
+  max_chars: 1400
+  overlap_chars: 160
+  min_chars: 80
+
+retrieval:
+  top_k: 6
+  # Over-fetch before the ACL, corpus and doc-type filters run - FAISS cannot
+  # express those, so they are applied to the candidate list.
+  candidate_k: 60
+  # SDD §3.3 Path 1 dual gate, retrieval half. Applies to the *calibrated*
+  # relevance score defined in retriever.py, not to raw cosine - see
+  # `calibration` below and README "Calibrating the relevance gate".
+  relevance_gate: 0.80
+  # Lexical overlap is a corroboration bonus on top of the dense score, not a
+  # co-equal weighted term - see the docstring on `Retriever._fuse`.
+  lexical_boost: 0.25
+  # Cosine values that map to calibrated 0.0 and 1.0. These are specific to the
+  # embedding model and MUST be re-derived whenever `embedding.model` changes:
+  #     PYTHONPATH=. python scripts/eval_retrieval.py --sweep --apply
+  # Derived for bge-small-en-v1.5 against eval/golden/policy_rag_golden.json.
+  # The sweep only considers a pair admissible if refusal and escalation accuracy
+  # stay at 100% - NFR-3.1 makes a wrong answer cost far more than a missed one -
+  # so a wider span that scores better overall is still rejected if it answers a
+  # single question the corpus cannot answer.
+  calibration:
+    cosine_floor: 0.50
+    cosine_ceiling: 0.70
+  # Stops one long concept document from filling the whole answer window.
+  max_chunks_per_document: 3
+  # Two admissibility rules that sit alongside the gate rather than inside the
+  # score. Both exist because a passage can be *about* the right subject without
+  # stating the rule; see the docstrings in retriever.py for the mechanism, and
+  # the "Overfitting" note in scripts/eval_retrieval.py for how far to trust
+  # these particular numbers.
+  max_link_density: 0.35
+  min_lexical_corroboration: 0.12
+  # Chunks whose doc_type is not listed here are indexed but never retrieved
+  # unless a caller names them explicitly. `nav` = folder index pages (routing
+  # aids, no policy claims), `code` = attester/computation source files.
+  default_doc_types: [policy, datasheet, computation, reference, skill, orientation]
+
+corpora:
+  - id: okf-handbook
+    kind: okf
+    root: okf/altostrat-sg-handbook
+    # The OKF bundle is the governing presentation of the handbook: it already
+    # applies the detail-layer-wins precedence rule from the corpus datasheet.
+    authority: governing
+    default_search: true
+    acl:
+      default: general
+      overrides:
+        # HR operational analysis - the defect register and executor procedures
+        # are for People Partners, not for general employee Q&A (SDD §4.7).
+        - path_prefix: references/
+          entitlement: hr_operational
+
+  - id: handbook-source
+    kind: handbook
+    path: ALTOSTRAT SINGAPORE EMPLOYEE POLICY HANDBOOK & CONDUCT GUIDELINES.md
+    # The raw handbook restates most leave and ethics content twice at two
+    # different levels of detail. Searching it alongside the OKF bundle would
+    # reintroduce exactly the two-layer conflict the bundle exists to resolve,
+    # so it is indexed but excluded from the default search set. Callers that
+    # genuinely need verbatim source text ask for it by corpus id.
+    authority: source
+    default_search: false
+    acl:
+      default: general
+
+guards:
+  # Corpus datasheet, "What must not be answered from this bundle".
+  # Each of these turns a would-be answer into a routed refusal.
+  conflict_sections: true          # chunk sits under a "# Conflict" heading
+  extended_workforce_leave: true   # temps/vendors/contractors have no figures here
+  placeholder_contacts: true       # redact unresolved `email` / `abc@altostrat.com`
+  staleness: true                  # honour `stale_after` frontmatter
+  escalation_contact: "People Ops"

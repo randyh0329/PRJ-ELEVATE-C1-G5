@@ -11,7 +11,7 @@ import hmac
 import json
 import time
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class CompositeTokenMinter:
@@ -24,18 +24,18 @@ class CompositeTokenMinter:
     def __init__(
         self,
         orchestrator_sa_email: str = "hr-agent-orchestrator@prj-elevate-c1-g5.iam.gserviceaccount.com",
-        mock_private_key: Optional[str] = None,
+        mock_private_key: str | None = None,
     ):
         self.orchestrator_sa_email = orchestrator_sa_email
         self.mock_private_key = mock_private_key or "secret-orchestrator-signing-key"
-        self.token_cache: Dict[str, Dict[str, Any]] = {}
+        self.token_cache: dict[str, dict[str, Any]] = {}
 
-    def _b64encode_json(self, data: Dict[str, Any]) -> str:
+    def _b64encode_json(self, data: dict[str, Any]) -> str:
         json_bytes = json.dumps(data, separators=(",", ":")).encode("utf-8")
         return base64.urlsafe_b64encode(json_bytes).decode("utf-8").rstrip("=")
 
     def _sign_payload(self, header_b64: str, payload_b64: str) -> str:
-        message = f"{header_b64}.{payload_b64}".encode("utf-8")
+        message = f"{header_b64}.{payload_b64}".encode()
         sig = hmac.new(self.mock_private_key.encode("utf-8"), message, hashlib.sha256).digest()
         return base64.urlsafe_b64encode(sig).decode("utf-8").rstrip("=")
 
@@ -63,7 +63,7 @@ class CompositeTokenMinter:
         turn_id: str,
         agent_id: str,
         model_id: str,
-        scopes: List[str],
+        scopes: list[str],
         ttl_seconds: int = 120,
     ) -> str:
         now = int(time.time())
@@ -90,7 +90,7 @@ class CompositeTokenMinter:
             "exp": now + ttl_seconds,
         }
 
-        cache_key = hashlib.sha256(f"{employee_id}|{target_audience}|{jti}".encode("utf-8")).hexdigest()
+        cache_key = hashlib.sha256(f"{employee_id}|{target_audience}|{jti}".encode()).hexdigest()
         self.token_cache[cache_key] = {
             "employee_id": employee_id,
             "jti": jti,
@@ -110,8 +110,8 @@ class CompositeTokenMinter:
         turn_id: str,
         agent_id: str,
         model_id: str,
-        scopes: List[str],
-    ) -> Dict[str, str]:
+        scopes: list[str],
+    ) -> dict[str, str]:
         layer1_token = self.mint_layer1_workload_oidc(target_audience)
         layer2_token = self.mint_layer2_subject_assertion(
             target_audience=target_audience,

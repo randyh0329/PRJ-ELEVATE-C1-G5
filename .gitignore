@@ -40,3 +40,8 @@ override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
+
+# Build artefacts: the FAISS index and its manifest (`policy_rag ingest` output).
+# Rebuildable from config/corpus.yaml and the corpus in git, and large enough
+# that committing it would dominate the diff of every re-ingest.
+var/

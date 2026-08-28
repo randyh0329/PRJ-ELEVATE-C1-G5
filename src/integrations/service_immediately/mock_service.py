@@ -1,12 +1,12 @@
 """In-memory mock microservice simulating ServiceImmediately ITSM API."""
 import datetime
 import uuid
-from typing import Dict, List, Optional
+
 from src.integrations.service_immediately.models import (
+    FacilitiesTicket,
+    HardwareRequest,
     IncidentTicket,
     TicketComment,
-    HardwareRequest,
-    FacilitiesTicket,
 )
 
 
@@ -14,9 +14,9 @@ class ServiceImmediatelyMockService:
     """Simulates ServiceImmediately ITSM/HRSD REST backend with deterministic state and error injection."""
 
     def __init__(self) -> None:
-        self._tickets: Dict[str, IncidentTicket] = {}
-        self._hardware_requests: Dict[str, HardwareRequest] = {}
-        self._facilities_tickets: Dict[str, FacilitiesTicket] = {}
+        self._tickets: dict[str, IncidentTicket] = {}
+        self._hardware_requests: dict[str, HardwareRequest] = {}
+        self._facilities_tickets: dict[str, FacilitiesTicket] = {}
         self._simulate_500_error: bool = False
         self._ticket_counter: int = 123450
         self.init_mock_data()
@@ -67,7 +67,7 @@ class ServiceImmediatelyMockService:
         priority: str,
         short_description: str,
         origin: str = "HR_AGENT_ORCHESTRATOR_V1",
-        metadata: Optional[dict] = None
+        metadata: dict | None = None
     ) -> IncidentTicket:
         """Create a new support incident ticket."""
         if self._simulate_500_error and requester_id != "SYSTEM_ORCHESTRATOR":
@@ -93,11 +93,11 @@ class ServiceImmediatelyMockService:
         self._tickets[ticket_id] = ticket
         return ticket
 
-    def get_ticket(self, ticket_id: str) -> Optional[IncidentTicket]:
+    def get_ticket(self, ticket_id: str) -> IncidentTicket | None:
         """Fetch ticket by ID."""
         return self._tickets.get(ticket_id)
 
-    def list_tickets_for_user(self, requester_id: str) -> List[IncidentTicket]:
+    def list_tickets_for_user(self, requester_id: str) -> list[IncidentTicket]:
         """List all tickets created by a specific user."""
         return [t for t in self._tickets.values() if t.requester_id == requester_id]
 
@@ -107,7 +107,7 @@ class ServiceImmediatelyMockService:
         author_id: str,
         comment_text: str,
         origin: str = "HR_AGENT_ORCHESTRATOR_V1"
-    ) -> Optional[TicketComment]:
+    ) -> TicketComment | None:
         """Add a comment to an existing ticket."""
         ticket = self._tickets.get(ticket_id)
         if not ticket:
@@ -126,7 +126,7 @@ class ServiceImmediatelyMockService:
         ticket.updated_at = now_str
         return comment
 
-    def update_status(self, ticket_id: str, new_status: str, resolution_notes: Optional[str] = None) -> bool:
+    def update_status(self, ticket_id: str, new_status: str, resolution_notes: str | None = None) -> bool:
         """Update ticket status."""
         ticket = self._tickets.get(ticket_id)
         if not ticket:

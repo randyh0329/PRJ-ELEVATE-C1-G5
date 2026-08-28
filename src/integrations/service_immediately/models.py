@@ -1,6 +1,6 @@
 """Data models for ServiceImmediately ITSM/HRSD tickets and operations."""
 import datetime
-from typing import List, Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -23,7 +23,7 @@ class IncidentTicket(BaseModel):
     status: str = "New"  # 'New', 'Work in Progress', 'Pending User Info', 'Resolved', 'Closed', 'Cancelled'
     created_at: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
-    comments: List[TicketComment] = Field(default_factory=list)
+    comments: list[TicketComment] = Field(default_factory=list)
     origin: str = "HR_AGENT_ORCHESTRATOR_V1"
     metadata: dict = Field(default_factory=dict)
 
@@ -53,4 +53,4 @@ class TicketStatusUpdate(BaseModel):
     """Payload for updating ticket status."""
     ticket_id: str
     new_status: str
-    resolution_notes: Optional[str] = None
+    resolution_notes: str | None = None

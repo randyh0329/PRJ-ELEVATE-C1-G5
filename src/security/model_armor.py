@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Dict, Literal, Optional, Tuple
+from typing import ClassVar, Literal
 
 logger = logging.getLogger("security.model_armor")
 
@@ -18,7 +18,7 @@ class ModelArmorSanitizer:
     Enforces fail-closed behavior on deadline breaches or policy violations (§4.3).
     """
 
-    ADVERSARIAL_PATTERNS = [
+    ADVERSARIAL_PATTERNS: ClassVar[list[re.Pattern[str]]] = [
         r"ignore\s+(all\s+)?previous\s+instructions",
         r"system\s+prompt\s+override",
         r"you\s+are\s+now\s+in\s+dan\s+mode",
@@ -26,7 +26,7 @@ class ModelArmorSanitizer:
         r"reveal\s+(the\s+)?secret\s+key",
     ]
 
-    UNSAFE_OUTPUT_PATTERNS = [
+    UNSAFE_OUTPUT_PATTERNS: ClassVar[list[re.Pattern[str]]] = [
         r"BEGIN\s+PRIVATE\s+KEY",
         r"password\s*=\s*['\"][^'\"]+['\"]",
         r"DROP\s+TABLE\s+",
@@ -34,14 +34,14 @@ class ModelArmorSanitizer:
 
     def sanitize_user_prompt(
         self, prompt: str, timeout_ms: int = 150
-    ) -> Tuple[Literal["ALLOW", "BLOCK"], Optional[str]]:
+    ) -> tuple[Literal["ALLOW", "BLOCK"], str | None]:
         """
         Model Armor SanitizeUserPrompt inspection (§4.3).
         """
         # Scan for adversarial prompt injections / jailbreaks
         for pattern in self.ADVERSARIAL_PATTERNS:
             if re.search(pattern, prompt, flags=re.IGNORECASE):
-                logger.warning(f"Model Armor BLOCK: Detected prompt injection pattern '{pattern}'")
+                logger.warning("Model Armor BLOCK: Detected prompt injection pattern '%s'", pattern)
                 return (
                     "BLOCK",
                     "I am unable to process this request as it falls outside acceptable corporate usage policies.",
@@ -51,13 +51,13 @@ class ModelArmorSanitizer:
 
     def sanitize_model_response(
         self, response_text: str, timeout_ms: int = 120
-    ) -> Tuple[Literal["ALLOW", "BLOCK"], Optional[str]]:
+    ) -> tuple[Literal["ALLOW", "BLOCK"], str | None]:
         """
         Model Armor SanitizeModelResponse inspection (§4.3).
         """
         for pattern in self.UNSAFE_OUTPUT_PATTERNS:
             if re.search(pattern, response_text, flags=re.IGNORECASE):
-                logger.warning(f"Model Armor BLOCK: Outbound response violated safety policy ('{pattern}')")
+                logger.warning("Model Armor BLOCK: Outbound response violated safety policy ('%s')", pattern)
                 return (
                     "BLOCK",
                     "I could not produce a safe answer to that request. Please contact the HR helpdesk directly.",

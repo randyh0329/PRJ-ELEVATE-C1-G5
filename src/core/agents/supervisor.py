@@ -7,7 +7,7 @@ Model: Gemini 3.7 Flash (Pinned).
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Literal, Optional
+from typing import Any, ClassVar
 
 from src.core.state import AgentState
 
@@ -24,11 +24,11 @@ class SupervisorAgentNode:
     AGENT_ID = "sup-1.4.0"
     MODEL_ID = "gemini-3.7-flash@2026-08"
 
-    ESCALATION_KEYWORDS = [
+    ESCALATION_KEYWORDS: ClassVar[list[str]] = [
         "human", "representative", "agent please", "speak to someone", "operator"
     ]
 
-    def __init__(self, router: Optional[Any] = None) -> None:
+    def __init__(self, router: Any | None = None) -> None:
         if router is None:
             from src.integrations.vertex.client import vertex_gemini_client
             router = vertex_gemini_client
@@ -40,7 +40,7 @@ class SupervisorAgentNode:
         """
         user_text = state.get("masked_input", state.get("user_input", "")).strip()
 
-        logger.info(f"[{self.AGENT_ID}] Processing intent for session {state.get('session_id')}")
+        logger.info("[%s] Processing intent for session %s", self.AGENT_ID, state.get('session_id'))
 
         # 1. Check for human escalation keywords (§5.7)
         if any(kw in user_text.lower() for kw in self.ESCALATION_KEYWORDS):

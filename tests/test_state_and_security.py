@@ -67,7 +67,7 @@ class TestSecurityAndIdentity(unittest.TestCase):
         self.assertIn("[PHONE_1]", masked_text)
 
         # Simulate model echoing surrogate tokens
-        model_output = f"Confirmed notification to [EMAIL_1] and [PHONE_1]."
+        model_output = "Confirmed notification to [EMAIL_1] and [PHONE_1]."
         reidentified = self.dlp.reidentify(model_output, surrogate_map)
 
         self.assertIn("sarah.chen@elevate-corp.internal", reidentified)
@@ -89,7 +89,7 @@ class TestSecurityAndIdentity(unittest.TestCase):
 
         # Test 3: Unsafe Output Block
         unsafe_output = "-----BEGIN PRIVATE KEY----- ABCDEF123456"
-        out_verdict, out_reason = self.model_armor.sanitize_model_response(unsafe_output)
+        out_verdict, _out_reason = self.model_armor.sanitize_model_response(unsafe_output)
         self.assertEqual(out_verdict, "BLOCK")
 
 

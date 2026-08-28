@@ -1,20 +1,23 @@
 """Operational guardrail engine enforcing business constraints and policy rules."""
 import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import ClassVar
+
 from pydantic import BaseModel
+
+from src.core.clock import business_today
 
 
 class GuardrailValidationResult(BaseModel):
     """Result of an operational guardrail evaluation."""
     is_valid: bool
-    error_message: Optional[str] = None
+    error_message: str | None = None
     rule_name: str
 
 
 class OperationGuardrailEngine:
     """Enforces strict transactional and operational guardrails across HR and ITSM operations."""
 
-    VALID_TICKET_TRANSITIONS = {
+    VALID_TICKET_TRANSITIONS: ClassVar[dict[str, list[str]]] = {
         "New": ["Work in Progress", "Cancelled"],
         "Work in Progress": ["Resolved", "Pending User Info", "Cancelled"],
         "Pending User Info": ["Work in Progress", "Resolved", "Cancelled"],
@@ -23,7 +26,7 @@ class OperationGuardrailEngine:
         "Cancelled": []
     }
 
-    VALID_PRIORITIES = ["1 - Critical", "2 - High", "3 - Moderate", "4 - Low"]
+    VALID_PRIORITIES: ClassVar[list[str]] = ["1 - Critical", "2 - High", "3 - Moderate", "4 - Low"]
 
     def validate_leave_request(
         self,
@@ -31,10 +34,10 @@ class OperationGuardrailEngine:
         remaining_balance: float,
         start_date: datetime.date,
         end_date: datetime.date,
-        reference_date: Optional[datetime.date] = None
+        reference_date: datetime.date | None = None
     ) -> GuardrailValidationResult:
         """Validate leave request against balance, temporal, and calendar constraints."""
-        today = reference_date or datetime.date.today()
+        today = reference_date or business_today()
 
         # 1. Days positivity
         if days_requested <= 0:
@@ -74,7 +77,7 @@ class OperationGuardrailEngine:
             rule_name="LEAVE_VALIDATION_PASSED"
         )
 
-    def validate_contact_update(self, phone_number: Optional[str], home_address: Optional[str]) -> GuardrailValidationResult:
+    def validate_contact_update(self, phone_number: str | None, home_address: str | None) -> GuardrailValidationResult:
         """Validate phone number and address syntax constraints."""
         if phone_number is not None:
             clean_phone = phone_number.strip().replace(" ", "").replace("-", "")
@@ -85,13 +88,12 @@ class OperationGuardrailEngine:
                     rule_name="CONTACT_PHONE_SYNTAX_CONSTRAINT"
                 )
 
-        if home_address is not None:
-            if len(home_address.strip()) < 8:
-                return GuardrailValidationResult(
-                    is_valid=False,
-                    error_message="Address must be at least 8 characters long.",
-                    rule_name="CONTACT_ADDRESS_LENGTH_CONSTRAINT"
-                )
+        if home_address is not None and len(home_address.strip()) < 8:
+            return GuardrailValidationResult(
+                is_valid=False,
+                error_message="Address must be at least 8 characters long.",
+                rule_name="CONTACT_ADDRESS_LENGTH_CONSTRAINT"
+            )
 
         return GuardrailValidationResult(
             is_valid=True,
@@ -103,9 +105,9 @@ class OperationGuardrailEngine:
         self,
         requester_id: str,
         category: str,
-        existing_tickets: List[Dict],
+        existing_tickets: list[dict],
         window_minutes: int = 30,
-        now: Optional[datetime.datetime] = None
+        now: datetime.datetime | None = None
     ) -> GuardrailValidationResult:
         """Prevent duplicate ticket creation within a defined rolling window."""
         current_time = now or datetime.datetime.now(datetime.timezone.utc)

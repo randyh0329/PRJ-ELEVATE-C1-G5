@@ -9,7 +9,8 @@ import asyncio
 import datetime
 import logging
 import uuid
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger("saga.dispatcher")
 
@@ -32,8 +33,8 @@ class CloudTasksDispatcher:
         self.max_concurrency_ceiling = max_concurrency_ceiling
         self.current_concurrency_limit = int(max_concurrency_ceiling * target_capacity_ratio)
         self.min_concurrency_limit = 2
-        self.in_flight_tasks: Dict[str, Dict[str, Any]] = {}
-        self.dlq_store: List[Dict[str, Any]] = []
+        self.in_flight_tasks: dict[str, dict[str, Any]] = {}
+        self.dlq_store: list[dict[str, Any]] = []
         self.revoked_principals: set = set()
 
     def mark_principal_revoked(self, employee_id: str) -> None:
@@ -47,7 +48,8 @@ class CloudTasksDispatcher:
             self.min_concurrency_limit, self.current_concurrency_limit // 2
         )
         logger.warning(
-            f"AIMD rate-limit trigger: Halved concurrency limit from {old_limit} to {self.current_concurrency_limit}"
+            "AIMD rate-limit trigger: Halved concurrency limit from %s to %s",
+            old_limit, self.current_concurrency_limit,
         )
 
     def adapt_concurrency_on_success(self) -> None:
@@ -62,7 +64,7 @@ class CloudTasksDispatcher:
         action: Callable[[], Any],
         max_retries: int = 5,
         base_delay_seconds: float = 0.05,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Enqueues and executes a task with exponential backoff and AIMD adaptive resilience.
         """
@@ -77,7 +79,7 @@ class CloudTasksDispatcher:
 
         # Step 1: Check mid-saga revocation (§4.8)
         if employee_id in self.revoked_principals:
-            logger.warning(f"Task {task_id} aborted: Principal {employee_id} is REVOKED.")
+            logger.warning("Task %s aborted: Principal %s is REVOKED.", task_id, employee_id)
             self.in_flight_tasks[task_id]["status"] = "DISCARDED_PRINCIPAL_REVOKED"
             return {
                 "task_id": task_id,
@@ -117,7 +119,7 @@ class CloudTasksDispatcher:
 
             except Exception as e:
                 last_error = str(e)
-                logger.warning(f"Task {task_id} attempt {attempt}/{max_retries} failed: {e}")
+                logger.warning("Task %s attempt %s/%s failed: %s", task_id, attempt, max_retries, e)
                 self.adapt_concurrency_on_rate_limit()
 
                 if attempt < max_retries:
@@ -125,7 +127,7 @@ class CloudTasksDispatcher:
                     delay *= 2.0
 
         # Step 3: Retries exhausted -> Route to Dead-Letter Queue (DLQ)
-        logger.error(f"Task {task_id} permanently failed after {max_retries} attempts. Routing to DLQ.")
+        logger.error("Task %s permanently failed after %s attempts. Routing to DLQ.", task_id, max_retries)
         dlq_entry = {
             "task_id": task_id,
             "task_name": task_name,

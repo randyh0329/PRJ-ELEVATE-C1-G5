@@ -6,20 +6,20 @@ Connects directly to:
 Authenticates using the custom 'X-MCP-Token' header to bypass Google Cloud IAP at the Google Frontend (GFE) layer.
 """
 
-import os
 import asyncio
 import contextvars
 import json
 import logging
-import os
-from typing import Dict, Any, Optional, List
+from typing import Any
+
 import httpx
+
 from config.settings import get_settings
 
 logger = logging.getLogger("integrations.mcp")
 
 # ContextVar for per-request / per-user custom MCP token injection
-current_mcp_token: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("current_mcp_token", default=None)
+current_mcp_token: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_mcp_token", default=None)
 
 
 class SaaSFastMCPClient:
@@ -27,20 +27,20 @@ class SaaSFastMCPClient:
 
     def __init__(
         self,
-        base_url: Optional[str] = None,
-        mcp_token: Optional[str] = None,
+        base_url: str | None = None,
+        mcp_token: str | None = None,
         timeout: float = 15.0
     ):
         settings = get_settings()
         self.base_url = (base_url or settings.SAAS_MCP_BASE_URL).rstrip("/")
         self.mcp_token = mcp_token or settings.SAAS_MCP_CREDENTIAL
         self.timeout = timeout
-        self._async_client: Optional[httpx.AsyncClient] = None
-        self._sync_client: Optional[httpx.Client] = None
+        self._async_client: httpx.AsyncClient | None = None
+        self._sync_client: httpx.Client | None = None
         self._bound_loop = None
-        self._cached_employee_id: Optional[str] = None
+        self._cached_employee_id: str | None = None
 
-    def _get_headers(self, override_token: Optional[str] = None) -> Dict[str, str]:
+    def _get_headers(self, override_token: str | None = None) -> dict[str, str]:
         # NOTE: Do NOT send 'Authorization' header to avoid GFE intercepting!
         token = override_token or current_mcp_token.get() or self.mcp_token
         return {
@@ -56,15 +56,16 @@ class SaaSFastMCPClient:
         return self._sync_client
 
     async def _get_async_client(self) -> httpx.AsyncClient:
-        try:
-            current_loop = asyncio.get_running_loop()
-        except RuntimeError:
-            current_loop = None
+        # An AsyncClient holds connections bound to the loop that opened them,
+        # so one cached across loops raises "attached to a different loop" on
+        # reuse. The body of a coroutine only runs under a loop, so there is
+        # always one to compare against.
+        current_loop = asyncio.get_running_loop()
 
         if (
             self._async_client is None
             or self._async_client.is_closed
-            or getattr(self, "_bound_loop", None) != current_loop
+            or self._bound_loop != current_loop
         ):
             self._bound_loop = current_loop
             self._async_client = httpx.AsyncClient(timeout=self.timeout)
@@ -74,9 +75,9 @@ class SaaSFastMCPClient:
         self,
         server_path: str,
         tool_name: str,
-        arguments: Dict[str, Any],
-        override_token: Optional[str] = None
-    ) -> Dict[str, Any]:
+        arguments: dict[str, Any],
+        override_token: str | None = None
+    ) -> dict[str, Any]:
         """Synchronously invoke an MCP tool via JSON-RPC 2.0."""
         client = self._get_sync_client()
         clean_path = server_path.strip("/")
@@ -98,11 +99,11 @@ class SaaSFastMCPClient:
             if "result" in data:
                 return data["result"]
             return data
-        
-        logger.error(f"Sync MCP call {tool_name} to {url} failed with {resp.status_code}: {resp.text}")
+
+        logger.error("Sync MCP call %s to %s failed with %s: %s", tool_name, url, resp.status_code, resp.text)
         raise RuntimeError(f"FastMCP call failed with HTTP {resp.status_code}: {resp.text}")
 
-    def read_resource_sync(self, server_path: str, uri: str, override_token: Optional[str] = None) -> Dict[str, Any]:
+    def read_resource_sync(self, server_path: str, uri: str, override_token: str | None = None) -> dict[str, Any]:
         """Synchronously reads an MCP resource (JSON-RPC 'resources/read')."""
         client = self._get_sync_client()
         clean_path = server_path.strip("/")
@@ -123,10 +124,10 @@ class SaaSFastMCPClient:
                 return data["result"]
             return data
 
-        logger.error(f"Sync MCP resource read {uri} at {url} failed: {resp.status_code} {resp.text}")
+        logger.error("Sync MCP resource read %s at %s failed: %s %s", uri, url, resp.status_code, resp.text)
         raise RuntimeError(f"FastMCP resource read failed with HTTP {resp.status_code}: {resp.text}")
 
-    def get_employee_profile(self, employee_id: str) -> Dict[str, Any]:
+    def get_employee_profile(self, employee_id: str) -> dict[str, Any]:
         """Reads WorkWeek employee profile resource (workweek://employees/{id}/profile)."""
         uri = f"workweek://employees/{employee_id}/profile"
         try:
@@ -134,7 +135,7 @@ class SaaSFastMCPClient:
             contents = res.get("contents", [{}])[0].get("text", "{}")
             return json.loads(contents)
         except Exception as e:
-            logger.warning(f"Failed to read employee profile resource {uri}: {e}")
+            logger.warning("Failed to read employee profile resource %s: %s", uri, e)
             try:
                 return self.get_personal_info(employee_id)
             except Exception:
@@ -145,8 +146,8 @@ class SaaSFastMCPClient:
         self,
         server_path: str,
         tool_name: str,
-        arguments: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        arguments: dict[str, Any]
+    ) -> dict[str, Any]:
         """Asynchronously invoke an MCP tool via JSON-RPC 2.0."""
         client = await self._get_async_client()
         clean_path = server_path.strip("/")
@@ -169,14 +170,14 @@ class SaaSFastMCPClient:
                 return data["result"]
             return data
 
-        logger.error(f"Async MCP call {tool_name} to {url} failed with {resp.status_code}: {resp.text}")
+        logger.error("Async MCP call %s to %s failed with %s: %s", tool_name, url, resp.status_code, resp.text)
         raise RuntimeError(f"FastMCP call failed with HTTP {resp.status_code}: {resp.text}")
 
     # =========================================================================
     # High-level WorkWeek FastMCP Operations
     # =========================================================================
 
-    def get_current_employee_id(self, token: Optional[str] = None) -> str:
+    def get_current_employee_id(self, token: str | None = None) -> str:
         """Resolves authenticated session employee ID (e.g. 'EMP-509')."""
         if not token and self._cached_employee_id:
             return self._cached_employee_id
@@ -193,14 +194,14 @@ class SaaSFastMCPClient:
                     self._cached_employee_id = discovered
                 return discovered
         except Exception as e:
-            logger.warning(f"Unable to fetch employee id from session: {e}")
+            logger.warning("Unable to fetch employee id from session: %s", e)
             if token:
                 raise
         return "EMP-509"
 
 
 
-    def get_employee_balances(self, employee_id: str) -> Dict[str, float]:
+    def get_employee_balances(self, employee_id: str) -> dict[str, float]:
         """Fetches vacation and sick balances from live WorkWeek FastMCP."""
         res = self.call_tool_sync("work-week/mcp/", "get_employee_balances", {"employee_id": employee_id})
         # Parse content text: "Employee EMP-509 Leave Balances:\n- Vacation: 15.0 days remaining (5.0/20.0 used)\n- Sick: 10.0 days remaining (0.0/10.0 used)"
@@ -214,10 +215,10 @@ class SaaSFastMCPClient:
                 elif "Sick:" in line:
                     sick = float(line.split("Sick:")[1].split("days")[0].strip())
         except Exception as e:
-            logger.warning(f"Error parsing live balance text: {e}")
+            logger.warning("Error parsing live balance text: %s", e)
         return {"vacation_days_remaining": vacation, "sick_days_remaining": sick}
 
-    def get_personal_info(self, employee_id: str) -> Dict[str, str]:
+    def get_personal_info(self, employee_id: str) -> dict[str, str]:
         """Fetches address and phone from live WorkWeek FastMCP."""
         res = self.call_tool_sync("work-week/mcp/", "get_personal_info", {"employee_id": employee_id})
         text = res.get("content", [{}])[0].get("text", "")
@@ -234,7 +235,7 @@ class SaaSFastMCPClient:
         return {"address": address, "phone": phone}
 
 
-    def update_personal_info(self, employee_id: str, address: str, phone: str) -> Dict[str, Any]:
+    def update_personal_info(self, employee_id: str, address: str, phone: str) -> dict[str, Any]:
         """Updates contact info in live WorkWeek FastMCP."""
         return self.call_tool_sync("work-week/mcp/", "update_personal_info", {
             "employee_id": employee_id,
@@ -249,7 +250,7 @@ class SaaSFastMCPClient:
         end_date: str,
         leave_type: str,
         days: float
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Submits time off into live WorkWeek FastMCP."""
         return self.call_tool_sync("work-week/mcp/", "request_time_off", {
             "employee_id": employee_id,
@@ -259,7 +260,7 @@ class SaaSFastMCPClient:
             "days": days
         })
 
-    def get_leave_requests(self, employee_id: str) -> List[Dict[str, Any]]:
+    def get_leave_requests(self, employee_id: str) -> list[dict[str, Any]]:
         """Fetches leave request history from live WorkWeek FastMCP."""
         res = self.call_tool_sync("work-week/mcp/", "get_leave_requests", {"employee_id": employee_id})
         text = res.get("content", [{}])[0].get("text", "[]")
@@ -268,7 +269,7 @@ class SaaSFastMCPClient:
         except Exception:
             return []
 
-    def cancel_leave_request(self, employee_id: str, request_id: int) -> Dict[str, Any]:
+    def cancel_leave_request(self, employee_id: str, request_id: int) -> dict[str, Any]:
         """Cancels a leave request in live WorkWeek FastMCP."""
         return self.call_tool_sync("work-week/mcp/", "cancel_leave_request", {
             "employee_id": employee_id,
@@ -279,7 +280,7 @@ class SaaSFastMCPClient:
     # High-level ServiceImmediately FastMCP Operations
     # =========================================================================
 
-    def list_tickets(self, employee_id: str) -> List[Dict[str, Any]]:
+    def list_tickets(self, employee_id: str) -> list[dict[str, Any]]:
         """Lists incidents from live ServiceImmediately FastMCP."""
         res = self.call_tool_sync("service-immediately/mcp/", "list_tickets", {"employee_id": employee_id})
         text = res.get("content", [{}])[0].get("text", "[]")
@@ -295,7 +296,7 @@ class SaaSFastMCPClient:
         short_description: str,
         priority: str,
         assignment_group: str = "Service Desk"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Creates a ticket in live ServiceImmediately FastMCP."""
         return self.call_tool_sync("service-immediately/mcp/", "create_ticket", {
             "requested_by": requested_by,
@@ -305,7 +306,7 @@ class SaaSFastMCPClient:
             "assignment_group": assignment_group
         })
 
-    def add_ticket_comment(self, ticket_id: str, author: str, comment: str) -> Dict[str, Any]:
+    def add_ticket_comment(self, ticket_id: str, author: str, comment: str) -> dict[str, Any]:
         """Adds a comment in live ServiceImmediately FastMCP."""
         return self.call_tool_sync("service-immediately/mcp/", "add_ticket_comment", {
             "ticket_id": ticket_id,
@@ -319,7 +320,7 @@ class SaaSFastMCPClient:
         status: str,
         resolution_notes: str = "",
         updated_by: str = "System"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Updates ticket status in live ServiceImmediately FastMCP."""
         return self.call_tool_sync("service-immediately/mcp/", "update_ticket_status", {
             "ticket_id": ticket_id,

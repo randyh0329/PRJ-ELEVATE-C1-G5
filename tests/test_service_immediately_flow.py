@@ -1,6 +1,4 @@
 """Unit and integration tests for ServiceImmediately ITSM operations (UC-1.3)."""
-import datetime
-import pytest
 from src.core.agent import HREnterpriseAgent
 
 
@@ -19,7 +17,7 @@ def test_service_immediately_create_vpn_incident(agent: HREnterpriseAgent):
 def test_service_immediately_duplicate_prevention(agent: HREnterpriseAgent):
     """Verify 30-minute duplicate ticket mitigation."""
     prompt = "Create an IT ticket because my VPN connection keeps dropping."
-    
+
     # Turn 1: Initial creation succeeds
     resp1 = agent.process_message(user_prompt=prompt, caller_employee_id="EMP-1001")
     assert "Support Incident Ticket [INC" in resp1.response_text

@@ -4,10 +4,11 @@ Validates WorkWeek HCM and ServiceImmediately ITSM live communication via X-MCP-
 """
 
 import pytest
+
 from config.settings import get_settings
-from src.integrations.mcp.client import SaaSFastMCPClient, saas_fast_mcp_client
-from src.integrations.workweek.client import WorkWeekClient
+from src.integrations.mcp.client import SaaSFastMCPClient
 from src.integrations.service_immediately.client import ServiceImmediatelyClient
+from src.integrations.workweek.client import WorkWeekClient
 
 
 class TestSaaSFastMCPIntegration:

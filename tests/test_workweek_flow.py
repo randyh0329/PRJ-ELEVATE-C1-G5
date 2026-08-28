@@ -1,6 +1,8 @@
 """Unit and integration tests for WorkWeek HCM operations (UC-1.2)."""
 import datetime
+
 import pytest
+
 from src.core.agent import HREnterpriseAgent
 from src.integrations.workweek.client import workweek_client
 

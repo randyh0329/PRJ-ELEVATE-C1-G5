@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.graph import AgentOrchestrationGraph
-from app.state import AgentState, SagaWorkflowState
+from app.state import AgentState
 
 
 class TrajectoryRunner:
@@ -19,15 +19,15 @@ class TrajectoryRunner:
     Measures trajectory correctness, compensation validity, and grounding adherence.
     """
 
-    def __init__(self, graph: Optional[AgentOrchestrationGraph] = None):
+    def __init__(self, graph: AgentOrchestrationGraph | None = None):
         self.graph = graph or AgentOrchestrationGraph()
 
     async def run_single_case(
         self,
-        case: Dict[str, Any],
+        case: dict[str, Any],
         employee_id: str = "EMP-44210",
-        faults: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        faults: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Executes a single test case through the orchestration graph.
         """
@@ -75,15 +75,15 @@ class TrajectoryRunner:
             "ledger_steps": [s.to_dict() for s in output_state.get("saga_ledger", [])],
         }
 
-    async def run_golden_suite(self, golden_file_path: str) -> List[Dict[str, Any]]:
+    async def run_golden_suite(self, golden_file_path: str) -> list[dict[str, Any]]:
         """
         Loads and executes all golden test cases from a JSONL file.
         """
         results = []
         path = Path(golden_file_path)
-        with open(path, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
+        with open(path, encoding="utf-8") as f:
+            for raw_line in f:
+                line = raw_line.strip()
                 if not line:
                     continue
                 case = json.loads(line)

@@ -11,11 +11,13 @@ import os
 import shutil
 import subprocess
 import time
-from typing import Any, Dict, Optional, Type, TypeVar
+from typing import Any, TypeVar
+
 import httpx
 from pydantic import BaseModel
 
 from config.settings import get_settings
+from src.core.clock import business_today
 from src.models.routing import SupervisorRoutingDecision, WorkWeekToolSelection
 
 logger = logging.getLogger("integrations.vertex")
@@ -67,9 +69,9 @@ class VertexGeminiClient:
 
     def __init__(
         self,
-        project_id: Optional[str] = None,
-        region: Optional[str] = None,
-        model_id: Optional[str] = None,
+        project_id: str | None = None,
+        region: str | None = None,
+        model_id: str | None = None,
     ) -> None:
         settings = get_settings()
         self.project_id = project_id or getattr(settings, "PROJECT_ID", "pe-group5")
@@ -79,7 +81,7 @@ class VertexGeminiClient:
             or os.environ.get("VERTEX_MODEL_ID")
             or getattr(settings, "VERTEX_MODEL_ID", "gemini-3.7-flash")
         )
-        self._cached_token: Optional[str] = None
+        self._cached_token: str | None = None
         self._token_expiry: float = 0.0
         self._http_client = httpx.Client(timeout=25.0)
 
@@ -119,7 +121,6 @@ class VertexGeminiClient:
         candidate_paths = [
             shutil.which("gcloud"),
             os.path.expanduser("~/google-cloud-sdk/bin/gcloud"),
-            "/usr/local/google/home/romij/google-cloud-sdk/bin/gcloud",
             "/usr/bin/gcloud",
         ]
         gcloud_bin = next((p for p in candidate_paths if p and os.path.isfile(p) and os.access(p, os.X_OK)), None)
@@ -131,7 +132,7 @@ class VertexGeminiClient:
             ]:
                 try:
                     proc = subprocess.run(
-                        [gcloud_bin] + subcmd,
+                        [gcloud_bin, *subcmd],
                         capture_output=True,
                         text=True,
                         timeout=5.0,
@@ -149,10 +150,10 @@ class VertexGeminiClient:
                             token = lines[-1]
                             self._cached_token = token
                             self._token_expiry = now + 3300
-                            logger.debug(f"Retrieved token using {gcloud_bin} {' '.join(subcmd)}")
+                            logger.debug("Retrieved token using %s %s", gcloud_bin, ' '.join(subcmd))
                             return token
                 except Exception as e:
-                    logger.debug(f"gcloud subcmd {subcmd} failed: {e}")
+                    logger.debug("gcloud subcmd %s failed: %s", subcmd, e)
 
         raise PermissionError(
             "Could not authenticate to Vertex AI. Ensure Google ADC, Cloud Run Metadata Server, "
@@ -163,7 +164,7 @@ class VertexGeminiClient:
         self,
         prompt: str,
         system_instruction: str,
-        response_model: Type[T],
+        response_model: type[T],
         temperature: float = 0.0,
     ) -> T:
         """
@@ -206,7 +207,7 @@ class VertexGeminiClient:
             "generationConfig": generation_config,
         }
 
-        last_err: Optional[Exception] = None
+        last_err: Exception | None = None
         for model, loc in candidates:
             endpoint = "aiplatform.googleapis.com" if loc == "global" else f"{loc}-aiplatform.googleapis.com"
             url = (
@@ -222,7 +223,7 @@ class VertexGeminiClient:
                 resp = self._http_client.post(url, json=payload, headers=headers)
                 if resp.status_code in [404, 400] and (model, loc) != candidates[-1]:
                     logger.warning(
-                        f"Model '{model}' at '{loc}' returned {resp.status_code}; falling back."
+                        "Model '%s' at '%s' returned %s; falling back.", model, loc, resp.status_code
                     )
                     continue
                 if resp.status_code != 200:
@@ -242,10 +243,10 @@ class VertexGeminiClient:
     def route_intent(
         self,
         prompt: str,
-        reference_date: Optional[datetime.date] = None
+        reference_date: datetime.date | None = None
     ) -> SupervisorRoutingDecision:
         """Classify user intent and extract tool arguments using Gemini Supervisor Router."""
-        ref = reference_date or datetime.date.today()
+        ref = reference_date or business_today()
         ref_context = (
             f"\n\nCRITICAL CONTEXT: Today's reference date is {ref.isoformat()} ({ref.strftime('%A')}).\n"
             f"If the request is UC_1_2_WORKWEEK_LEAVE, identify the specific tool_name:\n"
@@ -264,10 +265,10 @@ class VertexGeminiClient:
     def select_workweek_tool(
         self,
         prompt: str,
-        reference_date: Optional[datetime.date] = None
+        reference_date: datetime.date | None = None
     ) -> WorkWeekToolSelection:
         """Select WorkWeek FastMCP tool and extract arguments using Gemini."""
-        ref = reference_date or datetime.date.today()
+        ref = reference_date or business_today()
         ref_context = (
             f"\n\nCRITICAL DATE CONTEXT: Today's reference date is {ref.isoformat()} ({ref.strftime('%A')}). "
             f"All relative date expressions (such as 'tomorrow', '내일', 'next week', '다음 주', 'next Monday') "
@@ -281,7 +282,7 @@ class VertexGeminiClient:
             temperature=0.0,
         )
 
-    def _clean_schema(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+    def _clean_schema(self, schema: dict[str, Any]) -> dict[str, Any]:
         """Sanitize Pydantic JSON schema for Vertex AI Gemini OpenAPI compatibility."""
         sanitized = dict(schema)
         for key in ["$defs", "title", "description"]:

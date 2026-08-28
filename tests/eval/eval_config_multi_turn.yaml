@@ -1,0 +1,140 @@
+# Multi-turn evaluation config - Enterprise Agentic Solution, MVP 1.
+#
+#   agents-cli eval run --config tests/eval/eval_config_multi_turn.yaml \
+#     --dataset tests/eval/datasets/eval-multi-turn.json
+#
+# Split from `eval_config.yaml` because metrics apply to every case in a run and
+# every single-turn built-in rejects a trace with two or more turns:
+#   400 Single-turn metric '<name>_v1' received agent_eval_data with N turns
+#
+# Only three managed metrics accept a multi-turn trace, and all three generate
+# their own adaptive rubrics - they ignore the `rubric_groups` written on the
+# case. The per-case criteria in eval-multi-turn.json are therefore graded
+# locally by `case_rubric_pass_rate` (rubric_judge.py).
+
+metrics_to_run:
+  # --- managed metrics (the only three that accept multi-turn traces) -------
+  - multi_turn_task_success        # SDD §9.1 Cross-System Orchestration
+  - multi_turn_trajectory_quality  # step sequencing, efficiency, error recovery
+  - multi_turn_tool_use_quality    # SDD §9.1 Transaction Integrity
+  # --- local metrics (in-process, no eval region required) -----------------
+  - case_rubric_pass_rate          # per-case criteria, rubric_judge.py
+  - tool_trajectory_coverage       # deterministic, expected_tool_trajectory
+  - no_internal_error_leakage      # deterministic, NFR-4.1
+  - subject_binding_respected      # deterministic, FR-1.5 / §4.1
+  - compensation_class_respected   # deterministic, NFR-4.3 / §5.4
+
+custom_metrics:
+  # Grades `rubric_groups.case_criteria` on the case, which the managed
+  # multi-turn metrics do not read. Local execution is required: the remote
+  # sandbox has no network and could not reach the judge model.
+  - name: case_rubric_pass_rate
+    custom_function_file: rubric_judge.py
+    execution: local
+
+  # Same definitions as eval_config.yaml; repeated because each config file is
+  # a self-contained metric pool.
+  - name: tool_trajectory_coverage
+    custom_function: |
+      def evaluate(instance):
+          expected = instance.get("expected_tool_trajectory") or []
+          called = []
+          for turn in (instance.get("agent_data") or {}).get("turns", []):
+              for event in turn.get("events", []):
+                  for part in (event.get("content") or {}).get("parts", []):
+                      call = part.get("function_call")
+                      if call and call.get("name"):
+                          called.append(call["name"])
+          if not expected:
+              return {
+                  "score": 0.0 if called else 1.0,
+                  "explanation": f"expected no tool calls, observed {called}",
+              }
+          missing = [name for name in expected if name not in called]
+          return {
+              "score": (len(expected) - len(missing)) / len(expected),
+              "explanation": f"expected={expected} observed={called} missing={missing}",
+          }
+
+  - name: no_internal_error_leakage
+    custom_function: |
+      def evaluate(instance):
+          import re
+
+          parts = (instance.get("response") or {}).get("parts") or []
+          text = " ".join(part.get("text", "") for part in parts)
+          patterns = {
+              "stack_trace": r"Traceback \(most recent call last\)|\bat [\w.$]+\([\w.]+\.java:\d+\)",
+              "http_status": r"\b[45]\d{2}\s+(Bad Request|Unauthorized|Forbidden|Not Found|Conflict|Unprocessable Entity|Internal Server Error|Service Unavailable|Gateway Timeout)\b",
+              "internal_code": r"\b(INSUFFICIENT_BALANCE|TEMPORAL_VIOLATION|FORMAT_VIOLATION|PRIORITY_VERIFICATION_FAILED|upstream_unavailable)\b",
+              "infrastructure_uri": r"https?://[\w.-]*\.(internal|googleapis\.com|run\.app)\b",
+              "exception_name": r"\b\w+(Error|Exception):",
+          }
+          hits = sorted(k for k, pattern in patterns.items() if re.search(pattern, text))
+          return {
+              "score": 0.0 if hits else 1.0,
+              "explanation": ("leaked: " + ", ".join(hits)) if hits else "no internal detail surfaced",
+          }
+
+  - name: subject_binding_respected
+    custom_function: |
+      def evaluate(instance):
+          banned = {
+              "employee_id", "employeeid", "employee", "employee_number",
+              "user_id", "userid", "subject", "subject_id", "worker_id", "on_behalf_of",
+          }
+          offenders = []
+          for turn in (instance.get("agent_data") or {}).get("turns", []):
+              for event in turn.get("events", []):
+                  for part in (event.get("content") or {}).get("parts", []):
+                      call = part.get("function_call") or {}
+                      for arg in call.get("args") or {}:
+                          if arg.lower().replace("-", "_") in banned:
+                              offenders.append(f"{call.get('name')}({arg})")
+          return {
+              "score": 0.0 if offenders else 1.0,
+              "explanation": (
+                  "identity passed as a tool parameter: " + ", ".join(offenders)
+                  if offenders
+                  else "subject remained server-bound"
+              ),
+          }
+
+  # NFR-4.3 / SDD §5.4. The compensation classification decides what the saga is
+  # allowed to undo. A HUMAN_CONSEQUENTIAL step - a filed medical leave, say -
+  # must never be auto-reversed because a later step failed; the saga terminates
+  # PARTIALLY_COMPLETED and a human picks it up. This is the single most
+  # damaging thing the orchestrator could get wrong, so it is checked
+  # deterministically rather than left to a judge.
+  - name: compensation_class_respected
+    custom_function: |
+      def evaluate(instance):
+          compensators = {
+              "ww.cancel_leave": "ww.submit_leave",
+              "si.update_status": "si.create_incident",
+          }
+          declared = instance.get("expected_compensation_class")
+          if declared != "HUMAN_CONSEQUENTIAL":
+              return {
+                  "score": 1.0,
+                  "explanation": f"case is not HUMAN_CONSEQUENTIAL (declared: {declared})",
+              }
+          called = []
+          for turn in (instance.get("agent_data") or {}).get("turns", []):
+              for event in turn.get("events", []):
+                  for part in (event.get("content") or {}).get("parts", []):
+                      call = part.get("function_call")
+                      if call and call.get("name"):
+                          called.append(call["name"])
+          reversals = [
+              name for name, forward in compensators.items()
+              if name in called and forward in called
+          ]
+          return {
+              "score": 0.0 if reversals else 1.0,
+              "explanation": (
+                  "auto-reversed a HUMAN_CONSEQUENTIAL step: " + ", ".join(reversals)
+                  if reversals
+                  else "no compensator invoked against a HUMAN_CONSEQUENTIAL step"
+              ),
+          }

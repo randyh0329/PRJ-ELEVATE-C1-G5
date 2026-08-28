@@ -1,13 +1,15 @@
 """Pytest test fixtures and configuration."""
 import re
+
 import pytest
-from src.integrations.workweek.mock_service import workweek_mock_service
-from src.integrations.service_immediately.mock_service import service_immediately_mock_service
-from src.telemetry.audit_logger import audit_logger
-from src.core.session import session_store
+
 from src.core.agent import HREnterpriseAgent
-from src.integrations.vertex.client import VertexGeminiClient
 from src.core.models.routing import SupervisorRoutingDecision, WorkWeekToolSelection
+from src.core.session import session_store
+from src.integrations.service_immediately.mock_service import service_immediately_mock_service
+from src.integrations.vertex.client import VertexGeminiClient
+from src.integrations.workweek.mock_service import workweek_mock_service
+from src.telemetry.audit_logger import audit_logger
 
 
 class MockVertexGeminiClient:
