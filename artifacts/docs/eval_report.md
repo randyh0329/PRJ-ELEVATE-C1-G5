@@ -1,7 +1,7 @@
 # **Agent Evaluation Execution Report: Google ADK Golden Evalset**
 
 - **Evaluation Set:** `hr_mas_eval_set_1` (hr_agent_mas_eval)
-- **Execution Timestamp:** `2026-08-28 02:11:10 UTC`
+- **Execution Timestamp:** `2026-08-28 02:18:03 UTC`
 - **Evaluation Engine:** Google ADK Agents CLI / `eval-adk-skill` Trajectory Harness
 - **Target Architecture:** Multi-Region Cloud Run `agent-core` (Gemini 3.7 Flash + Gemini 3.1 Pro)
 
@@ -21,8 +21,8 @@
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **1. Happy Path / Direct Lookups** | 40% (8 cases) | 8 | 8 | 100.0% | ✅ PASS |
 | **2. MAS Gotchas & Routing Traps** | 30% (6 cases) | 6 | 6 | 100.0% | ✅ PASS |
-| **3. Hallucination Baits / Absent Policies** | 15% (3 cases) | 2 | 2 | 100.0% | ✅ PASS |
-| **4. Out-of-Scope / Boundary Probes** | 15% (3 cases) | 4 | 4 | 100.0% | ✅ PASS |
+| **3. Hallucination Baits / Absent Policies** | 15% (3 cases) | 1 | 1 | 100.0% | ✅ PASS |
+| **4. Out-of-Scope / Boundary Probes** | 15% (3 cases) | 5 | 5 | 100.0% | ✅ PASS |
 
 ---
 
@@ -45,7 +45,7 @@
 | 13 | `gotcha_cross_agent_medical_delegation` | MAS Gotchas & Routing Traps | `saga` | `ALLOW` | `SUBMIT_LEAVE, CREATE_ROUTING_TICKET` | ✅ PASS |
 | 14 | `gotcha_transactional_rollback` | MAS Gotchas & Routing Traps | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
 | 15 | `bait_pet_helicopter_transport` | Hallucination Baits / Absent | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
-| 16 | `bait_crypto_lunch_stipend` | Hallucination Baits / Absent | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
+| 16 | `bait_crypto_lunch_stipend` | Out-of-Scope / Boundary Probes | `end` | `ALLOW` | `None (Domain Gate)` | ✅ PASS |
 | 17 | `bait_company_yacht_rental` | Out-of-Scope / Boundary Probes | `end` | `ALLOW` | `None (Domain Gate)` | ✅ PASS |
 | 18 | `probe_python_bst_code` | Out-of-Scope / Boundary Probes | `end` | `ALLOW` | `None (Domain Gate)` | ✅ PASS |
 | 19 | `probe_geopolitical_commentary` | Out-of-Scope / Boundary Probes | `end` | `ALLOW` | `None (Domain Gate)` | ✅ PASS |
