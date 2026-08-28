@@ -29,7 +29,7 @@ from src.core.state import (
 )
 from src.saga.compensation import SagaCompensationDecisionMatrix
 from src.saga.ledger import SagaLedgerManager
-from src.security.dlp import CloudDLPInterceptor
+from src.security.dlp import CloudDLPInterceptor, _d
 from src.telemetry.compensation_event import (
     PriorStepRef,
     SagaCompensationEvent,
@@ -137,6 +137,53 @@ def test_surrogates_are_stable_within_a_session():
     token = next(iter(surrogates))
     assert token in first
     assert token in second
+
+
+def test_two_detectors_claiming_the_same_digits_are_resolved_leftmost_first():
+    """`_scan` returns non-overlapping spans, so one of a pair has to lose.
+
+    Here a phone number is followed by a street address that begins with the
+    phone's own last group - "...4567 Main Street". Both detectors match, their
+    spans overlap, and the earlier one wins outright. What matters is that the
+    loser is dropped rather than applied on top: a second transformation inside
+    an already-substituted span would splice a surrogate in half and leave the
+    output neither masked nor readable.
+    """
+    interceptor = CloudDLPInterceptor()
+    text = "Call 555-123-4567 Main Street for help."
+
+    assert _inspect(text) == ["PHONE_NUMBER"]
+
+    masked, surrogates = interceptor.deidentify(text)
+
+    assert "555-123-4567" not in masked
+    assert masked == "Call [PHONE_1] Main Street for help."
+    assert surrogates == {"[PHONE_1]": "555-123-4567"}
+
+
+def test_a_value_group_that_did_not_participate_is_not_transformed():
+    """A `v` group inside an alternation can match nothing, and `re` reports that
+    as span `(-1, -1)`. Without the guard, `text[-1:-1]` would splice the
+    surrogate in at the end of the string and mask nothing at all.
+
+    No shipped detector has an optional `v` - this drives a stand-in through the
+    same `_scan`, because the next detector added is the one that would.
+    """
+
+    class _WithOptionalValue(CloudDLPInterceptor):
+        DETECTORS = (
+            _d("STAFF_PASS", r"\bstaff pass(?:\s+(?P<v>\d{6}))?\b", "PASS"),
+            *CloudDLPInterceptor.DETECTORS,
+        )
+
+    interceptor = _WithOptionalValue()
+
+    unmatched, surrogates = interceptor.deidentify("Ask about your staff pass at the desk.")
+    matched, _ = interceptor.deidentify("Ask about staff pass 004471 at the desk.")
+
+    assert unmatched == "Ask about your staff pass at the desk."
+    assert surrogates == {}
+    assert matched == "Ask about staff pass [PASS_1] at the desk."
 
 
 # ---------------------------------------------------------------------------

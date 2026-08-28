@@ -17,11 +17,13 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
+from src.grounding.citations import blob_url
 from src.grounding.policy_rag.chunking import slugify
 from src.grounding.policy_rag.config import GENERAL_ENTITLEMENT, Config
 from src.grounding.policy_rag.documents import Chunk, Citation, Hit
 from src.grounding.policy_rag.embeddings import EmbeddingProvider
 from src.grounding.policy_rag.index import PolicyIndex
+from src.grounding.policy_rag.language import Language, cjk_terms, resolve
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +36,27 @@ _STOPWORDS = frozenset(
 )
 
 
-def tokenize(text: str) -> list[str]:
+def latin_terms(text: str) -> list[str]:
+    """Word and number terms in Latin script.
+
+    Split out from `tokenize` because this is precisely the part of a query -
+    in *any* language - that an English corpus could echo back verbatim. A
+    Japanese question about `Section 20` or a `US$100` cap still carries those
+    terms, and they are the only lexical evidence available when the question
+    and the handbook are not written in the same script. See
+    `Retriever.retrieve` for the corroboration rule built on that.
+    """
     return [t for t in _TOKEN_RE.findall(text.lower()) if t not in _STOPWORDS and len(t) > 1]
+
+
+def tokenize(text: str) -> list[str]:
+    """Lexical terms: Latin words and numbers, plus CJK character bigrams.
+
+    Text containing no CJK tokenises exactly as it did before bigrams existed,
+    which is what keeps the calibration constants in `config/corpus.yaml` - all
+    derived against an English golden set - valid across this change.
+    """
+    return latin_terms(text) + cjk_terms(text)
 
 
 @dataclass
@@ -51,6 +72,9 @@ class RetrievalRequest:
     doc_types: list[str] | None = None
     #: Override the configured relevance gate (evaluation harness use only).
     relevance_gate: float | None = None
+    #: BCP-47-ish code pinning the query language. `None` means detect it from
+    #: the text - see `language.resolve`.
+    language: str | None = None
 
 
 @dataclass
@@ -64,6 +88,10 @@ class RetrievalResult:
     #: Best relevance seen before gating, including rejected hits.
     best_relevance: float
     searched_corpora: list[str]
+    #: Language the query was read as. Reported on the wire because a caller
+    #: seeing an unexpected answer language needs to know whether detection or
+    #: composition got it wrong.
+    language: Language = field(default_factory=lambda: resolve("", "en"))
 
     @property
     def passed_gate(self) -> bool:
@@ -76,6 +104,8 @@ class RetrievalResult:
             "best_relevance": round(self.best_relevance, 4),
             "passed_gate": self.passed_gate,
             "searched_corpora": self.searched_corpora,
+            "language": self.language.code,
+            "cross_lingual": self.language.cross_lingual,
             "hits": [h.to_dict() for h in self.hits],
             "rejected_count": len(self.rejected),
         }
@@ -193,11 +223,23 @@ class Retriever:
     # --- citations ----------------------------------------------------------
 
     def _citation_for(self, chunk: Chunk) -> Citation:
-        uri = f"{chunk.path}#{chunk.anchor}" if chunk.anchor else chunk.path
+        """A resolvable deep link to the passage this hit came from (FR-5.3).
+
+        Two different questions get two different answers here, and conflating
+        them is how a broken citation ships. `uri` is where the *reader* goes, so
+        it is a URL - `blob_url` over the repo-relative path, with the heading
+        anchor preserved. `resolved` is whether the citation is *true*, so it is
+        checked against the working tree, where the file either exists with that
+        heading or does not.
+
+        Emitting the bare `path#anchor` as the uri, which is what this did,
+        satisfied neither: it renders as inert text in every chat client, and it
+        looks identical whether the file is there or not.
+        """
         primary = chunk.sources[0] if chunk.sources else None
         citation = Citation(
             title=f"{chunk.doc_title} - {chunk.heading_trail}" if chunk.heading_path else chunk.doc_title,
-            uri=uri,
+            uri=blob_url(chunk.path, chunk.anchor or None),
             source_title=primary.title if primary else None,
             source_uri=primary.resource if primary else None,
         )
@@ -214,14 +256,26 @@ class Retriever:
         doc_types = set(request.doc_types or cfg.default_doc_types)
         entitlements = set(request.entitlements or [GENERAL_ENTITLEMENT])
 
+        language = resolve(request.query, request.language)
+
         query_vector = self.embedder.encode_query(request.query)
         query_terms = tokenize(request.query)
+        # What the corroboration rule below is allowed to look at. For an
+        # English query this is the whole term list and the rule is unchanged.
+        # For a cross-lingual one it is the Latin remainder - section numbers,
+        # figures, product names - because CJK bigrams cannot appear in an
+        # English chunk and scoring a hit against terms it *cannot* contain
+        # measures the corpus language, not the hit.
+        corroborating_terms = latin_terms(request.query) if language.cross_lingual else query_terms
 
         # Over-fetch: ACL, corpus and doc-type filters all cut candidates, and
         # FAISS cannot express them, so the filtering happens after the search.
         candidates = self.index.search(query_vector, cfg.candidate_k)
 
         scored: list[Hit] = []
+        #: chunk_id -> corroboration score, or None when the query offers
+        #: nothing the corpus language could echo and the rule cannot run.
+        corroboration: dict[str, float | None] = {}
         for chunk, cosine in candidates:
             if chunk.corpus_id not in corpora:
                 continue
@@ -234,6 +288,9 @@ class Retriever:
             if self._link_density.get(chunk.chunk_id, 0.0) > cfg.max_link_density:
                 continue
             lexical = self._lexical_score(query_terms, chunk)
+            corroboration[chunk.chunk_id] = (
+                self._lexical_score(corroborating_terms, chunk) if corroborating_terms else None
+            )
             scored.append(
                 Hit(
                     chunk=chunk,
@@ -262,10 +319,19 @@ class Retriever:
             # rule. `_fuse` deliberately does not penalise missing overlap, so
             # the requirement is expressed here instead, as an admissibility
             # rule rather than a score adjustment.
-            if hit.lexical_score < cfg.min_lexical_corroboration:
+            #
+            # `None` means the rule has nothing to work with: a wholly CJK
+            # question against an English corpus shares no vocabulary by
+            # construction, so a zero here would be a fact about the two
+            # languages rather than about this hit. Skipping it is a real loss
+            # of safety, not a free pass - see the cross-lingual caveat in the
+            # README - and it is the reason the language is reported back to
+            # the caller alongside the answer.
+            hit_corroboration = corroboration[hit.chunk.chunk_id]
+            if hit_corroboration is not None and hit_corroboration < cfg.min_lexical_corroboration:
                 logger.debug(
-                    "dropping uncorroborated hit (dense %.3f, lexical %.3f): %s",
-                    hit.dense_score, hit.lexical_score, hit.citation.uri,
+                    "dropping uncorroborated hit (dense %.3f, corroboration %.3f): %s",
+                    hit.dense_score, hit_corroboration, hit.citation.uri,
                 )
                 rejected.append(hit)
                 continue
@@ -289,6 +355,7 @@ class Retriever:
             gate=gate,
             best_relevance=best,
             searched_corpora=sorted(corpora),
+            language=language,
         )
 
 

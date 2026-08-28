@@ -25,6 +25,7 @@ from functools import lru_cache
 import numpy as np
 
 from src.grounding.policy_rag.config import EmbeddingConfig
+from src.grounding.policy_rag.language import cjk_terms
 
 logger = logging.getLogger(__name__)
 
@@ -66,12 +67,57 @@ _QUERY_PREFIXES: dict[str, str] = {
     "BAAI/bge-large-en-v1.5": "Represent this sentence for searching relevant passages: ",
     "intfloat/e5-small-v2": "query: ",
     "intfloat/e5-base-v2": "query: ",
+    "intfloat/multilingual-e5-small": "query: ",
+    "intfloat/multilingual-e5-base": "query: ",
+    "intfloat/multilingual-e5-large": "query: ",
 }
 #: Document-side prefix, for the models that want one on both sides.
 _PASSAGE_PREFIXES: dict[str, str] = {
     "intfloat/e5-small-v2": "passage: ",
     "intfloat/e5-base-v2": "passage: ",
+    "intfloat/multilingual-e5-small": "passage: ",
+    "intfloat/multilingual-e5-base": "passage: ",
+    "intfloat/multilingual-e5-large": "passage: ",
 }
+
+#: Checkpoints whose training data spans the query languages this service
+#: accepts, so a Japanese question lands near an English paragraph about the
+#: same rule in the shared vector space.
+#:
+#: This distinction is load-bearing and easy to lose. The tokeniser, the guards
+#: and the citation path all handle CJK now, so a Japanese query runs end to end
+#: and returns *something* under any model. But under an English-only checkpoint
+#: such as `bge-small-en-v1.5`, CJK falls back to near-uniform subword pieces
+#: and the resulting neighbours are noise wearing a confidence score. The
+#: relevance gate catches most of it; "most" is not a safety property, which is
+#: why `PolicyRagService` warns rather than trusting the gate alone.
+#:
+#: `multilingual-e5-small` is the drop-in: 384 dimensions like the current
+#: default, so the index geometry and every calibration constant survive the
+#: swap, and the E5 prefixes above already apply. Re-running ingest is still
+#: mandatory - the manifest fingerprint changes and `Retriever.__init__`
+#: refuses the mismatch.
+MULTILINGUAL_MODELS = frozenset(
+    {
+        "intfloat/multilingual-e5-small",
+        "intfloat/multilingual-e5-base",
+        "intfloat/multilingual-e5-large",
+        "BAAI/bge-m3",
+        "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        # Vertex; the `-multilingual-` infix is the documented naming rule.
+        "text-multilingual-embedding-002",
+    }
+)
+
+
+def supports_cross_lingual(model_name: str) -> bool:
+    """Can this checkpoint place a CJK query near an English passage?
+
+    Unknown names are reported as monolingual. The failure this guards is a
+    silent quality collapse, so an unrecognised model earns a warning it may not
+    need rather than skipping one it does.
+    """
+    return model_name in MULTILINGUAL_MODELS or "multilingual" in model_name.lower()
 
 
 class LocalEmbeddingProvider(EmbeddingProvider):
@@ -169,6 +215,13 @@ class HashEmbeddingProvider(EmbeddingProvider):
         features = list(tokens)
         joined = " ".join(tokens)
         features.extend(joined[i : i + 3] for i in range(max(0, len(joined) - 2)))
+        # CJK matches `[a-z0-9]+` nowhere, so without this a Japanese string
+        # hashed to the zero vector - and a zero vector has cosine 0.0 with
+        # every chunk *and* with every other query, which reads as "uniformly
+        # irrelevant" instead of "unrepresentable". Tests written against that
+        # would have agreed with each other and with nothing real. Latin text
+        # is untouched, so every existing hash index stays byte-identical.
+        features.extend(cjk_terms(text))
         return features
 
     def encode(self, texts: list[str]) -> np.ndarray:

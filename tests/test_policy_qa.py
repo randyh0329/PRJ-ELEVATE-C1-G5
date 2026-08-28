@@ -97,8 +97,16 @@ def test_curated_fallback_answers_when_the_index_is_missing(monkeypatch):
 
     assert result.source == "curated"
     assert result.is_grounded is True
-    assert "5 consecutive days" in result.answer_text
-    assert "[View Policy Section 04.2](https://hr.corp.internal/policies/04.2-bereavement)" in result.answer_text
+    # The handbook's figure, not the demo fixture's. The fixture this register
+    # replaced said "5 consecutive days" for immediate family and 3 for
+    # extended; the handbook has no such split and grants four weeks per event.
+    assert "4 weeks" in result.answer_text
+    assert "20 work days" in result.answer_text
+    assert "5 consecutive days" not in result.answer_text
+    assert (
+        "https://github.com/randyh0329/PRJ-ELEVATE-C1-G5/blob/main/"
+        "okf/altostrat-sg-handbook/leave/bereavement.md" in result.answer_text
+    )
 
 
 def test_curated_fallback_still_refuses_the_ungrounded(monkeypatch):
@@ -119,5 +127,9 @@ def test_curated_only_bypasses_the_corpus():
     )
 
     assert result.source == "curated"
-    assert result.referenced_section_ids == ["14.1"]
-    assert "£5,000" in result.answer_text
+    # Handbook Section 4 (Travel & Expense), which is where relocation actually
+    # lives. The fixture invented a "Section 14.1" and a £5,000 GBP cap; the
+    # handbook caps it at US$10,000 and the currency was wrong too.
+    assert result.referenced_section_ids == ["4"]
+    assert "US$10,000" in result.answer_text
+    assert "£5,000" not in result.answer_text

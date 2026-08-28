@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.grounding.policy_rag.chunking import chunk_document, slugify
+from src.grounding.policy_rag.chunking import _split_oversized, chunk_document, slugify
 from src.grounding.policy_rag.config import ChunkingConfig
 from src.grounding.policy_rag.documents import Document, SourceRef
 
@@ -133,3 +133,26 @@ def test_slugify_matches_github_anchors(text, expected):
 
 def test_real_corpus_produces_no_duplicate_ids(chunks):
     assert len({c.chunk_id for c in chunks}) == len(chunks)
+
+
+# --- oversized sections -------------------------------------------------------
+#
+# `_split_oversized` is exercised directly here because `chunk_document` strips
+# each section before handing it over, and both cases below turn on trailing
+# whitespace surviving into the splitter.
+
+
+def test_an_oversized_run_of_whitespace_yields_no_pieces():
+    """A long blank stretch has no paragraph to keep, and emitting the raw buffer
+    would put an empty chunk into the index."""
+    assert _split_oversized(" " * (CFG.max_chars + 100), CFG) == []
+
+
+def test_a_tail_that_is_only_whitespace_is_not_emitted_as_a_piece():
+    """With no overlap the remainder after a cut can be blank; appending it would
+    add a chunk with no text but a real chunk id and vector."""
+    cfg = ChunkingConfig(max_chars=400, overlap_chars=0, min_chars=20)
+
+    pieces = _split_oversized("A" * 400 + "\n" + " " * 100, cfg)
+
+    assert pieces == ["A" * 400]

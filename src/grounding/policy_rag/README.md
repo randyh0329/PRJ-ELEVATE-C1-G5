@@ -292,7 +292,8 @@ degrades retrieval quietly rather than loudly.
 ## Tests
 
 ```bash
-python -m pytest tests/policy_rag        # 98 tests
+python -m pytest tests/policy_rag        # 312 tests
+python -m pytest --cov                   # 100% statement and branch, whole repo
 ```
 
 The suite runs on the `hash` embedding provider — deterministic hashed n-grams,

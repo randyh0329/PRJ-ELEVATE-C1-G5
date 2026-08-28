@@ -4,6 +4,7 @@ Simulates synthetic fault injection at every step of UC-2.1, UC-2.2, and UC-2.3 
 compensation correctness, transactional integrity (SM-03, SM-07), and consequence-aware rollback logic.
 """
 
+import json
 import unittest
 
 from app.graph import AgentOrchestrationGraph
@@ -191,6 +192,22 @@ class TestTrajectoryHarness(unittest.IsolatedAsyncioTestCase):
         for r in results:
             self.assertEqual(r["guardrail_verdict"], "ALLOW")
             self.assertIsNotNone(r["final_response"])
+
+    async def test_golden_suite_tolerates_blank_lines(self):
+        """JSONL grows by appending, and the file that grows by hand grows blank
+        lines. One of them must not fail the whole suite with a JSON error."""
+        import tempfile
+        from pathlib import Path
+
+        case = {"id": "GD-BLANK-001", "user_prompt": "How many days of annual leave do I get?"}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "spaced.jsonl"
+            path.write_text(f"\n{json.dumps(case)}\n\n   \n", encoding="utf-8")
+
+            results = await self.runner.run_golden_suite(str(path))
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["case_id"], "GD-BLANK-001")
 
 
 if __name__ == "__main__":

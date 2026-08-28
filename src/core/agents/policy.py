@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from typing import Any
 
 from src.core.state import AgentState
+from src.grounding.okf_store import PolicyDocument, okf_store
 
 logger = logging.getLogger("agents.policy")
 
@@ -33,7 +34,9 @@ class GroundedAnswer:
     citations: list[dict[str, str]] = field(default_factory=list)
     #: `answer` | `escalate` | `refuse`
     decision: str = "refuse"
-    #: `faiss` (indexed handbook) | `curated` (the mock datastore below)
+    #: `faiss` (semantic search over the indexed handbook) | `curated` (the
+    #: deterministic OKF register in `okf_store`). Both read the same corpus;
+    #: they differ in how they find the passage, not in what they may quote.
     source: str = "curated"
 
 
@@ -44,11 +47,20 @@ class PolicySpecialistNode:
     Enforces strict grounding threshold (>= 0.85) and resolvable deep-link citations.
 
     Retrieval runs against the FAISS index over `okf/altostrat-sg-handbook/` and
-    the raw handbook when that index exists. `KNOWLEDGE_BASE` below is the
-    pre-corpus mock and is used only as a fallback, because the index is a
-    git-ignored build artefact and a fresh clone has none. The two do not agree
-    on content or on citation URIs, so `GroundedAnswer.source` reports which one
-    ran - see `DualGroundingEngine` for the same split on the REST path.
+    the raw handbook when that index exists, and against the deterministic OKF
+    register in `okf_store` when it does not - the index is a git-ignored build
+    artefact, so a fresh clone has none. Both read the same corpus, so the
+    fallback is now degraded in *recall* rather than in *truthfulness*;
+    `GroundedAnswer.source` still reports which one ran, because a keyword
+    register refuses questions the semantic path answers.
+
+    This class previously carried a five-entry `KNOWLEDGE_BASE` dict of
+    hand-written policy text with citation URIs pointing at PDFs that do not
+    exist (`policies/leave-policy-2026.pdf#bereavement`). Every figure in it was
+    wrong - bereavement leave is four weeks, not five days; the home office
+    allowance is US$500, not US$350 - and because the citations could not be
+    opened, nothing about reading the answer revealed that. See `okf_store` for
+    the full diff and for why the register is now derived from the bundle.
     """
 
     AGENT_ID = "pol-1.4.0"
@@ -58,39 +70,15 @@ class PolicySpecialistNode:
     #: enforced inside the retriever at 0.80; this is the groundedness half.
     GROUNDING_GATE = 0.85
 
-    # Pre-indexed policy knowledge base corpus (Mock Agent Search Datastore)
-    KNOWLEDGE_BASE: ClassVar[dict[str, dict[str, Any]]] = {
-        "bereavement": {
-            "title": "Bereavement Leave Policy",
-            "citation": "policies/leave-policy-2026.pdf#bereavement",
-            "content": "Employees are eligible for up to 5 consecutive paid business days for immediate family members.",
-            "relevance": 0.95,
-        },
-        "remote work equipment": {
-            "title": "Remote Work Policy s4.2",
-            "citation": "policies/remote-work-2026.pdf#s4.2-equipment",
-            "content": "Remote employees are eligible for one ergonomic home office monitor every 24 months, with a price cap of USD 350. On-site designated employees are not eligible.",
-            "relevance": 0.96,
-        },
-        "short-term medical leave": {
-            "title": "Medical & Disability Leave Policy s3.1",
-            "citation": "policies/medical-leave-2026.pdf#short-term-medical",
-            "content": "Short-term medical leave requires a WorkWeek leave filing under 'Medical' with pending manager approval, accompanied by an IT service ticket for mailbox delegation.",
-            "relevance": 0.94,
-        },
-        "relocation allowance": {
-            "title": "Global Mobility & Relocation Policy s2.4",
-            "citation": "policies/mobility-policy-2026.pdf#relocation-allowance",
-            "content": "Intra-region office transfers (such as US to London) provide a relocation allowance cap of USD 5,000, profile contact update, and Facilities badge access provisioning.",
-            "relevance": 0.92,
-        },
-        "expense": {
-            "title": "Expense Reimbursement Policy s5.1",
-            "citation": "policies/expense-policy-2026.pdf#hardware",
-            "content": "Standard home office peripherals (e.g. noise-canceling headphones up to $150) may be expensed with manager sign-off.",
-            "relevance": 0.91,
-        },
-    }
+    #: Groundedness of a curated answer. 1.0 by construction, on the same
+    #: argument the `ExtractiveComposer` makes: the text returned is the corpus
+    #: document verbatim, so every claim in it is supported by the passage cited
+    #: beside it. Nothing is paraphrased, summarised or generated, so there is no
+    #: step at which a claim could detach from its source. What the register can
+    #: still get wrong is *which* document - which is the relevance half of the
+    #: gate, and is why `okf_store.search_policies` refuses on a near-tie rather
+    #: than returning its best guess.
+    CURATED_GROUNDEDNESS = 1.0
 
     def __init__(self, rag: Any | None = None) -> None:
         self._rag = rag
@@ -109,7 +97,8 @@ class PolicySpecialistNode:
                     self._rag = faiss_policy_rag.service
                 else:
                     logger.warning(
-                        "[%s] FAISS policy index not built - using the mock datastore. "
+                        "[%s] FAISS policy index not built - using the deterministic OKF register, "
+                        "which reads the same corpus but refuses questions semantic search would answer. "
                         "Run: python -m src.grounding.policy_rag.cli ingest",
                         self.AGENT_ID,
                     )
@@ -131,7 +120,7 @@ class PolicySpecialistNode:
         """
         service = self._rag_service()
         if service is None:
-            return self._query_mock_datastore(query)
+            return self._query_curated_store(query)
 
         answer = service.answer(query, entitlements=entitlements)
         # `GuardAction` is an uppercase vocabulary; normalise so both backends
@@ -147,40 +136,53 @@ class PolicySpecialistNode:
             source="faiss",
         )
 
-    def _query_mock_datastore(self, query: str) -> GroundedAnswer:
-        """Fallback keyword match over `KNOWLEDGE_BASE` when there is no index."""
-        q_lower = query.lower()
+    def _query_curated_store(self, query: str) -> GroundedAnswer:
+        """Deterministic OKF register lookup, for when there is no FAISS index.
 
-        # Explicit Hallucination Baits / Absent Policies (Tier 3) -> Strict Refusal.
-        # The indexed path needs no such list: a bait scores below the relevance
-        # gate and is refused on the evidence. This is here because a five-entry
-        # keyword matcher has no notion of "not in the corpus".
-        if any(bait in q_lower for bait in ["helicopter", "crypto", "bitcoin", "yacht", "dog transport", "pet transport"]):
+        There is no hallucination-bait list any more. The old one enumerated
+        `helicopter`, `crypto`, `bitcoin`, `yacht` and two spellings of pet
+        transport, which caught the baits someone had already thought of and
+        nothing else - and it was needed because a five-key keyword matcher
+        would otherwise hand "reimbursement for a pet helicopter" to its expense
+        entry. `okf_store.search_policies` refuses those on the evidence now,
+        the same way the indexed path does: a question the corpus does not cover
+        fails the coverage floor, and one it covers ambiguously fails the
+        decisiveness margin.
+        """
+        matches = okf_store.search_policies(query)
+        if not matches:
             return GroundedAnswer(decision="refuse")
 
-        best_match = None
-        best_relevance = 0.0
+        top = matches[0]
+        return GroundedAnswer(
+            score=self.CURATED_GROUNDEDNESS,
+            text=self._compose(top),
+            citations=[{"title": top.citation_title, "uri": top.citation_url}],
+            decision="answer",
+            source="curated",
+        )
 
-        for key, doc in self.KNOWLEDGE_BASE.items():
-            key_terms = key.split()
-            # Require all terms for multi-word keys or strong single-term match
-            matched = all(term in q_lower for term in key_terms) or (
-                len(key_terms) == 1 and key_terms[0] in q_lower and "reimbursement" in q_lower
+    @staticmethod
+    def _compose(document: PolicyDocument) -> str:
+        """The document's own words, with the caveats its metadata demands.
+
+        The summary leads because it is the corpus author's one-sentence version
+        of the rule and the body can run to several screens. Both are quoted
+        verbatim; nothing here rewrites policy text.
+        """
+        parts = [document.summary, document.details] if document.summary else [document.details]
+        if document.has_conflict:
+            # The handbook contradicts itself on part of this rule. Saying so is
+            # the whole point of the OKF `Conflict` convention - answering as if
+            # it were settled would pick a side the source does not pick.
+            parts.append(
+                "**Note.** The handbook is inconsistent on part of this policy; the disagreement "
+                "is recorded above rather than resolved. Confirm with People Ops before relying "
+                "on the contested point."
             )
-            if matched and doc["relevance"] > best_relevance:
-                best_match = doc
-                best_relevance = doc["relevance"]
-
-        if best_match and best_relevance >= 0.80:
-            return GroundedAnswer(
-                score=best_relevance,
-                text=best_match["content"],
-                citations=[{"title": best_match["title"], "uri": best_match["citation"]}],
-                decision="answer",
-                source="curated",
-            )
-
-        return GroundedAnswer(decision="refuse")
+        if document.status == "draft":
+            parts.append("**Note.** This concept is a draft and its rules include producer assumptions.")
+        return "\n\n".join(p for p in parts if p)
 
     async def execute(self, state: AgentState) -> AgentState:
         """

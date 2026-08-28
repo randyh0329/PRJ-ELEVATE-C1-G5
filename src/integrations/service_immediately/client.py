@@ -3,6 +3,7 @@ import contextlib
 import datetime
 import json
 import logging
+import uuid
 
 from config.settings import get_settings
 from src.guardrails.operation_guardrails import OperationGuardrailEngine, guardrail_engine
@@ -113,7 +114,7 @@ class ServiceImmediatelyClient:
             requester_id=caller_employee_id,
             category=category,
             existing_tickets=existing,
-            window_minutes=30,
+            window_minutes=10,
             now=now
         )
         if not dedup_res.is_valid:
@@ -152,11 +153,16 @@ class ServiceImmediatelyClient:
                             if isinstance(parsed, dict) and "ticket_id" in parsed:
                                 tid = parsed["ticket_id"]
                         except Exception:
-                            if "INC" in text:
-                                for word in text.split():
-                                    if word.startswith("INC"):
-                                        tid = word.strip('"').strip("'").strip(",")
-                                        break
+                            # Punctuation comes off before the test, not after:
+                            # the tool quotes the reference often enough
+                            # (`Created ticket "INC0003362".`) that checking the
+                            # raw word missed exactly the responses the strip
+                            # below was written for.
+                            for word in text.split():
+                                candidate = word.strip('"\'.,;:()[]')
+                                if candidate.startswith("INC"):
+                                    tid = candidate
+                                    break
                 if isinstance(tid, str) and tid.strip().startswith("{"):
                     with contextlib.suppress(Exception):
                         tid = json.loads(tid).get("ticket_id", tid)
@@ -200,30 +206,56 @@ class ServiceImmediatelyClient:
         )
         return ticket
 
-    def add_comment(self, caller_employee_id: str, ticket_id: str, comment_text: str) -> TicketComment:
-        """Add timeline comment with audit attribution."""
+    def add_comment(
+        self,
+        caller_employee_id: str,
+        ticket_id: str,
+        comment_text: str
+    ) -> TicketComment | None:
+        """Append a comment to the ticket timeline with audit attribution (FR-4.2)."""
         comment = None
         if self._should_use_live_mcp(caller_employee_id):
             try:
-                self._mcp_client.add_ticket_comment(ticket_id=ticket_id, author=caller_employee_id, comment=comment_text)
+                res = self._mcp_client.add_ticket_comment(
+                    ticket_id=ticket_id, author=caller_employee_id, comment=comment_text
+                )
                 comment = TicketComment(
-                    ticket_id=ticket_id,
-                    author=caller_employee_id,
-                    comment_text=comment_text
+                    comment_id=self._comment_id_from(res),
+                    author_id=caller_employee_id,
+                    comment_text=comment_text,
+                    origin=self._origin
                 )
             except Exception as e:
                 logger.warning("Live ServiceImmediately FastMCP add_comment failed: %s. Falling back to mock service.", e)
-                comment = self._service.add_comment(ticket_id, caller_employee_id, comment_text)
+                comment = self._service.post_comment(ticket_id, caller_employee_id, comment_text, self._origin)
         else:
-            comment = self._service.add_comment(ticket_id, caller_employee_id, comment_text)
+            comment = self._service.post_comment(ticket_id, caller_employee_id, comment_text, self._origin)
 
         self._logger.log_event(
             caller_employee_id=caller_employee_id,
             action_type="SERVICE_IMMEDIATELY_ADD_COMMENT",
-            status="SUCCESS",
+            # A comment on a ticket that does not exist is not an appended
+            # comment. Logging it as SUCCESS would put a line in the audit trail
+            # claiming the employee was answered on a timeline nobody can read.
+            status="SUCCESS" if comment else "NOT_FOUND",
             details={"ticket_id": ticket_id}
         )
         return comment
+
+    @staticmethod
+    def _comment_id_from(res: object) -> str:
+        """Take the reference the ITSM assigned, or mint one in the same format.
+
+        The live tool answers with prose more often than with a record, so the
+        id is best-effort; what matters is that the returned comment carries a
+        stable handle for the audit trail either way.
+        """
+        if isinstance(res, dict):
+            for key in ("comment_id", "sys_id", "id"):
+                value = res.get(key)
+                if isinstance(value, str) and value:
+                    return value
+        return f"CMT-{uuid.uuid4().hex[:6].upper()}"
 
     def update_incident_status(
         self,
@@ -231,11 +263,11 @@ class ServiceImmediatelyClient:
         ticket_id: str,
         new_status: str,
         resolution_notes: str = ""
-    ) -> IncidentTicket:
-        """Update ticket lifecycle status enforcing valid state transitions."""
+    ) -> IncidentTicket | None:
+        """Update ticket lifecycle status enforcing valid state transitions (FR-4.2)."""
         current_ticket = self.get_ticket_details(caller_employee_id, ticket_id)
         if current_ticket:
-            trans_res = self._guardrails.validate_status_transition(current_ticket.status, new_status)
+            trans_res = self._guardrails.validate_ticket_transition(current_ticket.status, new_status)
             if not trans_res.is_valid:
                 self._logger.log_event(
                     caller_employee_id=caller_employee_id,
@@ -257,14 +289,18 @@ class ServiceImmediatelyClient:
                 logger.warning("Live ServiceImmediately FastMCP update_status failed: %s.", e)
 
 
-        updated = self._service.update_status(ticket_id, new_status, resolution_notes)
+        # `update_status` answers with a bool, so the ticket has to be re-read
+        # to be returned. Handing back the bool - as this did - gives every
+        # caller `True` where the signature promises a ticket.
+        applied = self._service.update_status(ticket_id, new_status, resolution_notes)
+        ticket = self._service.get_ticket(ticket_id) if applied else current_ticket
         self._logger.log_event(
             caller_employee_id=caller_employee_id,
             action_type="SERVICE_IMMEDIATELY_UPDATE_STATUS",
-            status="SUCCESS" if updated else "FAILED",
+            status="SUCCESS" if applied else "FAILED",
             details={"ticket_id": ticket_id, "new_status": new_status}
         )
-        return updated or current_ticket
+        return ticket
 
     def create_hardware_request(
         self,
@@ -308,52 +344,6 @@ class ServiceImmediatelyClient:
             details={"ticket_id": ticket.ticket_id, "office": office}
         )
         return ticket
-
-    def request_hardware(
-        self,
-        caller_employee_id: str,
-        item: str,
-        justification: str,
-        category: str = "Hardware"
-    ) -> HardwareRequest:
-        """Submit a hardware procurement request."""
-        req = self._service.create_hardware_request(caller_employee_id, item, justification, category)
-        self._logger.log_event(
-            caller_employee_id=caller_employee_id,
-            action_type="SERVICE_IMMEDIATELY_REQUEST_HARDWARE",
-            status="SUCCESS",
-            details={"request_id": req.request_id, "item": req.item}
-        )
-        return req
-
-    def request_facilities(
-        self,
-        caller_employee_id: str,
-        target_office: str,
-        description: str,
-        category: str = "Facilities"
-    ) -> FacilitiesTicket:
-        """Submit a facilities transfer or badge request."""
-        ticket = self._service.create_facilities_ticket(caller_employee_id, target_office, description, category)
-        self._logger.log_event(
-            caller_employee_id=caller_employee_id,
-            action_type="SERVICE_IMMEDIATELY_REQUEST_FACILITIES",
-            status="SUCCESS",
-            details={"ticket_id": ticket.ticket_id, "office": target_office}
-        )
-        return ticket
-
-
-    def cancel_ticket(self, caller_employee_id: str, ticket_id: str, reason: str = "Saga Compensating Action") -> bool:
-        """Compensating action: Cancel or close an errant incident ticket."""
-        success = self._service.cancel_ticket(ticket_id)
-        self._logger.log_event(
-            caller_employee_id=caller_employee_id,
-            action_type="SERVICE_IMMEDIATELY_CANCEL_TICKET",
-            status="COMPENSATED" if success else "FAILED",
-            details={"ticket_id": ticket_id, "reason": reason}
-        )
-        return success
 
     def create_escalated_incident(self, priority: str, description: str) -> IncidentTicket:
         """System action: Create an unblockable human review escalation ticket."""

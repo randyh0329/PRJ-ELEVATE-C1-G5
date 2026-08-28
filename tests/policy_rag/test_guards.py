@@ -36,6 +36,22 @@ def hit(**overrides) -> Hit:
     )
 
 
+def test_a_decision_serialises_for_the_response_envelope():
+    """The action goes out as its string value, not as `GuardAction.ESCALATE` -
+    the A2A executor puts this straight into JSON."""
+    decision = evaluate("What does Section 11 say?", [hit()], CFG, now=NOW)
+
+    payload = decision.to_dict()
+
+    assert payload["action"] == "ESCALATE"
+    assert payload["reason"] == "absent_section"
+    assert payload["message"]
+    assert payload["notices"] == []
+    # A copy, so a caller mutating the payload cannot edit the decision.
+    payload["notices"].append("tampered")
+    assert decision.notices == []
+
+
 # --- rule 5: sections that do not exist --------------------------------------
 
 
@@ -147,6 +163,23 @@ def test_fresh_document_adds_no_staleness_notice():
 def test_unparseable_stale_after_does_not_crash():
     decision = evaluate("q", [hit(stale_after="whenever")], CFG, now=NOW)
     assert decision.action is GuardAction.ANSWER
+
+
+def test_a_stale_after_without_a_timezone_is_read_as_utc():
+    """A naive timestamp compared against an aware `now` raises, and a guard that
+    raises takes down the answer it was only meant to caveat."""
+    decision = evaluate("q", [hit(stale_after="2026-01-01")], CFG, now=NOW)
+
+    assert decision.action is GuardAction.ANSWER
+    assert any("review-by date" in n for n in decision.notices)
+
+
+def test_the_staleness_check_can_be_turned_off():
+    cfg = GuardConfig(staleness=False)
+
+    decision = evaluate("q", [hit(stale_after="2026-01-01T00:00:00Z")], cfg, now=NOW)
+
+    assert decision.notices == []
 
 
 def test_draft_concept_adds_a_notice():
