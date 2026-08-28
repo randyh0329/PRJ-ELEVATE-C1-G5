@@ -205,3 +205,56 @@ def test_a_none_argument_dict_consolidates_to_an_empty_one():
     selection.arguments = None
 
     assert selection.get_effective_arguments() == {}
+
+
+# --- what the turn did not do -------------------------------------------------
+#
+# One turn is classified as one intent and dispatched to one specialist, so the
+# second request in `my laptop is broken, open a ticket, and I need sick leave
+# 10/01-10/03` is not served. That is a documented limit. What made it a defect
+# is that it was not *said*: the employee received a confident ticket
+# confirmation, nothing about the leave, and no reason to suspect that half
+# their sentence had been read and dropped.
+
+
+def test_the_ordinary_single_request_turn_says_nothing_extra():
+    """This runs on every turn. Silence has to be the default, not a special case."""
+    assert _decision().unaddressed_note() == ""
+
+
+def test_a_dropped_request_is_named_in_the_reply():
+    note = _decision(
+        unaddressed_requests=["a sick-leave request for 2026-10-01 to 2026-10-03"]
+    ).unaddressed_note()
+
+    assert "a sick-leave request for 2026-10-01 to 2026-10-03" in note
+    assert "Still outstanding" in note
+
+
+def test_more_than_one_dropped_request_is_listed_rather_than_summarised():
+    note = _decision(
+        unaddressed_requests=["a sick-leave request for 2026-10-01", "a badge replacement"]
+    ).unaddressed_note()
+
+    assert "a sick-leave request for 2026-10-01; a badge replacement" in note
+
+
+def test_the_note_tells_the_employee_what_to_do_next():
+    """A disclosure that leaves them wondering whether to wait is half a fix."""
+    note = _decision(unaddressed_requests=["a leave request"]).unaddressed_note()
+
+    assert "Send it to me on its own" in note
+
+
+def test_the_note_is_appended_not_substituted():
+    """The half that ran really did run; its receipt is still owed."""
+    note = _decision(unaddressed_requests=["a leave request"]).unaddressed_note()
+
+    assert note.startswith("\n\n")
+
+
+@pytest.mark.parametrize("requests", [[], ["", "   "], [""]])
+def test_an_empty_or_blank_list_produces_no_note(requests):
+    """A model that fills the field with an empty string has told us nothing, and
+    `Still outstanding: .` is worse than saying nothing at all."""
+    assert _decision(unaddressed_requests=requests).unaddressed_note() == ""

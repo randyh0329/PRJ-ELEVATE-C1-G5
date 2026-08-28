@@ -22,3 +22,13 @@ output "cloud_run_runtime_service_account" {
   description = "Service Account email executing the Cloud Run container runtime."
   value       = google_service_account.cloud_run_sa.email
 }
+
+output "policy_rag_uri" {
+  description = "The internal HTTPS endpoint URI of the Policy RAG Cloud Run service."
+  value       = google_cloud_run_v2_service.hr_policy_rag_service.uri
+}
+
+output "saas_adapter_uri" {
+  description = "The internal HTTPS endpoint URI of the SaaS FastMCP Adapters Cloud Run service."
+  value       = google_cloud_run_v2_service.saas_adapter_service.uri
+}

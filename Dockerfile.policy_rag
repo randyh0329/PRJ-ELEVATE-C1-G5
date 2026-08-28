@@ -1,0 +1,35 @@
+# Dedicated container build for HR Policy RAG A2A Agent microservice
+FROM python:3.13-slim
+
+WORKDIR /app
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PORT=8080
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+COPY config/ ./config/
+COPY src/ ./src/
+COPY pyproject.toml .
+
+ARG GIT_COMMIT_SHA=unknown
+ENV GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
+
+RUN useradd -m -u 10001 appuser && \
+    chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/healthz || exit 1
+
+CMD ["sh", "-c", "exec uvicorn src.grounding.policy_rag.a2a_app.server:build_app --factory --host 0.0.0.0 --port ${PORT}"]

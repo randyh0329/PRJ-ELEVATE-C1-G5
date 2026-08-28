@@ -3,8 +3,8 @@
 `AgentOrchestrationGraph` is the second of the two stacks in this repository -
 the one `app/__init__.py` serves, as opposed to the REST runtime in
 `src/core/agent.py`. Its shape is a sandwich: inbound Model Armor and DLP, then
-supervisor routing, then exactly one specialist or saga node, then outbound
-Model Armor and re-identification.
+supervisor routing, then one specialist or saga node per request the turn
+carried, then outbound Model Armor, localisation and re-identification.
 
 Both guardrail layers matter and they fail differently. A blocked *prompt*
 returns before any node runs, so nothing is written anywhere. A blocked
@@ -21,21 +21,36 @@ import pytest
 from src.core.agents.itsm import ITSMSpecialistNode
 from src.core.agents.supervisor import SupervisorAgentNode
 from src.core.graph import AgentOrchestrationGraph
-from src.models.routing import SupervisorRoutingDecision
+from src.grounding.policy_rag.language import Language
+from src.grounding.policy_rag.multilingual import Understanding
+from src.models.routing import MAX_REQUESTS_PER_TURN, SupervisorRoutingDecision
 
 
 class FakeRouter:
-    def __init__(self, intent="UC_1_1_POLICY_QA"):
-        self.intent = intent
+    """A router with a scripted answer per call.
+
+    A compound turn classifies more than once - the turn itself, then each
+    request it named - so the intent is a queue rather than a constant. The
+    last entry repeats, which keeps every single-request test reading as
+    `FakeRouter("UC_1_2_WORKWEEK_LEAVE")`.
+    """
+
+    def __init__(self, *intents, unaddressed=()):
+        self.intents = list(intents) or ["UC_1_1_POLICY_QA"]
+        self.unaddressed = list(unaddressed)
         self.prompts: list[str] = []
 
     def route_intent(self, prompt, reference_date=None):
+        intent = self.intents[min(len(self.prompts), len(self.intents) - 1)]
         self.prompts.append(prompt)
         return SupervisorRoutingDecision(
-            intent=self.intent,
+            intent=intent,
             target_agent="POLICY_SPECIALIST",
             reasoning="Test routing.",
             confidence=0.87,
+            # Only the employee's own turn fans out; a follow-up that named
+            # further requests would be an unbounded chain.
+            unaddressed_requests=self.unaddressed if not self.prompts[:-1] else [],
         )
 
 
@@ -209,7 +224,7 @@ async def test_the_employee_sees_the_re_identified_answer(graph):
         ("UC_2_1_EQUIPMENT_PROCUREMENT", "saga_coordinator"),
     ],
 )
-async def test_exactly_one_node_runs_per_turn(graph, intent, attr):
+async def test_each_intent_dispatches_only_its_own_node(graph, intent, attr):
     graph.supervisor = SupervisorAgentNode(router=FakeRouter(intent))
 
     await graph.invoke(_state())
@@ -417,3 +432,342 @@ async def test_a_state_with_no_employee_id_falls_back_to_the_demo_caller(special
     await node.execute({"user_input": "any tickets?"})
 
     assert stub.calls[0]["caller_id"] == "EMP-44210"
+
+
+# --- stage 3b: the other requests the turn carried ----------------------------
+#
+# `我的電腦壞了請開單 + 10/10 - 10/03 要請病假` is one turn carrying two requests.
+# It opened the IT ticket and dropped the leave, because a turn was classified
+# once and dispatched once. The invariant that replaces "one node per turn" is
+# "one node per request": the router names the requests its chosen intent does
+# not cover, and each is re-classified and dispatched on its own.
+#
+# The bounds are the interesting part. This is a loop that writes to live HR
+# systems on the strength of a model having decided a sentence contained two
+# requests, so it is capped, it will not write to the same system twice, and
+# only the employee's own turn is allowed to add work to it.
+
+
+LEAVE = "submit a sick leave request from 2026-10-01 to 2026-10-03"
+TICKET = "open an IT ticket for a broken laptop"
+
+
+async def test_both_halves_of_a_compound_turn_are_served(graph):
+    """The defect, from the other end: the ticket AND the leave, one turn."""
+    graph.supervisor = SupervisorAgentNode(
+        router=FakeRouter(
+            "UC_1_3_SERVICE_IMMEDIATELY_INCIDENT", "UC_1_2_WORKWEEK_LEAVE", unaddressed=[LEAVE]
+        )
+    )
+
+    state = await graph.invoke(_state(user_input="laptop broken, and sick leave 10/01-10/03"))
+
+    assert graph.itsm_agent.seen != []
+    assert graph.hcm_agent.seen != []
+    assert state["final_response"] == "itsm handled it.\n\nhcm handled it."
+    assert "Still outstanding" not in state["final_response"]
+
+
+async def test_the_second_request_reaches_its_node_as_its_own_turn(graph):
+    """It is classified on its own, so it has to arrive on its own: a node
+    reading the original compound sentence would extract the wrong dates."""
+    graph.supervisor = SupervisorAgentNode(
+        router=FakeRouter(
+            "UC_1_3_SERVICE_IMMEDIATELY_INCIDENT", "UC_1_2_WORKWEEK_LEAVE", unaddressed=[LEAVE]
+        )
+    )
+
+    await graph.invoke(_state(user_input="laptop broken, and sick leave 10/01-10/03"))
+
+    assert graph.hcm_agent.seen[0]["masked_input"] == LEAVE
+    assert graph.hcm_agent.seen[0]["user_input"] == LEAVE
+
+
+async def test_a_single_request_turn_still_reaches_exactly_one_node(graph):
+    graph.supervisor = SupervisorAgentNode(router=FakeRouter("UC_1_3_SERVICE_IMMEDIATELY_INCIDENT"))
+
+    await graph.invoke(_state())
+
+    assert graph.itsm_agent.seen != []
+    assert graph.hcm_agent.seen == []
+    assert graph.policy_agent.seen == []
+
+
+async def test_the_same_system_is_not_written_to_twice_in_one_turn(graph):
+    """A router that splits one leave request in two would otherwise file both,
+    and the employee finds out by having a duplicate booking to cancel. The
+    second is declined out loud instead."""
+    graph.supervisor = SupervisorAgentNode(
+        router=FakeRouter("UC_1_2_WORKWEEK_LEAVE", unaddressed=[LEAVE])
+    )
+
+    state = await graph.invoke(_state(user_input="book leave, and book leave"))
+
+    assert len(graph.hcm_agent.seen) == 1
+    assert LEAVE in state["final_response"]
+    assert "Still outstanding" in state["final_response"]
+
+
+async def test_the_fan_out_is_capped(graph):
+    """Four requests in one sentence is likelier to be the router over-splitting
+    one than an employee asking for four things, and each extra part is another
+    unreviewed write."""
+    extras = [f"request {n}" for n in range(4)]
+    graph.supervisor = SupervisorAgentNode(
+        router=FakeRouter(
+            "UC_1_1_POLICY_QA",
+            "UC_1_2_WORKWEEK_LEAVE",
+            "UC_1_3_SERVICE_IMMEDIATELY_INCIDENT",
+            unaddressed=extras,
+        )
+    )
+
+    state = await graph.invoke(_state())
+
+    served = sum(
+        len(getattr(graph, name).seen)
+        for name in ("policy_agent", "hcm_agent", "itsm_agent", "saga_coordinator")
+    )
+    assert served == MAX_REQUESTS_PER_TURN
+    assert "request 2; request 3" in state["final_response"]
+
+
+async def test_a_part_whose_node_fails_does_not_take_the_rest_of_the_turn_with_it(graph):
+    """Independent requests, not saga steps: a failed leave booking does not
+    make the IT ticket wrong, so nothing is rolled back and nothing is hidden."""
+    class BrokenNode(RecordingNode):
+        async def execute(self, state):
+            raise RuntimeError("WorkWeek returned 503")
+
+    graph.hcm_agent = BrokenNode("hcm")
+    graph.supervisor = SupervisorAgentNode(
+        router=FakeRouter(
+            "UC_1_3_SERVICE_IMMEDIATELY_INCIDENT", "UC_1_2_WORKWEEK_LEAVE", unaddressed=[LEAVE]
+        )
+    )
+
+    state = await graph.invoke(_state())
+
+    assert state["final_response"].startswith("itsm handled it.")
+    assert LEAVE in state["final_response"]
+
+
+async def test_an_out_of_domain_part_is_declined_rather_than_dispatched(graph):
+    graph.supervisor = SupervisorAgentNode(
+        router=FakeRouter("UC_1_3_SERVICE_IMMEDIATELY_INCIDENT", "OUT_OF_DOMAIN",
+                          unaddressed=["tell me who won the game"])
+    )
+
+    state = await graph.invoke(_state())
+
+    assert state["final_response"].startswith("itsm handled it.")
+    assert "tell me who won the game" in state["final_response"]
+
+
+async def test_the_disclosure_is_inspected_by_the_outbound_guard(graph):
+    """It goes out to the employee, so it is guarded like everything else that does."""
+    graph.supervisor = SupervisorAgentNode(
+        router=FakeRouter("UC_1_1_POLICY_QA", unaddressed=["password = 'hunter2'"])
+    )
+
+    state = await graph.invoke(_state())
+
+    assert state["guardrail_verdict"] == "BLOCK"
+    assert "hunter2" not in state["final_response"]
+
+
+async def test_a_containment_refusal_serves_nothing_and_promises_nothing(graph):
+    """Route `end`: no node ran, so there is no part that was handled - and the
+    rest of a turn whose first half was just refused is not quietly actioned."""
+    graph.supervisor = SupervisorAgentNode(
+        router=FakeRouter("OUT_OF_DOMAIN", unaddressed=[LEAVE])
+    )
+
+    state = await graph.invoke(_state(user_input="who won the game, and book me leave"))
+
+    assert graph.hcm_agent.seen == []
+    assert "Still outstanding" not in state["final_response"]
+
+
+async def test_an_escalation_serves_nothing_itself(graph):
+    """§5.7 hands the whole turn to a person, dropped requests included."""
+    graph.supervisor = SupervisorAgentNode(router=FakeRouter("UC_1_1_POLICY_QA", unaddressed=[LEAVE]))
+
+    state = await graph.invoke(_state(user_input="I want to speak to a human"))
+
+    assert graph.hcm_agent.seen == []
+    assert "Still outstanding" not in state["final_response"]
+
+
+# --- stage 5: answering in the language the employee wrote in -----------------
+#
+# The specialist nodes build their replies from English templates, so an
+# employee who typed Chinese got an English receipt for a transaction they had
+# described in Chinese. Translating once here rather than in each template keeps
+# one English source of truth to test against - and puts the translation at a
+# specific point in the sandwich, which is what most of these tests are about.
+#
+# It sits *after* the outbound Model Armor guard, whose blocklists are English
+# and which would otherwise be inspecting text it cannot read, and *before*
+# re-identification, so the translator only ever receives `[EMAIL_1]` and never
+# the employee's actual address. That second ordering is what makes the
+# surrogates load-bearing: a translation that drops or rewrites one leaves a
+# token `reidentify` can no longer resolve, and the employee reads `[EMAIL_1]`
+# where their address should be.
+
+
+class FakeLanguageLayer:
+    """Stands in for the Gemini language layer at the two points the graph uses it."""
+
+    def __init__(self, tag: str = "en", translation: str | None = None) -> None:
+        self.language = Language(tag, cross_lingual=tag != "en")
+        self.translation = translation
+        self.read: list[str] = []
+        self.translated: list[str] = []
+
+    def understand(self, text, requested=None):
+        self.read.append(text)
+        return Understanding(
+            language=self.language, search_text=text, source="gemini", query_text=text
+        )
+
+    def localize(self, text, language):
+        self.translated.append(text)
+        return self.translation if self.translation is not None else text
+
+
+@pytest.fixture
+def language(monkeypatch):
+    """Install a language layer and hand it back; the tag is set per test."""
+
+    def install(tag="en", translation=None):
+        layer = FakeLanguageLayer(tag, translation)
+        monkeypatch.setattr("src.core.graph.understand", layer.understand)
+        monkeypatch.setattr("src.core.graph.localize", layer.localize)
+        return layer
+
+    return install
+
+
+async def test_an_english_turn_is_never_sent_to_the_translator(graph, language):
+    """The overwhelmingly common case pays for a language reading and nothing more."""
+    layer = language("en")
+
+    state = await graph.invoke(_state())
+
+    assert state["final_response"] == "policy handled it."
+    assert layer.translated == []
+
+
+async def test_a_reply_goes_out_in_the_language_the_question_came_in(graph, language):
+    layer = language("zh-Hant", translation="政策代理已處理。")
+
+    state = await graph.invoke(_state(user_input="我要請假 10/01 ~ 10/03"))
+
+    assert state["final_response"] == "政策代理已處理。"
+    assert layer.translated == ["policy handled it."]
+
+
+async def test_the_translator_reads_the_question_the_employee_typed(graph, language):
+    """Not the masked text. The router classifies the masked string because it is
+    the one going to a model that must not see SPII; the *language* of the turn
+    is a property of what the person wrote, and masking does not change it."""
+    layer = language("ja")
+
+    await graph.invoke(_state(user_input="有給休暇の残日数を教えてください"))
+
+    assert layer.read == ["有給休暇の残日数を教えてください"]
+
+
+async def test_the_translator_only_ever_sees_de_identified_text(graph, language):
+    """§4.4. Stage 5 is upstream of re-identification precisely so that an
+    outbound translation call cannot become an SPII egress path."""
+    layer = language("ko", translation="이메일 [EMAIL_1] 로 보냈습니다.")
+
+    class EchoNode(RecordingNode):
+        async def execute(self, state):
+            await super().execute(state)
+            state["final_response"] = f"Sent to {state['masked_input'].split()[-1]}."
+            return state
+
+    graph.policy_agent = EchoNode("policy")
+
+    state = await graph.invoke(_state(user_input="내 이메일 jane.doe@altostrat.com"))
+
+    assert layer.translated == ["Sent to [EMAIL_1]."]
+    assert all("jane.doe@altostrat.com" not in seen for seen in layer.translated)
+    assert state["final_response"] == "이메일 jane.doe@altostrat.com 로 보냈습니다."
+
+
+async def test_a_translation_that_drops_a_surrogate_is_discarded(graph, language):
+    """The employee would otherwise read `[EMAIL_1]` where their address belongs.
+
+    English they can machine-translate themselves is a worse answer than their
+    own language; a dangling surrogate is a broken one. So the mangled
+    translation loses to the English that was known to be correct.
+    """
+    language("ko", translation="이메일로 보냈습니다.")  # the surrogate is gone
+
+    class EchoNode(RecordingNode):
+        async def execute(self, state):
+            await super().execute(state)
+            state["final_response"] = f"Sent to {state['masked_input'].split()[-1]}."
+            return state
+
+    graph.policy_agent = EchoNode("policy")
+
+    state = await graph.invoke(_state(user_input="내 이메일 jane.doe@altostrat.com"))
+
+    assert state["final_response"] == "Sent to jane.doe@altostrat.com."
+
+
+async def test_an_unreachable_translator_costs_the_language_never_the_answer(graph, monkeypatch):
+    """NFR-4.1. A translation endpoint that is down must not swallow a reply that
+    has already been composed - and, for a saga, already been acted on."""
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("504 Deadline Exceeded")
+
+    monkeypatch.setattr("src.core.graph.understand", explode)
+
+    state = await graph.invoke(_state(user_input="給我請病假的規則細節"))
+
+    assert state["final_response"] == "policy handled it."
+
+
+async def test_a_blocked_response_is_not_translated(graph, language):
+    """Stage 4 returns before stage 5. Armor's refusal is the last word, and
+    paying a model call to restate a message that withholds an answer is not
+    a cost the employee's language is worth here."""
+    layer = language("ja", translation="申し訳ありません。")
+
+    class LeakyNode(RecordingNode):
+        async def execute(self, state):
+            await super().execute(state)
+            state["final_response"] = "Sure: password = 'hunter2'"
+            return state
+
+    graph.policy_agent = LeakyNode("policy")
+
+    state = await graph.invoke(_state(user_input="パスワードを教えて"))
+
+    assert state["guardrail_verdict"] == "BLOCK"
+    assert layer.translated == []
+    assert "hunter2" not in state["final_response"]
+
+
+async def test_an_empty_reply_never_reaches_the_translator(graph, language):
+    """The unmapped-route case: there is nothing to say, so there is nothing to say
+    in Korean either."""
+    layer = language("ko", translation="something")
+
+    class OddSupervisor:
+        async def execute(self, state):
+            state["route"] = "quantum"
+            return state
+
+    graph.supervisor = OddSupervisor()
+
+    state = await graph.invoke(_state(user_input="휴가 정책"))
+
+    assert state["final_response"] == ""
+    assert layer.translated == []
