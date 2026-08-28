@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from config.settings import get_settings
 from src.core.agent import hr_enterprise_agent
+from src.core.agent_registry.models import AgentRegistryError
 from src.integrations.mcp.client import current_mcp_token, saas_fast_mcp_client
 from src.integrations.service_immediately.mock_service import service_immediately_mock_service
 from src.integrations.workweek.mock_service import workweek_mock_service
@@ -955,7 +956,7 @@ def handle_chat(
 
     try:
         if payload.use_agent_registry:
-            from src.core.agent_registry import AgentRegistryError, agent_registry_dispatcher
+            from src.core.agent_registry import agent_registry_dispatcher
             response = agent_registry_dispatcher.process_message(
                 user_prompt=payload.message,
                 caller_employee_id=caller_id,
