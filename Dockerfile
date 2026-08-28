@@ -31,7 +31,7 @@ COPY pyproject.toml .
 # is indistinguishable, from the outside, from a working service answering
 # honestly. It is 344 KB.
 COPY okf/ ./okf/
-COPY "ALTOSTRAT SINGAPORE EMPLOYEE POLICY HANDBOOK & CONDUCT GUIDELINES.md" ./
+COPY ["ALTOSTRAT SINGAPORE EMPLOYEE POLICY HANDBOOK & CONDUCT GUIDELINES.md", "./"]
 
 # Build the FAISS index into the image. `var/` is a git-ignored build artefact,
 # so it cannot be COPYed from a checkout - it has to be produced here, and if it

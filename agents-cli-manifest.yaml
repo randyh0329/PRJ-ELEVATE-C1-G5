@@ -1,15 +1,65 @@
-name: hr-agent-orchestrator
+name: hr-enterprise-agent-mesh
 agent_directory: src
 entrypoint: src.adk.supervisor:hr_enterprise_supervisor
 region: us-central1
 base_template: adk
 version: 2.8.0
 language: python
-create_params:
+
+runtime_config:
   deployment_target: agent_runtime
-  is_a2a: true
   session_type: agent_engine_managed
   memory_bank_enabled: true
+  is_a2a: true
   guardrails:
     dlp_inline: true
     model_armor: true
+
+agents:
+  - id: hr_supervisor_orchestrator
+    display_name: hr-supervisor-orchestrator-v1
+    model: gemini-3.7-flash
+    role: Root Intent Router & Supervisor Mesh
+    entrypoint: src.adk.supervisor:hr_enterprise_supervisor
+
+  - id: hr_policy_benefits_specialist
+    display_name: hr-policy-benefits-specialist-v1
+    model: gemini-3.7-flash
+    role: Grounded Policy Specialist over Altostrat OKF
+    entrypoint: src.adk.specialists:adk_policy_agent
+
+  - id: hr_lifecycle_operations_specialist
+    display_name: hr-lifecycle-operations-specialist-v1
+    model: gemini-3.7-flash
+    role: WorkWeek HCM Specialist with FastMCP Toolset
+    entrypoint: src.adk.specialists:adk_workweek_agent
+
+  - id: hr_approval_gatekeeper
+    display_name: hr-approval-gatekeeper-v1
+    model: gemini-3.7-flash
+    role: ServiceImmediately ITSM Specialist with FastMCP Toolset
+    entrypoint: src.adk.specialists:adk_itsm_agent
+
+  - id: hr_saga_coordinator
+    display_name: hr-saga-coordinator-v1
+    model: gemini-3.1-pro
+    role: Cross-System Saga Distributed Coordinator
+    entrypoint: src.adk.specialists:adk_saga_agent
+
+  - id: hr_policy_rag_search
+    display_name: hr-policy-rag-search-v1
+    model: gemini-2.5-flash
+    role: A2A-Compliant Policy RAG Embedding Service
+    entrypoint: src.grounding.policy_rag.service:PolicyRagService
+
+  - id: hr_policy_dual_hybrid
+    display_name: hr-policy-dual-hybrid-v1
+    model: gemini-3.7-flash
+    role: Dual Hybrid Grounding Engine (OKF + Vertex Agent Search)
+    entrypoint: src.grounding.policy_engine:dual_grounding_engine
+
+  - id: hr_eval_llm_judge
+    display_name: hr-eval-llm-judge-v1
+    model: gemini-3.1-pro
+    role: 5-Dimensional Automated LLM-as-a-Judge Evaluation Engine
+    entrypoint: tests.eval.rubric_judge:evaluate

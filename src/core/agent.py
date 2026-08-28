@@ -6,22 +6,13 @@ from __future__ import annotations
 
 import concurrent.futures
 import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
-try:
-    from src.adk import (
-        ADKAgentResponse,
-        ADKHREnterpriseRunner,
-        adk_runner,
-        agent_runtime_sessions,
-    )
-except (ImportError, ModuleNotFoundError):
-    ADKAgentResponse = Any  # type: ignore[misc,assignment]
-    ADKHREnterpriseRunner = Any  # type: ignore[misc,assignment]
-    adk_runner = None
-    agent_runtime_sessions = None
+if TYPE_CHECKING:
+    from src.adk.session import AgentRuntimeSessionManager
+    from src.adk.supervisor import ADKAgentResponse, ADKHREnterpriseRunner
 from src.core.agents.hcm import workweek_autonomous_specialist
 from src.core.agents.itsm import service_immediately_autonomous_specialist
 from src.core.clock import business_today
@@ -71,10 +62,19 @@ class HREnterpriseAgent:
         self._sessions = sessions or session_store
         self._logger = logger or audit_logger
         if router is None:
-            from src.integrations.vertex.client import vertex_gemini_client
-            router = vertex_gemini_client
+            try:
+                from src.integrations.vertex.client import vertex_gemini_client
+                router = vertex_gemini_client
+            except Exception:
+                router = None
         self._router = router
-        self._adk = adk_engine or adk_runner
+        if adk_engine is None:
+            try:
+                from src.adk.supervisor import adk_runner
+                adk_engine = adk_runner
+            except Exception:
+                adk_engine = None
+        self._adk = adk_engine
 
     def process_message(
         self,
@@ -175,7 +175,8 @@ class HREnterpriseAgent:
 
         self._sessions.add_message(sess_id, "assistant", response.response_text, response.citations)
 
-        if agent_runtime_sessions is not None:
+        try:
+            from src.adk.session import agent_runtime_sessions
             agent_runtime_sessions.add_turn(
                 session_id=sess_id,
                 user_prompt=user_prompt,
@@ -183,6 +184,8 @@ class HREnterpriseAgent:
                 citations=response.citations,
                 caller_id=caller_employee_id,
             )
+        except Exception:
+            pass
 
         safety_overhead = round(
             max(redaction_res.processing_time_ms, armor_res.processing_time_ms) + outbound_armor_res.processing_time_ms,
