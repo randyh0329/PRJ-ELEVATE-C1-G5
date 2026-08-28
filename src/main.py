@@ -224,9 +224,9 @@ def serve_web_chat_ui():
       <button class="quick-btn policy" data-cat="policy" onclick="sendQuick('What is the company parental leave duration and entitlement policy?')">👶 Parental Leave Policy</button>
 
       <!-- Cross-System Orchestration Actions -->
-      <button class="quick-btn cross" data-cat="cross" onclick="sendQuick('I just read the remote work policy and saw I\'m eligible for a home office monitor. Can you verify my remote status and order one for me?')">🖥️ Order Home Monitor (UC-2.1)</button>
+      <button class="quick-btn cross" data-cat="cross" onclick="sendQuick('I just read the remote work policy and saw I am eligible for a home office monitor. Can you verify my remote status and order one for me?')">🖥️ Order Home Monitor (UC-2.1)</button>
       <button class="quick-btn cross" data-cat="cross" onclick="sendQuick('I need to take short-term medical leave starting next Monday. What is the process, and can you set it up for me?')">🏥 Medical Leave & Delegate (UC-2.2)</button>
-      <button class="quick-btn cross" data-cat="cross" onclick="sendQuick('I\'m transferring to the London office next month. Can you tell me the relocation allowance, update my record, and get my building access sorted?')">🇬🇧 London Transfer & Badge (UC-2.3)</button>
+      <button class="quick-btn cross" data-cat="cross" onclick="sendQuick('I am transferring to the London office next month. Can you tell me the relocation allowance, update my record, and get my building access sorted?')">🇬🇧 London Transfer & Badge (UC-2.3)</button>
     </div>
 
     <div class="chat-window" id="chatWindow">
