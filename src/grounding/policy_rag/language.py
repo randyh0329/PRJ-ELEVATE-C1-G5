@@ -28,8 +28,23 @@ outright. Where it is weak is separating languages that *share* a script; see
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
+
+#: A caller-supplied language tag is accepted on *shape*, never on membership of
+#: a list - see `resolve`. Primary subtag of 2-3 letters (ISO 639-1/-2/-3),
+#: optionally followed by script, region, variant or singleton-extension
+#: subtags: `en`, `ja-JP`, `zh-Hant`, `pt-BR`, `en-SG-x-corp`. Underscores are
+#: tolerated because POSIX locales (`zh_TW`) reach HTTP handlers more often than
+#: they should.
+#:
+#: The bound that does the work is on the *primary* subtag: no language on earth
+#: has a four-letter one, which is what rejects `klingon` and `javascript` while
+#: admitting every real tag without anyone maintaining a list of them.
+BCP_47_RE = re.compile(r"^[A-Za-z]{2,3}([-_][A-Za-z0-9]{1,8})*$")
 
 #: The language the indexed corpus is written in. Everything else is
 #: "cross-lingual" and takes the carve-outs documented in `Retriever.retrieve`.
@@ -41,8 +56,13 @@ KOREAN = "ko"
 TRADITIONAL_CHINESE = "zh-Hant"
 SIMPLIFIED_CHINESE = "zh-Hans"
 
-#: Codes a caller may pin explicitly via the `language` parameter.
-SUPPORTED_LANGUAGES = (ENGLISH, JAPANESE, KOREAN, TRADITIONAL_CHINESE, SIMPLIFIED_CHINESE)
+#: The languages this census can *name*. Not a list of languages the service
+#: supports, and no longer a gate on anything: `multilingual.resolve_tag` honours
+#: any well-formed BCP-47 tag a caller supplies, and `multilingual.understand`
+#: reads the language with Gemini, which is bounded by no list at all. What is
+#: left here is the floor - what can still be worked out from character ranges
+#: alone when the model is unreachable.
+CENSUS_LANGUAGES = (ENGLISH, JAPANESE, KOREAN, TRADITIONAL_CHINESE, SIMPLIFIED_CHINESE)
 
 #: Han text carrying no orthography-specific character is ambiguous between the
 #: two Chinese scripts. Traditional is the tie-break because the Taiwan office is
@@ -154,12 +174,30 @@ def resolve(text: str, requested: str | None = None) -> Language:
 
     A caller that already knows its user's locale should say so - a browser
     `Accept-Language` beats any amount of character counting on a two-word
-    query. An unrecognised code is ignored rather than rejected: the parameter
-    is a hint about presentation, and refusing a whole policy question over a
-    malformed locale tag would be a poor trade.
+    query.
+
+    Any *well-formed* tag is honoured. This used to test membership of a
+    five-code tuple, which threw away `ja-JP`, `zh-TW`, `pt-BR` and every other
+    perfectly good locale in favour of guessing from characters - and guessing
+    is exactly what the caller had just made unnecessary. Worse, the tuple was
+    also the service's answer to "which languages does this support?", so
+    extending support meant editing a list, and any language nobody had thought
+    to add was silently answered in English.
+
+    What replaces it is a shape check, not a shorter list. `BCP_47_RE` asks
+    whether the string could be a language tag at all; it does not ask which
+    language, because that question has thousands of right answers and no
+    maintainable enumeration of them. Malformed input still falls through to
+    detection rather than raising - the parameter is a presentation hint, and
+    failing a policy question over a bad locale header would be a poor trade.
     """
-    if requested in SUPPORTED_LANGUAGES:
-        return Language(requested, cross_lingual=requested != CORPUS_LANGUAGE)
+    if requested:
+        tag = requested.strip()
+        if BCP_47_RE.match(tag):
+            primary = tag.lower().replace("_", "-").split("-")[0]
+            return Language(tag, cross_lingual=primary != CORPUS_LANGUAGE)
+        if tag:
+            logger.debug("ignoring malformed language tag %r; detecting instead", tag)
     return detect(text)
 
 

@@ -53,6 +53,11 @@ class SupervisorAgentNode:
         state["intent"] = decision.intent
         state["routing_confidence"] = decision.confidence
         state["routing_reasoning"] = decision.reasoning
+        # A compound turn carries requests this route will not serve. Carried on
+        # the state as a list rather than as prose: the graph serves what it can
+        # of them after this node's route has run, and only the residue becomes
+        # a sentence the employee reads.
+        state["unaddressed_requests"] = list(decision.unaddressed_requests)
 
         # 3. Domain Containment Refusal (FR-5.4)
         if decision.intent == "OUT_OF_DOMAIN":

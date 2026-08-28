@@ -89,6 +89,13 @@ class AgentState(TypedDict):
     messages: list[dict[str, Any]]
     route: Literal["supervisor", "policy", "hcm", "itsm", "saga", "escalate", "end"]
     next_node: str | None
+    # The other requests one turn carried, written by the router as
+    # self-contained instructions. The graph re-classifies and serves what it
+    # can of them after the chosen route has run.
+    unaddressed_requests: list[str]
+    # The residue: what this turn declined to action even so. A sentence rather
+    # than a list because it is appended to the answer the employee reads.
+    unaddressed_note: str
 
     # 3. Cross-System Saga Ledger State (§4.6, §5.4)
     saga_id: str | None

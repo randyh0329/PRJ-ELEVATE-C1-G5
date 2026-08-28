@@ -82,3 +82,56 @@ def test_mock_backend_profile_endpoint(client):
 def test_mock_backend_profile_not_found(client):
     response = client.get("/workweek/profile/EMP-NONEXISTENT")
     assert response.status_code == 404
+
+
+# --- can this instance actually answer a policy question? ---------------------
+#
+# Both grounding backends fail quietly when their inputs are missing, and the
+# deployed image had neither: the Dockerfile copied `config/` and `src/` and
+# nothing else, so the container held no corpus at all. Every policy question -
+# English included - came back "I could not find an approved policy on this
+# topic in our handbook", which reads to an employee as a handbook that does not
+# cover their question and to an operator as a working service. Nothing in
+# `/health` disagreed. These tests are what make that state say so out loud.
+
+
+def test_health_reports_whether_the_policy_corpus_loaded(client):
+    grounding = client.get("/health").json()["grounding"]
+
+    assert grounding["curated_documents"] > 0, (
+        "the OKF register is empty - `okf/` is missing from wherever this is running"
+    )
+    assert grounding["ready"] is True
+
+
+def test_health_names_the_backend_that_would_answer(client):
+    grounding = client.get("/health").json()["grounding"]
+
+    assert grounding["backend"] in {"faiss", "curated"}
+    assert grounding["semantic_index"] is faiss_policy_rag.is_ready
+
+
+def test_an_empty_register_is_reported_as_not_ready(client, monkeypatch):
+    """The state that shipped. It must be visible without asking a question."""
+    from src.grounding.okf_store import okf_store
+
+    monkeypatch.setattr(okf_store, "all_policies", lambda: [])
+    monkeypatch.setattr(type(faiss_policy_rag), "is_ready", property(lambda self: False))
+
+    grounding = client.get("/health").json()["grounding"]
+
+    assert grounding["ready"] is False
+    assert grounding["backend"] == "none"
+
+
+def test_a_degraded_corpus_does_not_take_the_instance_out_of_rotation(client, monkeypatch):
+    """Leave and IT requests still work without the handbook; `status` drives
+    the uptime check, so it stays HEALTHY and the detail carries the bad news."""
+    from src.grounding.okf_store import okf_store
+
+    monkeypatch.setattr(okf_store, "all_policies", lambda: [])
+
+    body = client.get("/health").json()
+
+    assert body["status"] == "HEALTHY"
+    assert body["grounding"]["ready"] is False

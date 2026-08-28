@@ -26,7 +26,8 @@ from dataclasses import dataclass, field
 from src.grounding.policy_rag.config import Config
 from src.grounding.policy_rag.documents import Citation, Hit
 from src.grounding.policy_rag.guards import GuardAction, GuardDecision, redact_placeholders
-from src.grounding.policy_rag.retriever import RetrievalResult, tokenize
+from src.grounding.policy_rag.multilingual import localize
+from src.grounding.policy_rag.retriever import RetrievalResult, latin_terms, tokenize
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,13 @@ class Answer:
         }
 
 
+def _context_terms(hits: list[Hit], tokenizer) -> set[str]:
+    terms: set[str] = set()
+    for hit in hits:
+        terms.update(tokenizer(hit.chunk.embedding_text()))
+    return terms
+
+
 def measure_groundedness(answer_text: str, hits: list[Hit]) -> float:
     """Fraction of the answer's content words that appear in the retrieved context.
 
@@ -86,13 +94,47 @@ def measure_groundedness(answer_text: str, hits: list[Hit]) -> float:
     and it fails in the safe direction - a paraphrase that introduces facts the
     context does not contain scores low. It is a floor under the answer, not a
     semantic entailment check.
+
+    Only valid when the answer and the corpus are in the same language. See
+    `measure_cross_lingual_groundedness` for why, and for what replaces it.
     """
     answer_terms = set(tokenize(answer_text))
     if not answer_terms:
         return 0.0
-    context_terms: set[str] = set()
-    for hit in hits:
-        context_terms.update(tokenize(hit.chunk.embedding_text()))
+    context_terms = _context_terms(hits, tokenize)
+    supported = sum(1 for term in answer_terms if term in context_terms)
+    return supported / len(answer_terms)
+
+
+def measure_cross_lingual_groundedness(answer_text: str, hits: list[Hit]) -> float | None:
+    """Groundedness of an answer written in a different language than the corpus.
+
+    Word overlap cannot be the measure here. A correct Thai answer to an English
+    handbook shares almost no tokens with it by construction, so
+    `measure_groundedness` scores it near zero and the gate refuses it - not
+    because the answer is wrong, but because it was translated. Applied to a
+    multilingual service that rule does not enforce grounding, it enforces
+    English.
+
+    What does survive translation is exactly what must not drift: the numbers.
+    Day counts, monetary caps, dates, percentages, section identifiers and
+    proper nouns are copied through a translation, not rewritten - and a
+    hallucination that matters in a policy answer almost always *is* one of
+    these. "46 work days" becoming "45" is the failure this gate exists to
+    catch; "work days" becoming "工作天" is not a failure at all.
+
+    So the measure narrows to the Latin-script and numeric terms, and it is
+    strictly harder to pass on the things it still looks at: a figure the
+    extracts do not contain drags the score down with nothing to dilute it.
+
+    Returns `None` when the answer carries no such term. That is not a pass and
+    not a failure, it is an absence of evidence - the caller falls back to
+    quoting the corpus rather than publishing prose it could not check.
+    """
+    answer_terms = set(latin_terms(answer_text))
+    if not answer_terms:
+        return None
+    context_terms = _context_terms(hits, latin_terms)
     supported = sum(1 for term in answer_terms if term in context_terms)
     return supported / len(answer_terms)
 
@@ -107,6 +149,7 @@ class ExtractiveComposer:
 
     def compose(self, result: RetrievalResult, decision: GuardDecision) -> Answer:
         hits = result.hits
+        language = result.language
         blocks: list[str] = []
         for hit in hits:
             heading = hit.chunk.heading_trail
@@ -116,13 +159,19 @@ class ExtractiveComposer:
         body, placeholder_notices = redact_placeholders(body, self.config.guards)
         notices = list(decision.notices) + placeholder_notices
 
+        # The body stays in the corpus language whatever the employee asked in:
+        # this composer's entire guarantee is that it quotes rather than
+        # rewrites, and a translated quotation is a paraphrase. The scaffolding
+        # around it - headings, notices - carries no policy claim, so it travels.
         citations = [hit.citation for hit in hits]
         text = body
         if citations:
             rendered = "\n".join(f"- [{c.title}]({c.uri})" for c in citations)
-            text = f"{body}\n\n**Sources**\n{rendered}"
+            text = f"{body}\n\n**{localize('Sources', language)}**\n{rendered}"
         if notices:
-            text = f"{text}\n\n**Please note**\n" + "\n".join(f"- {n}" for n in notices)
+            heading = localize("Please note", language)
+            localized = [localize(n, language) for n in notices]
+            text = f"{text}\n\n**{heading}**\n" + "\n".join(f"- {n}" for n in localized)
 
         return Answer(
             text=text,
@@ -140,7 +189,12 @@ class GeminiComposer:
     """Grounded generation via the Gemini API, with a measured groundedness gate."""
 
     name = "gemini"
-    DEFAULT_MODEL = "gemini-2.5-flash"
+    #: The model the rest of the system already routes and selects tools with
+    #: (`src/integrations/vertex/client.py`). It was left on 2.5 here while the
+    #: agents moved to 3.7, which meant the one component whose whole job is
+    #: writing the employee's answer was the one running the older model - and
+    #: the answer is where multilingual quality is actually visible.
+    DEFAULT_MODEL = "gemini-3.7-flash"
 
     SYSTEM_INSTRUCTION = (
         "You answer questions about the Altostrat Singapore employee policy handbook.\n"
@@ -148,9 +202,15 @@ class GeminiComposer:
         "1. Use ONLY the numbered policy extracts provided. Never use outside knowledge.\n"
         "2. If the extracts do not contain the answer, say so plainly. Do not infer, "
         "estimate, or generalise from a related policy.\n"
-        "3. Quote figures, day counts and monetary caps exactly as written.\n"
+        "3. Quote figures, day counts and monetary caps exactly as written. Never "
+        "convert a currency, recalculate a day count, or localise a number - even "
+        "when writing in a language that would normally format it differently.\n"
         "4. Cite the extract number inline, e.g. [1], for every factual claim.\n"
-        "5. Be concise. Answer the question asked, not the topic around it."
+        "5. Be concise. Answer the question asked, not the topic around it.\n"
+        "6. Write the answer in the same language the employee asked in. The "
+        "extracts are in English; the answer is for the person who asked. Leave "
+        "section numbers, document titles, markdown links and figures in their "
+        "original form - they have to keep matching the handbook."
     )
 
     def __init__(self, config: Config, model: str | None = None) -> None:
@@ -172,10 +232,18 @@ class GeminiComposer:
 
     def compose(self, result: RetrievalResult, decision: GuardDecision) -> Answer:
         hits = result.hits
+        language = result.language
+        # The question is given as the employee wrote it, so rule 6 has
+        # something to key on. The English rendering is given too when it
+        # differs, because it is what selected these extracts and the model
+        # should be able to see the connection it is being asked to explain.
+        question = f"Question: {result.query}"
+        if result.search_text and result.search_text != result.query:
+            question += f"\n(Searched in English as: {result.search_text})"
         prompt = (
             f"{self._context_block(hits)}\n\n"
-            f"Question: {result.query}\n\n"
-            "Answer using only the extracts above."
+            f"{question}\n\n"
+            f"Answer using only the extracts above. Write the answer in {language.code}."
         )
         try:
             from google.genai import types
@@ -193,17 +261,44 @@ class GeminiComposer:
             # NFR-4.1: degrade to something correct, never to a fabricated answer.
             logger.exception("generation failed; falling back to extractive composition")
             answer = self._fallback.compose(result, decision)
-            answer.notices.append("Generated prose was unavailable; showing the source extracts instead.")
+            answer.notices.append(
+                localize(
+                    "Generated prose was unavailable; showing the source extracts instead.",
+                    language,
+                )
+            )
             return answer
 
         if not generated:
             return self._fallback.compose(result, decision)
 
-        groundedness = measure_groundedness(generated, hits)
+        if language.cross_lingual:
+            measured = measure_cross_lingual_groundedness(generated, hits)
+            if measured is None:
+                # Nothing translation-invariant to check the prose against. Not
+                # a refusal - the corpus does have the answer, we just cannot
+                # verify this rendering of it - so quote the corpus instead.
+                logger.warning(
+                    "no translation-invariant terms in the %s answer; quoting the extracts",
+                    language.code,
+                )
+                answer = self._fallback.compose(result, decision)
+                answer.notices.append(
+                    localize(
+                        "The generated answer could not be verified against the handbook, "
+                        "so the source extracts are shown instead, in English.",
+                        language,
+                    )
+                )
+                return answer
+            groundedness = measured
+        else:
+            groundedness = measure_groundedness(generated, hits)
+
         if groundedness < GROUNDEDNESS_GATE:
             logger.warning("groundedness %.2f below gate; refusing generated answer", groundedness)
             return Answer(
-                text=REFUSAL_TEXT,
+                text=localize(REFUSAL_TEXT, language),
                 decision=GuardAction.REFUSE.value,
                 reason="groundedness_gate",
                 hits=hits,
@@ -219,9 +314,11 @@ class GeminiComposer:
         text = generated
         if citations:
             rendered = "\n".join(f"- [{i}] [{c.title}]({c.uri})" for i, c in enumerate(citations, start=1))
-            text = f"{generated}\n\n**Sources**\n{rendered}"
+            text = f"{generated}\n\n**{localize('Sources', language)}**\n{rendered}"
         if notices:
-            text = f"{text}\n\n**Please note**\n" + "\n".join(f"- {n}" for n in notices)
+            heading = localize("Please note", language)
+            localized = [localize(n, language) for n in notices]
+            text = f"{text}\n\n**{heading}**\n" + "\n".join(f"- {n}" for n in localized)
 
         return Answer(
             text=text,

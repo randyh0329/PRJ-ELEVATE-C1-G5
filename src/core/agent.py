@@ -31,7 +31,7 @@ from src.core.session import SessionMemory, session_store
 from src.grounding.policy_engine import DualGroundingEngine, PolicyQueryResult, dual_grounding_engine
 from src.integrations.service_immediately.client import ServiceImmediatelyClient, service_immediately_client
 from src.integrations.workweek.client import WorkWeekClient, workweek_client
-from src.models.routing import SupervisorRoutingDecision
+from src.models.routing import MAX_REQUESTS_PER_TURN, SupervisorRoutingDecision
 from src.telemetry.audit_logger import AuditLogger, audit_logger
 
 
@@ -132,33 +132,24 @@ class HREnterpriseAgent:
         self._sessions.add_message(sess_id, "user", sanitized_prompt)
 
         # --- STAGE 3: INTENT-BASED TOOL DISPATCH & ORCHESTRATION ---
-        response: AgentResponse
-        if intent == "UC_2_1_EQUIPMENT_PROCUREMENT":
-            response = self._handle_equipment_procurement(caller_employee_id, sanitized_prompt)
-        elif intent == "UC_2_2_MEDICAL_LEAVE_DELEGATION":
-            response = self._handle_medical_leave(caller_employee_id, sanitized_prompt, today)
-        elif intent == "UC_2_3_RELOCATION_ALLOWANCE_BADGE":
-            response = self._handle_relocation(caller_employee_id, sanitized_prompt)
-        elif intent == "UC_1_2_WORKWEEK_LEAVE":
-            response = self._handle_workweek_leave(
-                caller_employee_id,
-                sanitized_prompt,
-                today,
-                routing_decision,
-                original_prompt=user_prompt
-            )
-        elif intent == "UC_1_3_SERVICE_IMMEDIATELY_INCIDENT":
-            response = self._handle_service_incident(
-                caller_employee_id,
-                sanitized_prompt,
-                original_prompt=user_prompt
-            )
-        elif intent == "UC_1_1_POLICY_QA":
-            response = self._handle_policy_qa(caller_employee_id, sanitized_prompt)
-        elif intent == "OUT_OF_DOMAIN":
-            response = self._handle_out_of_domain(caller_employee_id, sanitized_prompt)
-        else:
-            response = self._handle_general_or_fallback(caller_employee_id, sanitized_prompt)
+        response = self._dispatch(
+            routing_decision, caller_employee_id, sanitized_prompt, today, user_prompt
+        )
+
+        # --- STAGE 3b: THE REST OF A COMPOUND TURN ---
+        response = self._serve_remaining_requests(
+            routing_decision, response, caller_employee_id, today
+        )
+
+        # --- STAGE 3c: SAY WHAT THIS TURN STILL DID NOT DO ---
+        # `_serve_remaining_requests` rewrites `unaddressed_requests` down to
+        # what it declined, so this note now covers the residue rather than
+        # everything past the first request. Placed before the egress scan so
+        # it is inspected like any other outbound text, and skipped on a
+        # refusal, which has nothing to append to.
+        note = routing_decision.unaddressed_note()
+        if note and not response.is_refusal and intent != "OUT_OF_DOMAIN":
+            response.response_text = (response.response_text or "") + note
 
         # --- STAGE 4: EGRESS SAFETY SCAN (Group G2 Outbound) & RELEASE (Group G3) ---
         outbound_armor_res = self._armor.scan_response(
@@ -208,6 +199,134 @@ class HREnterpriseAgent:
         response.processing_metadata["router_reasoning"] = routing_decision.reasoning
 
         return response
+
+    def _dispatch(
+        self,
+        decision: SupervisorRoutingDecision,
+        caller_employee_id: str,
+        prompt: str,
+        today: datetime.date,
+        original_prompt: str,
+    ) -> AgentResponse:
+        """Route one classified request to the handler that serves it (§3.2).
+
+        Extracted from `process_message` so a compound turn can call it more
+        than once. Everything it needs arrives in the arguments: no turn state,
+        so the second call cannot inherit anything from the first except the
+        writes the first actually made.
+        """
+        intent = decision.intent
+        if intent == "UC_2_1_EQUIPMENT_PROCUREMENT":
+            return self._handle_equipment_procurement(caller_employee_id, prompt)
+        if intent == "UC_2_2_MEDICAL_LEAVE_DELEGATION":
+            return self._handle_medical_leave(caller_employee_id, prompt, today)
+        if intent == "UC_2_3_RELOCATION_ALLOWANCE_BADGE":
+            return self._handle_relocation(caller_employee_id, prompt)
+        if intent == "UC_1_2_WORKWEEK_LEAVE":
+            return self._handle_workweek_leave(
+                caller_employee_id, prompt, today, decision, original_prompt=original_prompt
+            )
+        if intent == "UC_1_3_SERVICE_IMMEDIATELY_INCIDENT":
+            return self._handle_service_incident(
+                caller_employee_id, prompt, original_prompt=original_prompt
+            )
+        if intent == "UC_1_1_POLICY_QA":
+            return self._handle_policy_qa(caller_employee_id, prompt)
+        if intent == "OUT_OF_DOMAIN":
+            return self._handle_out_of_domain(caller_employee_id, prompt)
+        return self._handle_general_or_fallback(caller_employee_id, prompt)
+
+    def _serve_remaining_requests(
+        self,
+        decision: SupervisorRoutingDecision,
+        primary: AgentResponse,
+        caller_employee_id: str,
+        today: datetime.date,
+    ) -> AgentResponse:
+        """Action the other requests the turn carried, then report on all of them.
+
+        `我的電腦壞了請開單 + 10/10 - 10/03 要請病假` opened the IT ticket and
+        dropped the sick leave. The router now names what it did not route, and
+        each named request is classified and dispatched on its own terms - so
+        the leave is booked in the same turn, by the specialist that books
+        leave, with its own audit record.
+
+        Three bounds, because this is a loop that writes to live HR systems:
+
+        * `MAX_REQUESTS_PER_TURN` caps the fan-out.
+        * An intent that has already run this turn does not run again. Two
+          leave bookings in one sentence is a real thing an employee might ask
+          for and a much more likely thing for the router to produce by
+          splitting one request in two - and the cost of guessing wrong is a
+          duplicate booking against WorkWeek, which the employee then has to
+          notice and cancel. So the second is declined rather than filed.
+        * A follow-up may not itself fan out. Only the sentence the employee
+          typed gets to add work; anything else is an unbounded chain.
+
+        Failure is per-request and never retroactive. These are independent
+        requests, not saga steps: a leave booking that fails does not make the
+        IT ticket wrong, so nothing is compensated and nothing is hidden. What
+        failed goes back into `unaddressed_requests` and the employee is told.
+        """
+        requests = [str(r).strip() for r in decision.unaddressed_requests if str(r).strip()]
+        decision.unaddressed_requests = []
+        if not requests or primary.is_refusal or primary.intent == "OUT_OF_DOMAIN":
+            # A refusal declined the whole turn; acting on the rest of it would
+            # be answering a question that was just refused.
+            decision.unaddressed_requests = requests
+            return primary
+
+        served = [primary]
+        intents_served = {primary.intent}
+        deferred = requests[MAX_REQUESTS_PER_TURN - 1:]
+
+        for request in requests[: MAX_REQUESTS_PER_TURN - 1]:
+            try:
+                follow_up = self._classify_intent(request, today)
+                if follow_up.intent in intents_served:
+                    deferred.append(request)
+                    continue
+                follow_up.unaddressed_requests = []
+                served.append(
+                    self._dispatch(follow_up, caller_employee_id, request, today, request)
+                )
+                intents_served.add(follow_up.intent)
+            except Exception as exc:
+                self._logger.log_event(
+                    caller_employee_id=caller_employee_id,
+                    action_type="COMPOUND_REQUEST_PART_FAILED",
+                    status="FAILED",
+                    details={"request": request, "error": str(exc)},
+                )
+                deferred.append(request)
+
+        decision.unaddressed_requests = deferred
+        return self._merge(served)
+
+    @staticmethod
+    def _merge(parts: list[AgentResponse]) -> AgentResponse:
+        """Fold the per-request answers into the one reply the employee reads.
+
+        The first request keeps the fields the API contract is written against
+        - `intent`, `action_performed`, `transaction_reference` are all
+        singular - and the rest are recorded in `processing_metadata` so an
+        auditor reading the turn can see every intent it served, not just the
+        one that got to name it.
+        """
+        if len(parts) == 1:
+            return parts[0]
+
+        merged = parts[0].model_copy(deep=True)
+        merged.response_text = "\n\n".join(p.response_text for p in parts if p.response_text)
+        for part in parts[1:]:
+            merged.citations.extend(c for c in part.citations if c not in merged.citations)
+            if merged.transaction_reference is None:
+                merged.transaction_reference = part.transaction_reference
+        merged.processing_metadata["requests_served"] = [p.intent for p in parts]
+        merged.processing_metadata["actions_performed"] = [
+            p.action_performed for p in parts if p.action_performed
+        ]
+        return merged
 
     def _classify_intent(self, prompt: str, reference_date: datetime.date | None = None) -> SupervisorRoutingDecision:
         """

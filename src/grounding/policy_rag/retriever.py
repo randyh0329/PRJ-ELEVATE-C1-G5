@@ -72,9 +72,19 @@ class RetrievalRequest:
     doc_types: list[str] | None = None
     #: Override the configured relevance gate (evaluation harness use only).
     relevance_gate: float | None = None
-    #: BCP-47-ish code pinning the query language. `None` means detect it from
-    #: the text - see `language.resolve`.
+    #: BCP-47 tag pinning the query language. `None` means work it out from the
+    #: text - see `multilingual.understand`, which asks Gemini, and
+    #: `language.resolve`, which is the offline floor under it. Any well-formed
+    #: tag is accepted; there is no supported-language list.
     language: str | None = None
+
+    #: What to actually search for, when that differs from what the employee
+    #: typed. The index is embedded with an English-only model, so a Chinese
+    #: question embedded verbatim lands nowhere near the chunk that answers it -
+    #: `multilingual.understand` renders the question into English and puts it
+    #: here. `None` means search the query as written, which is both the English
+    #: case and the fallback when the language model is unreachable.
+    search_text: str | None = None
 
 
 @dataclass
@@ -93,6 +103,12 @@ class RetrievalResult:
     #: composition got it wrong.
     language: Language = field(default_factory=lambda: resolve("", "en"))
 
+    #: The text the index was actually searched with. Differs from `query` only
+    #: when a non-English question was rendered into English first. Reported so
+    #: that a bad answer can be traced to a bad translation - otherwise a
+    #: mistranslated question and a genuinely absent policy look identical.
+    search_text: str = ""
+
     @property
     def passed_gate(self) -> bool:
         return bool(self.hits)
@@ -106,6 +122,7 @@ class RetrievalResult:
             "searched_corpora": self.searched_corpora,
             "language": self.language.code,
             "cross_lingual": self.language.cross_lingual,
+            "search_text": self.search_text or self.query,
             "hits": [h.to_dict() for h in self.hits],
             "rejected_count": len(self.rejected),
         }
@@ -258,15 +275,26 @@ class Retriever:
 
         language = resolve(request.query, request.language)
 
-        query_vector = self.embedder.encode_query(request.query)
-        query_terms = tokenize(request.query)
+        # What the index is searched with. Normally the query itself; for a
+        # non-English question, its English rendering - see `search_text`.
+        search_text = request.search_text or request.query
+        translated = search_text != request.query
+
+        query_vector = self.embedder.encode_query(search_text)
+        query_terms = tokenize(search_text)
         # What the corroboration rule below is allowed to look at. For an
         # English query this is the whole term list and the rule is unchanged.
-        # For a cross-lingual one it is the Latin remainder - section numbers,
-        # figures, product names - because CJK bigrams cannot appear in an
-        # English chunk and scoring a hit against terms it *cannot* contain
-        # measures the corpus language, not the hit.
-        corroborating_terms = latin_terms(request.query) if language.cross_lingual else query_terms
+        # A *translated* query is English too, so the rule runs in full - which
+        # is the point of translating: the safety check that had to be skipped
+        # for cross-lingual questions comes back.
+        # For a cross-lingual query with no translation it is the Latin
+        # remainder - section numbers, figures, product names - because CJK
+        # bigrams cannot appear in an English chunk and scoring a hit against
+        # terms it *cannot* contain measures the corpus language, not the hit.
+        if translated or not language.cross_lingual:
+            corroborating_terms = query_terms
+        else:
+            corroborating_terms = latin_terms(request.query)
 
         # Over-fetch: ACL, corpus and doc-type filters all cut candidates, and
         # FAISS cannot express them, so the filtering happens after the search.
@@ -356,6 +384,7 @@ class Retriever:
             best_relevance=best,
             searched_corpora=sorted(corpora),
             language=language,
+            search_text=search_text,
         )
 
 
