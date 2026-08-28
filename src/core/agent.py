@@ -71,7 +71,11 @@ class HREnterpriseAgent:
         # --- STAGE 1: INGRESS SAFETY & DLP SCANNING (Group G1 Concurrency, p95 <= 80ms) ---
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
             future_dlp = executor.submit(self._dlp.redact, user_prompt)
-            future_armor = executor.submit(self._armor.scan_prompt, user_prompt, 150)
+            future_armor = executor.submit(
+                self._armor.scan_prompt,
+                user_prompt,
+                getattr(self._armor, "deadline_ms", 150)
+            )
 
             redaction_res = future_dlp.result()
             armor_res = future_armor.result()
@@ -138,7 +142,10 @@ class HREnterpriseAgent:
             response = self._handle_general_or_fallback(caller_employee_id, sanitized_prompt)
 
         # --- STAGE 4: EGRESS SAFETY SCAN (Group G2 Outbound) & RELEASE (Group G3) ---
-        outbound_armor_res = self._armor.scan_response(response.response_text, timeout_ms=150)
+        outbound_armor_res = self._armor.scan_response(
+            response.response_text,
+            timeout_ms=getattr(self._armor, "deadline_ms", 150)
+        )
         if not outbound_armor_res.is_safe:
             self._logger.log_event(
                 caller_employee_id=caller_employee_id,
