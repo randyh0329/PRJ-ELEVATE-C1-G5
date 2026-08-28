@@ -119,7 +119,7 @@ def test_han_with_no_orthography_evidence_falls_to_the_documented_default():
 
 
 @pytest.mark.parametrize("code", [JAPANESE, KOREAN, TRADITIONAL_CHINESE, SIMPLIFIED_CHINESE])
-def test_a_supported_request_beats_detection(code):
+def test_a_requested_language_beats_detection(code):
     """A browser `Accept-Language` beats any amount of character counting on a
     two-word query, so a caller that knows its user's locale gets to say so."""
     language = resolve("bereavement leave", requested=code)
@@ -132,13 +132,42 @@ def test_requesting_the_corpus_language_is_not_cross_lingual():
     assert resolve("休暇", requested=ENGLISH).cross_lingual is False
 
 
-@pytest.mark.parametrize("requested", [None, "", "klingon", "ja-JP", "EN"])
-def test_an_unrecognised_request_falls_back_to_detection_rather_than_erroring(requested):
-    """The parameter is a hint about presentation. Refusing a policy question
-    over a malformed locale tag would be a poor trade - and note `ja-JP` and
-    `EN`: near-misses are ignored rather than guessed at, because guessing here
-    means answering in a language the user did not ask for."""
+@pytest.mark.parametrize(
+    "requested",
+    ["ja-JP", "zh-TW", "zh_TW", "ko-KR", "id", "id-ID", "en-SG", "en-SG-x-corp", "EN"],
+)
+def test_any_well_formed_tag_is_honoured_not_just_the_ones_we_thought_of(requested):
+    """The point of the change: there is no supported-language list to be outside of.
+
+    Every tag here was previously discarded in favour of guessing from
+    characters, because it was not one of five hardcoded strings - and note that
+    most of them name a language that *was* on the list. `zh-TW` is how a
+    browser actually spells Traditional Chinese, and the tuple held `zh-Hant`,
+    so a Taipei employee's `Accept-Language` was thrown away in favour of
+    counting their characters. `id` is the other kind of gap: Indonesian is
+    Latin-script, so the census cannot see it at all and reports it as English.
+    """
+    assert resolve("有給休暇", requested=requested).code == requested
+
+
+@pytest.mark.parametrize("requested", [None, "", "   ", "klingon", "not a language", "!!"])
+def test_a_malformed_tag_falls_back_to_detection_rather_than_erroring(requested):
+    """A shape check is not a list, but it is still a check.
+
+    `klingon` is rejected on shape - no BCP-47 primary subtag is seven letters -
+    and the request falls through to detection rather than raising. The
+    parameter is a hint about presentation, and failing a whole policy question
+    over a malformed locale header would be a poor trade.
+    """
     assert resolve("有給休暇", requested=requested).code == JAPANESE
+
+
+@pytest.mark.parametrize("requested", ["en", "EN", "en-SG", "en_US"])
+def test_every_form_of_english_is_read_as_the_corpus_language(requested):
+    """`cross_lingual` drives the translation and groundedness carve-outs, so
+    reading `en-SG` as foreign would put an English question through a
+    round-trip it does not need."""
+    assert resolve("休暇", requested=requested).cross_lingual is False
 
 
 def test_an_empty_query_honours_the_caller_supplied_default():

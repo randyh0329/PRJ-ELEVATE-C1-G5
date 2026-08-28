@@ -16,6 +16,7 @@ from src.grounding.policy_rag.config import GENERAL_ENTITLEMENT, Config, load_co
 from src.grounding.policy_rag.embeddings import EmbeddingProvider, build_provider
 from src.grounding.policy_rag.guards import GuardAction
 from src.grounding.policy_rag.index import PolicyIndex
+from src.grounding.policy_rag.multilingual import localize, understand
 from src.grounding.policy_rag.retriever import RetrievalRequest, RetrievalResult, Retriever
 
 logger = logging.getLogger(__name__)
@@ -59,7 +60,22 @@ class PolicyRagService:
         corpora: list[str] | None = None,
         doc_types: list[str] | None = None,
         relevance_gate: float | None = None,
+        language: str | None = None,
     ) -> RetrievalResult:
+        """Retrieve against the index, reading the query in whatever language it is in.
+
+        `language` pins the answer language - pass an `Accept-Language` primary
+        tag if the caller has one. Any BCP-47 tag is accepted; there is no
+        supported-language list to be outside of. Left `None`, the language is
+        read from the query, by Gemini where it is reachable and by the script
+        census where it is not.
+        """
+        reading = understand(query, language)
+        if reading.translated:
+            logger.info(
+                "searching %s query as English: %r -> %r",
+                reading.language.code, query, reading.search_text,
+            )
         return self.retriever.retrieve(
             RetrievalRequest(
                 query=query,
@@ -68,6 +84,8 @@ class PolicyRagService:
                 corpora=corpora,
                 doc_types=doc_types,
                 relevance_gate=relevance_gate,
+                language=reading.language.code,
+                search_text=reading.search_text,
             )
         )
 
@@ -82,6 +100,7 @@ class PolicyRagService:
         corpora: list[str] | None = None,
         doc_types: list[str] | None = None,
         relevance_gate: float | None = None,
+        language: str | None = None,
     ) -> Answer:
         result = self.search(
             query,
@@ -90,12 +109,29 @@ class PolicyRagService:
             corpora=corpora,
             doc_types=doc_types,
             relevance_gate=relevance_gate,
+            language=language,
         )
+        # Guards run on the English rendering as well as the raw query: their
+        # keyword lists are English, and a Korean contractor asking about leave
+        # must not walk past the `extended_workforce_leave` escalation simply
+        # because the trigger word was in the half of the query the guard could
+        # not read. Both are checked; the stricter outcome wins by construction,
+        # since a guard that fires on either text fires.
         decision = guards.evaluate(query, result.hits, self.config.guards)
+        if result.search_text and result.search_text != query:
+            translated_decision = guards.evaluate(
+                result.search_text, result.hits, self.config.guards
+            )
+            if translated_decision.action is not GuardAction.ANSWER:
+                decision = translated_decision
 
+        # Every fixed string below is the employee's to read, so it goes out in
+        # their language. A refusal they cannot read is indistinguishable from a
+        # broken service - and a refusal is the response they are most likely to
+        # get when something has already gone wrong.
         if decision.action is GuardAction.ESCALATE:
             return Answer(
-                text=decision.message or REFUSAL_TEXT,
+                text=localize(decision.message or REFUSAL_TEXT, result.language),
                 decision=decision.action.value,
                 reason=decision.reason,
                 hits=result.hits,
@@ -109,7 +145,7 @@ class PolicyRagService:
             # FR-5.4 strict grounding: below the retrieval gate the honest
             # answer is "not covered", never a best guess from a weak match.
             return Answer(
-                text=REFUSAL_TEXT,
+                text=localize(REFUSAL_TEXT, result.language),
                 decision=GuardAction.REFUSE.value,
                 reason=decision.reason or "below_relevance_gate",
                 relevance=result.best_relevance,

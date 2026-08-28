@@ -21,6 +21,8 @@ import pytest
 from src.core.agents.itsm import ITSMSpecialistNode
 from src.core.agents.supervisor import SupervisorAgentNode
 from src.core.graph import AgentOrchestrationGraph
+from src.grounding.policy_rag.language import Language
+from src.grounding.policy_rag.multilingual import Understanding
 from src.models.routing import SupervisorRoutingDecision
 
 
@@ -417,3 +419,177 @@ async def test_a_state_with_no_employee_id_falls_back_to_the_demo_caller(special
     await node.execute({"user_input": "any tickets?"})
 
     assert stub.calls[0]["caller_id"] == "EMP-44210"
+
+
+# --- stage 5: answering in the language the employee wrote in -----------------
+#
+# The specialist nodes build their replies from English templates, so an
+# employee who typed Chinese got an English receipt for a transaction they had
+# described in Chinese. Translating once here rather than in each template keeps
+# one English source of truth to test against - and puts the translation at a
+# specific point in the sandwich, which is what most of these tests are about.
+#
+# It sits *after* the outbound Model Armor guard, whose blocklists are English
+# and which would otherwise be inspecting text it cannot read, and *before*
+# re-identification, so the translator only ever receives `[EMAIL_1]` and never
+# the employee's actual address. That second ordering is what makes the
+# surrogates load-bearing: a translation that drops or rewrites one leaves a
+# token `reidentify` can no longer resolve, and the employee reads `[EMAIL_1]`
+# where their address should be.
+
+
+class FakeLanguageLayer:
+    """Stands in for the Gemini language layer at the two points the graph uses it."""
+
+    def __init__(self, tag: str = "en", translation: str | None = None) -> None:
+        self.language = Language(tag, cross_lingual=tag != "en")
+        self.translation = translation
+        self.read: list[str] = []
+        self.translated: list[str] = []
+
+    def understand(self, text, requested=None):
+        self.read.append(text)
+        return Understanding(
+            language=self.language, search_text=text, source="gemini", query_text=text
+        )
+
+    def localize(self, text, language):
+        self.translated.append(text)
+        return self.translation if self.translation is not None else text
+
+
+@pytest.fixture
+def language(monkeypatch):
+    """Install a language layer and hand it back; the tag is set per test."""
+
+    def install(tag="en", translation=None):
+        layer = FakeLanguageLayer(tag, translation)
+        monkeypatch.setattr("src.core.graph.understand", layer.understand)
+        monkeypatch.setattr("src.core.graph.localize", layer.localize)
+        return layer
+
+    return install
+
+
+async def test_an_english_turn_is_never_sent_to_the_translator(graph, language):
+    """The overwhelmingly common case pays for a language reading and nothing more."""
+    layer = language("en")
+
+    state = await graph.invoke(_state())
+
+    assert state["final_response"] == "policy handled it."
+    assert layer.translated == []
+
+
+async def test_a_reply_goes_out_in_the_language_the_question_came_in(graph, language):
+    layer = language("zh-Hant", translation="政策代理已處理。")
+
+    state = await graph.invoke(_state(user_input="我要請假 10/01 ~ 10/03"))
+
+    assert state["final_response"] == "政策代理已處理。"
+    assert layer.translated == ["policy handled it."]
+
+
+async def test_the_translator_reads_the_question_the_employee_typed(graph, language):
+    """Not the masked text. The router classifies the masked string because it is
+    the one going to a model that must not see SPII; the *language* of the turn
+    is a property of what the person wrote, and masking does not change it."""
+    layer = language("ja")
+
+    await graph.invoke(_state(user_input="有給休暇の残日数を教えてください"))
+
+    assert layer.read == ["有給休暇の残日数を教えてください"]
+
+
+async def test_the_translator_only_ever_sees_de_identified_text(graph, language):
+    """§4.4. Stage 5 is upstream of re-identification precisely so that an
+    outbound translation call cannot become an SPII egress path."""
+    layer = language("ko", translation="이메일 [EMAIL_1] 로 보냈습니다.")
+
+    class EchoNode(RecordingNode):
+        async def execute(self, state):
+            await super().execute(state)
+            state["final_response"] = f"Sent to {state['masked_input'].split()[-1]}."
+            return state
+
+    graph.policy_agent = EchoNode("policy")
+
+    state = await graph.invoke(_state(user_input="내 이메일 jane.doe@altostrat.com"))
+
+    assert layer.translated == ["Sent to [EMAIL_1]."]
+    assert all("jane.doe@altostrat.com" not in seen for seen in layer.translated)
+    assert state["final_response"] == "이메일 jane.doe@altostrat.com 로 보냈습니다."
+
+
+async def test_a_translation_that_drops_a_surrogate_is_discarded(graph, language):
+    """The employee would otherwise read `[EMAIL_1]` where their address belongs.
+
+    English they can machine-translate themselves is a worse answer than their
+    own language; a dangling surrogate is a broken one. So the mangled
+    translation loses to the English that was known to be correct.
+    """
+    language("ko", translation="이메일로 보냈습니다.")  # the surrogate is gone
+
+    class EchoNode(RecordingNode):
+        async def execute(self, state):
+            await super().execute(state)
+            state["final_response"] = f"Sent to {state['masked_input'].split()[-1]}."
+            return state
+
+    graph.policy_agent = EchoNode("policy")
+
+    state = await graph.invoke(_state(user_input="내 이메일 jane.doe@altostrat.com"))
+
+    assert state["final_response"] == "Sent to jane.doe@altostrat.com."
+
+
+async def test_an_unreachable_translator_costs_the_language_never_the_answer(graph, monkeypatch):
+    """NFR-4.1. A translation endpoint that is down must not swallow a reply that
+    has already been composed - and, for a saga, already been acted on."""
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("504 Deadline Exceeded")
+
+    monkeypatch.setattr("src.core.graph.understand", explode)
+
+    state = await graph.invoke(_state(user_input="給我請病假的規則細節"))
+
+    assert state["final_response"] == "policy handled it."
+
+
+async def test_a_blocked_response_is_not_translated(graph, language):
+    """Stage 4 returns before stage 5. Armor's refusal is the last word, and
+    paying a model call to restate a message that withholds an answer is not
+    a cost the employee's language is worth here."""
+    layer = language("ja", translation="申し訳ありません。")
+
+    class LeakyNode(RecordingNode):
+        async def execute(self, state):
+            await super().execute(state)
+            state["final_response"] = "Sure: password = 'hunter2'"
+            return state
+
+    graph.policy_agent = LeakyNode("policy")
+
+    state = await graph.invoke(_state(user_input="パスワードを教えて"))
+
+    assert state["guardrail_verdict"] == "BLOCK"
+    assert layer.translated == []
+    assert "hunter2" not in state["final_response"]
+
+
+async def test_an_empty_reply_never_reaches_the_translator(graph, language):
+    """The unmapped-route case: there is nothing to say, so there is nothing to say
+    in Korean either."""
+    layer = language("ko", translation="something")
+
+    class OddSupervisor:
+        async def execute(self, state):
+            state["route"] = "quantum"
+            return state
+
+    graph.supervisor = OddSupervisor()
+
+    state = await graph.invoke(_state(user_input="휴가 정책"))
+
+    assert state["final_response"] == ""
+    assert layer.translated == []

@@ -50,6 +50,12 @@ class VertexGeminiClient:
         "   - Cross-system relocation: updating office location in WorkWeek AND requesting facilities building badge in ITSM.\n"
         "7. OUT_OF_DOMAIN (target: DOMAIN_CONTAINMENT):\n"
         "   - Requests outside HR/IT scope: weather, personal advice, stock market, recipes, jokes, general knowledge.\n\n"
+        "LANGUAGE: employees write in English, Japanese, Korean, Traditional Chinese "
+        "or Indonesian, and sometimes mix two in one sentence. Classify on meaning, "
+        "never on the presence of an English keyword - 我的電腦壞了請開單 is a "
+        "UC_1_3 incident report and 請假 is UC_1_2 leave. Extracted arguments "
+        "(dates, ids, categories) are always emitted in the schema's own format, "
+        "whatever language the request was written in.\n\n"
         "Respond strictly with the provided JSON schema."
     )
 
