@@ -24,6 +24,26 @@ COPY config/ ./config/
 COPY src/ ./src/
 COPY pyproject.toml .
 
+# The policy corpus. Not optional, and its absence is silent: `okf_store` logs
+# an error and carries on with an empty register, so every policy question -
+# in every language - comes back "I could not find an approved policy on this
+# topic in our handbook". That reads as "the handbook does not cover this" and
+# is indistinguishable, from the outside, from a working service answering
+# honestly. It is 344 KB.
+COPY okf/ ./okf/
+COPY "ALTOSTRAT SINGAPORE EMPLOYEE POLICY HANDBOOK & CONDUCT GUIDELINES.md" ./
+
+# Build the FAISS index into the image. `var/` is a git-ignored build artefact,
+# so it cannot be COPYed from a checkout - it has to be produced here, and if it
+# is not produced at all the service silently degrades to the deterministic OKF
+# register, which answers only questions phrased in the corpus's own words.
+#
+# HF_HOME is set inside the image so the embedding model is baked in rather than
+# downloaded on the first request: a cold Cloud Run instance reaching out to
+# huggingface.co mid-query is both slow and a runtime dependency on a third
+# party that the served page does not need to have.
+ENV HF_HOME=/app/.cache/huggingface
+RUN python -m src.grounding.policy_rag.cli ingest
 
 # Stamp the commit into the image so the running service can report its own
 # version. Declared here, after the COPY steps, so changing it does not

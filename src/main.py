@@ -75,16 +75,56 @@ class ChatResponse(BaseModel):
     processing_metadata: dict[str, Any] = {}
 
 
+def _grounding_status() -> dict[str, Any]:
+    """Whether this instance can actually answer a policy question.
+
+    Both grounding backends fail *quietly* when their inputs are missing. An
+    absent `okf/` leaves the curated register empty; an unbuilt FAISS index
+    leaves semantic search off. Either way the service starts, reports healthy,
+    and answers every policy question with "I could not find an approved policy
+    on this topic in our handbook" - which reads to an employee as a handbook
+    that does not cover their question, and to an operator as a working system.
+
+    That is exactly what shipped: the image copied `config/` and `src/` and
+    nothing else, so the container held no corpus at all. It was invisible
+    because nothing ever asked this question out loud. Now something does.
+    """
+    from src.grounding.okf_store import okf_store
+
+    documents = len(okf_store.all_policies())
+    try:
+        from src.grounding.faiss_pipeline import faiss_policy_rag
+
+        index_ready = faiss_policy_rag.is_ready
+    except Exception:  # pragma: no cover - faiss/numpy absent
+        index_ready = False
+
+    return {
+        # The curated register is the floor. Without it there is no policy
+        # capability at all, whatever else is true.
+        "ready": documents > 0,
+        "curated_documents": documents,
+        "semantic_index": index_ready,
+        "backend": "faiss" if index_ready else ("curated" if documents else "none"),
+    }
+
+
 @app.get("/health")
 def health_check():
     """Service health probe."""
+    grounding = _grounding_status()
     return {
+        # Kept HEALTHY on a degraded corpus deliberately: uptime checks read
+        # this field, and an instance that can still route leave and IT
+        # requests should not be pulled out of the load balancer. The detail
+        # below is where a human looks when policy answers go missing.
         "status": "HEALTHY",
         "service": "hr-agentic-solution",
         "version": "0.1.0",
         # `version` is the hand-maintained release number and moves rarely; the
         # commit is what tells you whether a given fix is actually deployed.
         "build": get_build_info().as_dict(),
+        "grounding": grounding,
     }
 
 
