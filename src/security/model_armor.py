@@ -166,6 +166,11 @@ class LiveModelArmorClient:
         self._cached_token: str | None = None
         self._token_expiry: float = 0.0
         self._http_client = httpx.Client(timeout=10.0)
+        # Pre-warm authentication token so the first scan request has zero auth latency
+        try:
+            self._get_auth_token()
+        except Exception:
+            pass
 
     def _get_auth_token(self) -> str:
         now = time.time()
@@ -178,6 +183,22 @@ class LiveModelArmorClient:
             self._token_expiry = now + 3600
             return env_token
 
+        # 1. Try in-process Google Application Default Credentials
+        try:
+            import google.auth
+            import google.auth.transport.requests
+
+            creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+            auth_req = google.auth.transport.requests.Request()
+            creds.refresh(auth_req)
+            if creds.token:
+                self._cached_token = creds.token
+                self._token_expiry = now + 3300
+                return creds.token
+        except Exception:
+            pass
+
+        # 2. Try Compute Metadata server
         try:
             with httpx.Client(timeout=1.0) as client:
                 res = client.get(
@@ -194,6 +215,7 @@ class LiveModelArmorClient:
         except Exception:
             pass
 
+        # 3. Try gcloud CLI binary
         candidate_paths = [
             shutil.which("gcloud"),
             os.path.expanduser("~/google-cloud-sdk/bin/gcloud"),
@@ -232,7 +254,8 @@ class LiveModelArmorClient:
             "Content-Type": "application/json",
         }
         payload = {"userPromptData": {"text": prompt}}
-        resp = self._http_client.post(url, json=payload, headers=headers, timeout=timeout_seconds)
+        timeout = httpx.Timeout(timeout_seconds, connect=2.0)
+        resp = self._http_client.post(url, json=payload, headers=headers, timeout=timeout)
         if resp.status_code != 200:
             raise RuntimeError(f"Model Armor API error: {resp.status_code} {resp.text}")
         return resp.json()
@@ -249,7 +272,8 @@ class LiveModelArmorClient:
             "Content-Type": "application/json",
         }
         payload = {"modelResponseData": {"text": response_text}}
-        resp = self._http_client.post(url, json=payload, headers=headers, timeout=timeout_seconds)
+        timeout = httpx.Timeout(timeout_seconds, connect=2.0)
+        resp = self._http_client.post(url, json=payload, headers=headers, timeout=timeout)
         if resp.status_code != 200:
             raise RuntimeError(f"Model Armor API error: {resp.status_code} {resp.text}")
         return resp.json()
@@ -285,6 +309,7 @@ class ModelArmorSanitizer:
         self.location = getattr(settings, "REGION", "us-central1")
         self.user_template = getattr(settings, "MODEL_ARMOR_USER_TEMPLATE", "hr-ingress-template")
         self.model_template = getattr(settings, "MODEL_ARMOR_MODEL_TEMPLATE", "hr-egress-template")
+        self.deadline_ms = getattr(settings, "MODEL_ARMOR_DEADLINE_MS", 150)
 
         self._live_client: LiveModelArmorClient | None = None
         if self.use_live:
@@ -299,12 +324,13 @@ class ModelArmorSanitizer:
                 logger.warning("Failed to initialize live Model Armor client: %s. Using local standin.", e)
 
     def sanitize_user_prompt(
-        self, prompt: str, timeout_ms: int = 150
+        self, prompt: str, timeout_ms: int | None = None
     ) -> ModelArmorResult:
         """
         Model Armor SanitizeUserPrompt inspection (§4.3, FR-1.3).
         Runs within 150ms hard deadline and fails closed.
         """
+        effective_timeout = timeout_ms if timeout_ms is not None else self.deadline_ms
         start_time = time.perf_counter()
 
         # Check circuit breaker (§7.5 ALRT-08)
@@ -322,11 +348,11 @@ class ModelArmorSanitizer:
         # 1. Live Google Cloud Model Armor Inspection
         if self.use_live and self._live_client:
             try:
-                raw_res = self._live_client.sanitize_user_prompt(prompt, timeout_seconds=timeout_ms / 1000.0)
+                raw_res = self._live_client.sanitize_user_prompt(prompt, timeout_seconds=effective_timeout / 1000.0)
                 elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
-                if elapsed_ms > timeout_ms:
-                    logger.warning("ARMOR_IN_DEADLINE: Model Armor inbound call exceeded %d ms (%0.2f ms)", timeout_ms, elapsed_ms)
+                if elapsed_ms > effective_timeout:
+                    logger.warning("ARMOR_IN_DEADLINE: Model Armor inbound call exceeded %d ms (%0.2f ms)", effective_timeout, elapsed_ms)
                     self.circuit_breaker.record_failure(is_deadline=True)
                     return ModelArmorResult(
                         is_safe=False,
@@ -370,8 +396,8 @@ class ModelArmorSanitizer:
         is_safe, threat_category, refusal_msg = self.local_standin.scan_prompt(prompt)
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
-        if elapsed_ms > timeout_ms:
-            logger.warning("ARMOR_IN_DEADLINE: Local inbound check exceeded %d ms (%0.2f ms)", timeout_ms, elapsed_ms)
+        if elapsed_ms > effective_timeout:
+            logger.warning("ARMOR_IN_DEADLINE: Local inbound check exceeded %d ms (%0.2f ms)", effective_timeout, elapsed_ms)
             self.circuit_breaker.record_failure(is_deadline=True)
             return ModelArmorResult(
                 is_safe=False,
@@ -402,12 +428,13 @@ class ModelArmorSanitizer:
         )
 
     def sanitize_model_response(
-        self, response_text: str, timeout_ms: int = 150
+        self, response_text: str, timeout_ms: int | None = None
     ) -> ModelArmorResult:
         """
         Model Armor SanitizeModelResponse inspection (§4.3, FR-1.3).
         Runs within 150ms hard deadline and fails closed.
         """
+        effective_timeout = timeout_ms if timeout_ms is not None else self.deadline_ms
         start_time = time.perf_counter()
 
         # Check circuit breaker (§7.5 ALRT-08)
@@ -425,11 +452,11 @@ class ModelArmorSanitizer:
         # 1. Live Google Cloud Model Armor Inspection
         if self.use_live and self._live_client:
             try:
-                raw_res = self._live_client.sanitize_model_response(response_text, timeout_seconds=timeout_ms / 1000.0)
+                raw_res = self._live_client.sanitize_model_response(response_text, timeout_seconds=effective_timeout / 1000.0)
                 elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
-                if elapsed_ms > timeout_ms:
-                    logger.warning("ARMOR_OUT_DEADLINE: Model Armor outbound call exceeded %d ms (%0.2f ms)", timeout_ms, elapsed_ms)
+                if elapsed_ms > effective_timeout:
+                    logger.warning("ARMOR_OUT_DEADLINE: Model Armor outbound call exceeded %d ms (%0.2f ms)", effective_timeout, elapsed_ms)
                     self.circuit_breaker.record_failure(is_deadline=True)
                     return ModelArmorResult(
                         is_safe=False,
@@ -471,8 +498,8 @@ class ModelArmorSanitizer:
         is_safe, threat_category, refusal_msg = self.local_standin.scan_response(response_text)
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
-        if elapsed_ms > timeout_ms:
-            logger.warning("ARMOR_OUT_DEADLINE: Local outbound check exceeded %d ms (%0.2f ms)", timeout_ms, elapsed_ms)
+        if elapsed_ms > effective_timeout:
+            logger.warning("ARMOR_OUT_DEADLINE: Local outbound check exceeded %d ms (%0.2f ms)", effective_timeout, elapsed_ms)
             self.circuit_breaker.record_failure(is_deadline=True)
             return ModelArmorResult(
                 is_safe=False,
@@ -501,6 +528,14 @@ class ModelArmorSanitizer:
             threat_category=None,
             processing_time_ms=round(elapsed_ms, 3),
         )
+
+    def scan_prompt(self, prompt: str, timeout_ms: int | None = None) -> ModelArmorResult:
+        """Alias for sanitize_user_prompt."""
+        return self.sanitize_user_prompt(prompt, timeout_ms=timeout_ms)
+
+    def scan_response(self, response_text: str, timeout_ms: int | None = None) -> ModelArmorResult:
+        """Alias for sanitize_model_response."""
+        return self.sanitize_model_response(response_text, timeout_ms=timeout_ms)
 
 
 # Global singleton instance
