@@ -1,10 +1,10 @@
 {
-  "hr_supervisor_orchestrator": "projects/test-project/locations/us-central1/reasoningEngines/mock-hr_supervisor_orchestrator",
-  "hr_policy_benefits_specialist": "projects/test-project/locations/us-central1/reasoningEngines/mock-hr_policy_benefits_specialist",
-  "hr_lifecycle_operations_specialist": "projects/test-project/locations/us-central1/reasoningEngines/mock-hr_lifecycle_operations_specialist",
-  "hr_approval_gatekeeper": "projects/test-project/locations/us-central1/reasoningEngines/mock-hr_approval_gatekeeper",
-  "hr_saga_coordinator": "projects/test-project/locations/us-central1/reasoningEngines/mock-hr_saga_coordinator",
-  "hr_policy_rag_search": "projects/test-project/locations/us-central1/reasoningEngines/mock-hr_policy_rag_search",
-  "hr_policy_dual_hybrid": "projects/test-project/locations/us-central1/reasoningEngines/mock-hr_policy_dual_hybrid",
-  "hr_eval_llm_judge": "projects/test-project/locations/us-central1/reasoningEngines/mock-hr_eval_llm_judge"
+  "hr_supervisor_orchestrator": "projects/pe-group5/locations/us-central1/reasoningEngines/mock-hr_supervisor_orchestrator",
+  "hr_policy_benefits_specialist": "projects/pe-group5/locations/us-central1/reasoningEngines/mock-hr_policy_benefits_specialist",
+  "hr_lifecycle_operations_specialist": "projects/pe-group5/locations/us-central1/reasoningEngines/mock-hr_lifecycle_operations_specialist",
+  "hr_approval_gatekeeper": "projects/pe-group5/locations/us-central1/reasoningEngines/mock-hr_approval_gatekeeper",
+  "hr_saga_coordinator": "projects/pe-group5/locations/us-central1/reasoningEngines/mock-hr_saga_coordinator",
+  "hr_policy_rag_search": "projects/pe-group5/locations/us-central1/reasoningEngines/mock-hr_policy_rag_search",
+  "hr_policy_dual_hybrid": "projects/pe-group5/locations/us-central1/reasoningEngines/mock-hr_policy_dual_hybrid",
+  "hr_eval_llm_judge": "projects/pe-group5/locations/us-central1/reasoningEngines/mock-hr_eval_llm_judge"
 }

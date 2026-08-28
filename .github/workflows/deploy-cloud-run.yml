@@ -53,9 +53,61 @@ jobs:
         run: |
           pytest tests/ -v
 
-  build-and-deploy:
-    name: Build Container & Deploy to Cloud Run
+  deploy-agent-runtime:
+    name: Deploy to Vertex AI Agent Runtime & Registry
     needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+          cache-dependency-path: 'requirements.txt'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r agent_registry_deployment/scripts/requirements.txt
+
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          token_format: 'access_token'
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy Enterprise Multi-Agent Fleet to Agent Registry
+        env:
+          PYTHONPATH: .
+        run: |
+          python agent_registry_deployment/scripts/deploy_to_agent_registry.py \
+            --project ${{ env.PROJECT_ID }} \
+            --location ${{ env.REGION }}
+
+      - name: Verify Agent Registry Fleet Deployment
+        env:
+          PYTHONPATH: .
+        run: |
+          python agent_registry_deployment/scripts/verify_agent_registry.py \
+            --project ${{ env.PROJECT_ID }} \
+            --location ${{ env.REGION }}
+
+  build-and-deploy-cloud-run:
+    name: Build Container & Deploy to Cloud Run
+    needs: [test, deploy-agent-runtime]
     runs-on: ubuntu-latest
     permissions:
       contents: read
