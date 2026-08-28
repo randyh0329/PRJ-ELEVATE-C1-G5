@@ -8,7 +8,7 @@ on:
       - 'src/**'
       - 'config/**'
       - 'requirements.txt'
-      - 'Dockerfile'
+      - 'Dockerfile*'
       - 'tests/**'
       - 'terraform/**'
       - 'agent_registry_deployment/**'
@@ -110,7 +110,7 @@ jobs:
 
   build-and-deploy-cloud-run:
     name: Build Container & Deploy to Cloud Run
-    needs: [test, deploy-agent-runtime]
+    needs: [test]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -135,66 +135,86 @@ jobs:
         run: |
           gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-      - name: Build and Push Docker Images (All 3 Microservices)
+      - name: Build and Push Docker Images (Parallel Accelerated)
         run: |
-          # 1. Orchestrator Image (Stamped with git commit SHA for build info)
+          export DOCKER_BUILDKIT=1
           TAG_ORCH="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME_ORCHESTRATOR }}"
+          TAG_RAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME_POLICY_RAG }}"
+          TAG_SAAS="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME_SAAS_ADAPTER }}"
+
+          echo "📦 [1/3] Building Orchestrator Image (Warming shared dependency layers)..."
           docker build -f Dockerfile.orchestrator \
             --build-arg GIT_COMMIT_SHA=${{ github.sha }} \
             -t ${TAG_ORCH}:${{ github.sha }} -t ${TAG_ORCH}:latest .
-          docker push ${TAG_ORCH}:${{ github.sha }}
-          docker push ${TAG_ORCH}:latest
 
-          # 2. Policy RAG A2A Image
-          TAG_RAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME_POLICY_RAG }}"
-          docker build -f Dockerfile.policy_rag -t ${TAG_RAG}:${{ github.sha }} -t ${TAG_RAG}:latest .
-          docker push ${TAG_RAG}:${{ github.sha }}
-          docker push ${TAG_RAG}:latest
+          echo "📦 [2/3 & 3/3] Building Policy RAG and SaaS Adapter Images in parallel..."
+          docker build -f Dockerfile.policy_rag \
+            --build-arg GIT_COMMIT_SHA=${{ github.sha }} \
+            -t ${TAG_RAG}:${{ github.sha }} -t ${TAG_RAG}:latest . &
+          PID_RAG=$!
 
-          # 3. SaaS Integration Adapters Image
-          TAG_SAAS="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME_SAAS_ADAPTER }}"
-          docker build -f Dockerfile.saas_adapter -t ${TAG_SAAS}:${{ github.sha }} -t ${TAG_SAAS}:latest .
-          docker push ${TAG_SAAS}:${{ github.sha }}
-          docker push ${TAG_SAAS}:latest
+          docker build -f Dockerfile.saas_adapter \
+            --build-arg GIT_COMMIT_SHA=${{ github.sha }} \
+            -t ${TAG_SAAS}:${{ github.sha }} -t ${TAG_SAAS}:latest . &
+          PID_SAAS=$!
 
-      - name: Deploy Policy RAG A2A Service (Private Cloud Run)
+          wait $PID_RAG
+          wait $PID_SAAS
+
+          echo "🚀 Concurrently pushing all 3 images (SHA + latest tags) to Artifact Registry..."
+          docker push ${TAG_ORCH}:${{ github.sha }} &
+          docker push ${TAG_ORCH}:latest &
+          docker push ${TAG_RAG}:${{ github.sha }} &
+          docker push ${TAG_RAG}:latest &
+          docker push ${TAG_SAAS}:${{ github.sha }} &
+          docker push ${TAG_SAAS}:latest &
+          wait
+          echo "✅ All 3 microservice images successfully pushed!"
+
+      - name: Deploy All 3 Cloud Run Services in Parallel
+        id: deploy
         run: |
-          IMAGE_TAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME_POLICY_RAG }}:${{ github.sha }}"
+          echo "🚀 Launching concurrent Cloud Run deployments for all 3 services..."
+
+          IMAGE_TAG_RAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME_POLICY_RAG }}:${{ github.sha }}"
           gcloud run deploy ${{ env.SERVICE_NAME_POLICY_RAG }} \
-            --image "${IMAGE_TAG}" \
+            --image "${IMAGE_TAG_RAG}" \
             --region "${{ env.REGION }}" \
             --platform managed \
             --no-allow-unauthenticated \
             --service-account "policy-rag-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
             --cpu 2 \
             --memory 2Gi \
-            --quiet
+            --quiet &
+          PID_DEPLOY_RAG=$!
 
-      - name: Deploy SaaS Integration Adapters Service (Private Cloud Run)
-        run: |
-          IMAGE_TAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME_SAAS_ADAPTER }}:${{ github.sha }}"
+          IMAGE_TAG_SAAS="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME_SAAS_ADAPTER }}:${{ github.sha }}"
           gcloud run deploy ${{ env.SERVICE_NAME_SAAS_ADAPTER }} \
-            --image "${IMAGE_TAG}" \
+            --image "${IMAGE_TAG_SAAS}" \
             --region "${{ env.REGION }}" \
             --platform managed \
             --no-allow-unauthenticated \
             --service-account "saas-adapter-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
             --set-secrets "SAAS_MCP_CREDENTIAL=saas-mcp-token:latest" \
-            --quiet
+            --quiet &
+          PID_DEPLOY_SAAS=$!
 
-      - name: Deploy HR Agent Orchestrator (Public Cloud Run)
-        id: deploy
-        run: |
-          IMAGE_TAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME_ORCHESTRATOR }}:${{ github.sha }}"
+          IMAGE_TAG_ORCH="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME_ORCHESTRATOR }}:${{ github.sha }}"
           gcloud run deploy ${{ env.SERVICE_NAME_ORCHESTRATOR }} \
-            --image "${IMAGE_TAG}" \
+            --image "${IMAGE_TAG_ORCH}" \
             --region "${{ env.REGION }}" \
             --platform managed \
             --allow-unauthenticated \
             --service-account "cloud-run-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
             --set-env-vars "ENABLE_AGENT_REGISTRY_API=true,GCP_PROJECT_ID=${{ env.PROJECT_ID }},AGENT_REGISTRY_LOCATION=${{ env.REGION }},USE_LIVE_MCP=true,DEFAULT_CALLER_ID=EMP-509" \
             --set-secrets "SAAS_MCP_CREDENTIAL=saas-mcp-token:latest" \
-            --quiet
+            --quiet &
+          PID_DEPLOY_ORCH=$!
+
+          wait $PID_DEPLOY_RAG
+          wait $PID_DEPLOY_SAAS
+          wait $PID_DEPLOY_ORCH
+          echo "✅ All 3 Cloud Run services successfully deployed in parallel!"
 
       - name: Verify All Cloud Run Services Deployment
         run: |
