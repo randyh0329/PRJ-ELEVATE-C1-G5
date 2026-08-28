@@ -1,0 +1,10 @@
+{
+  "hr_supervisor_orchestrator": "projects/${PROJECT_ID}/locations/${LOCATION}/reasoningEngines/hr-supervisor-orchestrator-v1",
+  "hr_policy_benefits_specialist": "projects/${PROJECT_ID}/locations/${LOCATION}/reasoningEngines/hr-policy-benefits-specialist-v1",
+  "hr_lifecycle_operations_specialist": "projects/${PROJECT_ID}/locations/${LOCATION}/reasoningEngines/hr-lifecycle-operations-specialist-v1",
+  "hr_approval_gatekeeper": "projects/${PROJECT_ID}/locations/${LOCATION}/reasoningEngines/hr-approval-gatekeeper-v1",
+  "hr_policy_rag_search": "projects/${PROJECT_ID}/locations/${LOCATION}/reasoningEngines/hr-policy-rag-search-v1",
+  "hr_policy_okf_catalog": "projects/${PROJECT_ID}/locations/${LOCATION}/reasoningEngines/hr-policy-okf-catalog-v1",
+  "hr_policy_dual_hybrid": "projects/${PROJECT_ID}/locations/${LOCATION}/reasoningEngines/hr-policy-dual-hybrid-v1",
+  "hr_eval_llm_judge": "projects/${PROJECT_ID}/locations/${LOCATION}/reasoningEngines/hr-eval-llm-judge-v1"
+}
