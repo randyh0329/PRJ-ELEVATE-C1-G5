@@ -36,7 +36,7 @@ from src.integrations.service_immediately.models import (
     IncidentTicket,
 )
 from src.integrations.workweek.models import ContactUpdateResponse, EmployeeProfile
-from src.models.routing import SupervisorRoutingDecision
+from src.models.routing import MAX_REQUESTS_PER_TURN, SupervisorRoutingDecision
 
 TODAY = datetime.date(2026, 3, 2)
 CALLER = "EMP-1001"
@@ -95,13 +95,23 @@ class FakeArmor:
 
 
 class FakeRouter:
-    def __init__(self, decision):
-        self._decision = decision
+    """Scripted decisions, one per call, the last repeating.
+
+    A compound turn classifies more than once - the turn itself, then each
+    request the router said it had not covered - so this is a queue rather than
+    a constant. Each call hands back a fresh copy, because
+    `_serve_remaining_requests` whittles `unaddressed_requests` down on the very
+    object it was given.
+    """
+
+    def __init__(self, *decisions):
+        self._decisions = list(decisions)
         self.calls: list[tuple[str, datetime.date | None]] = []
 
     def route_intent(self, prompt, reference_date=None):
+        decision = self._decisions[min(len(self.calls), len(self._decisions) - 1)]
         self.calls.append((prompt, reference_date))
-        return self._decision
+        return decision.model_copy(deep=True)
 
 
 def _fake_document(**overrides) -> PolicyDocument:
@@ -321,7 +331,7 @@ class Harness:
         self.saga = FakeSaga()
         self.sessions = FakeSessions()
         self.logger = SpyLogger()
-        self.router = FakeRouter(decision or _decision())
+        self.router = FakeRouter(*(overrides.pop("decisions", None) or [decision or _decision()]))
         self.specialist = overrides.pop("specialist", None) or FakeSpecialist()
         monkeypatch.setattr(
             "src.core.agent.workweek_autonomous_specialist", self.specialist
@@ -953,58 +963,152 @@ def test_relocation_without_a_grounded_cap_writes_nothing(harness):
     assert h.sn.calls == []
 
 
-# --- stage 3b: the half of a compound turn that did not run -------------------
+# --- stage 3b: every request the turn carried ---------------------------------
 #
 # `我的電腦壞了請開單 + 10/10 - 10/03 要請病假` is one turn carrying two
-# requests. The router picks one intent and one handler runs, so the leave half
-# was never actioned - and, until this stage existed, never mentioned either.
-# The employee read a confident ticket confirmation and had no way to tell that
-# the other half of their sentence had been dropped, which is the difference
-# between a limit and a defect.
+# requests. It opened the IT ticket and dropped the sick leave, because a turn
+# was classified once and dispatched once - and said nothing about the half it
+# had dropped, so the employee read a confident ticket confirmation and found
+# out when payroll did.
+#
+# Now the router names what its chosen intent does not cover, and each named
+# request is classified and dispatched on its own. The bounds are the
+# interesting part: this is a loop that writes to live HR systems on the
+# strength of a model having decided one sentence held two requests.
+
+
+LEAVE = "submit a sick leave request from 2026-10-01 to 2026-10-03"
 
 
 def _compound(**overrides):
-    fields = {"unaddressed_requests": ["a sick-leave request for 2026-10-01 to 2026-10-03"]}
+    fields = {"unaddressed_requests": [LEAVE]}
     fields.update(overrides)
     return _decision(**fields)
 
 
-def test_the_request_that_was_not_actioned_is_disclosed(harness):
-    response = harness(decision=_compound()).send("laptop broken, and I need sick leave")
+def test_both_requests_in_one_turn_are_served(harness):
+    """The defect, from the other end: the policy answer AND the leave booking."""
+    h = harness(decisions=[_compound(), _leave(tool_name="get_employee_balances")])
 
-    assert "a sick-leave request for 2026-10-01 to 2026-10-03" in response.response_text
+    response = h.send("what is the bereavement policy, and how much leave do I have?")
+
+    assert h.grounding.calls != []
+    assert h.specialist.fast_path_calls[0]["tool_name"] == "get_employee_balances"
+    assert "Still outstanding" not in response.response_text
 
 
-def test_the_answer_that_was_produced_still_comes_back_with_it(harness):
-    """A disclosure that swallowed the reply would trade one dropped half for
-    the other."""
-    h = harness(decision=_compound())
+def test_each_request_is_classified_on_its_own(harness):
+    """The second handler is given the request, not the sentence it came from.
+    Handed the whole sentence it would extract the first request's dates."""
+    h = harness(decisions=[_compound(), _leave()])
+
+    h.send("what is the bereavement policy, and sick leave 10/01-10/03?")
+
+    assert h.router.calls[1][0] == LEAVE
+
+
+def test_both_answers_reach_the_employee(harness):
+    h = harness(decisions=[_compound(), _leave(tool_name="get_employee_balances")])
 
     text = h.send().response_text
 
     assert "Bereavement leave is up to 5 consecutive days." in text
-    assert text.index("Bereavement leave") < text.index("Still outstanding")
+    assert "Done." in text
 
 
-def test_a_single_request_turn_is_untouched(harness):
+def test_the_turn_records_every_intent_it_served(harness):
+    """`intent` is singular in the API contract, so the rest goes to the audit
+    metadata rather than being lost."""
+    h = harness(decisions=[_compound(), _leave(tool_name="get_employee_balances")])
+
+    response = h.send()
+
+    assert response.intent == "UC_1_1_POLICY_QA"
+    assert response.processing_metadata["requests_served"] == [
+        "UC_1_1_POLICY_QA",
+        "UC_1_2_WORKWEEK_LEAVE",
+    ]
+
+
+def test_a_single_request_turn_classifies_once(harness):
     h = harness(decision=_decision())
 
-    assert "Still outstanding" not in h.send().response_text
+    response = h.send()
+
+    assert len(h.router.calls) == 1
+    assert "requests_served" not in response.processing_metadata
+
+
+def test_the_same_intent_does_not_run_twice_in_one_turn(harness):
+    """A router that split one leave request in two would otherwise file both,
+    and the employee finds out by having a duplicate booking to cancel. Declined
+    out loud instead."""
+    h = harness(
+        decisions=[
+            _leave(tool_name="get_employee_balances", unaddressed_requests=[LEAVE]),
+            _leave(tool_name="request_time_off", start_date="2026-10-01"),
+        ]
+    )
+
+    response = h.send("book leave, and book leave")
+
+    assert len(h.specialist.fast_path_calls) == 1
+    assert "Still outstanding" in response.response_text
+    assert LEAVE in response.response_text
+
+
+def test_the_fan_out_is_capped(harness):
+    """Four requests in one sentence is likelier to be the router over-splitting
+    one than an employee asking for four things, and each extra part is another
+    unreviewed write."""
+    extras = [f"request {n}" for n in range(4)]
+    h = harness(
+        decisions=[
+            _decision(unaddressed_requests=extras),
+            _leave(tool_name="get_employee_balances"),
+            _decision(intent="UC_1_3_SERVICE_IMMEDIATELY_INCIDENT", target_agent="ITSM_SPECIALIST"),
+        ]
+    )
+
+    response = h.send()
+
+    assert len(h.router.calls) == MAX_REQUESTS_PER_TURN
+    assert "request 2; request 3" in response.response_text
+
+
+def test_a_part_that_fails_does_not_take_the_rest_of_the_turn_with_it(harness):
+    """Independent requests, not saga steps: a failed leave booking does not make
+    the policy answer wrong, so nothing is rolled back and nothing is hidden."""
+    class ExplodingSpecialist(FakeSpecialist):
+        def execute_fast_path(self, *args, **kwargs):
+            raise RuntimeError("WorkWeek returned 503")
+
+    h = harness(
+        decisions=[_compound(), _leave(tool_name="get_employee_balances")],
+        specialist=ExplodingSpecialist(),
+    )
+
+    response = h.send()
+
+    assert "Bereavement leave is up to 5 consecutive days." in response.response_text
+    assert LEAVE in response.response_text
+    assert "COMPOUND_REQUEST_PART_FAILED" in h.logger.types()
 
 
 def test_the_disclosure_is_scanned_on_the_way_out(harness):
     """It is model-authored text describing what the employee asked for, so it
     goes through the egress scan like any other model-authored text."""
-    h = harness(decision=_compound())
+    h = harness(decisions=[_decision(unaddressed_requests=["a", "b", "c", "d"])])
 
     h.send()
 
     assert "Still outstanding" in h.armor.scanned_responses[-1]
 
 
-def test_nothing_is_appended_to_a_refusal(harness):
-    """A refusal has already declined the whole turn. `I have handled one part of
-    that request` would be untrue, and would read as a partial success."""
+def test_nothing_is_served_or_promised_after_a_refusal(harness):
+    """A refusal declined the whole turn. Acting on the rest of it would be
+    answering a question that was just refused, and `I handled one part` would
+    read as a partial success."""
     h = harness(
         decision=_compound(),
         grounding=FakeGrounding(
@@ -1017,14 +1121,21 @@ def test_nothing_is_appended_to_a_refusal(harness):
         ),
     )
 
-    assert "Still outstanding" not in h.send().response_text
+    response = h.send()
+
+    assert len(h.router.calls) == 1
+    assert h.specialist.fast_path_calls == []
+    assert "Still outstanding" not in response.response_text
 
 
-def test_nothing_is_appended_to_a_containment_refusal(harness):
-    """Same reasoning, and the routing is what makes it likelier: a turn mixing
-    an in-domain request with an out-of-domain one lands here."""
+def test_nothing_is_served_or_promised_after_a_containment_refusal(harness):
+    """Same reasoning, and the routing makes it likelier: a turn mixing an
+    in-domain request with an out-of-domain one lands here."""
     h = harness(
         decision=_compound(intent="OUT_OF_DOMAIN", target_agent="DOMAIN_CONTAINMENT")
     )
 
-    assert "Still outstanding" not in h.send("what's the weather, and book me leave").response_text
+    response = h.send("what's the weather, and book me leave")
+
+    assert len(h.router.calls) == 1
+    assert "Still outstanding" not in response.response_text

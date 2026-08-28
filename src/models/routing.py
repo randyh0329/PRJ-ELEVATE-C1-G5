@@ -7,6 +7,32 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+#: How many requests one turn will action, the employee's first included.
+#:
+#: A turn asking for more than three things is far likelier to be the router
+#: over-splitting one request than an employee genuinely asking for four, and
+#: every extra part is another unreviewed write against a live HR system. The
+#: remainder is not dropped - it is named in `unaddressed_note()`, which is
+#: where anything this runtime declines to action ends up.
+MAX_REQUESTS_PER_TURN = 3
+
+
+def render_unaddressed_note(requests: list[str]) -> str:
+    """The sentence naming what a turn declined to action.
+
+    A module-level function rather than only a method because both runtimes
+    whittle the list down to a residue as they serve it, and the graph does so
+    without a `SupervisorRoutingDecision` to hand.
+    """
+    items = [str(r).strip() for r in requests if str(r).strip()]
+    if not items:
+        return ""
+    return (
+        "\n\n_Still outstanding: "
+        + "; ".join(items)
+        + ". Send it to me on its own and I will take care of it._"
+    )
+
 
 class SupervisorRoutingDecision(BaseModel):
     """
@@ -51,11 +77,11 @@ class SupervisorRoutingDecision(BaseModel):
         default_factory=list,
         description=(
             "Any OTHER distinct requests present in the same turn that the chosen intent "
-            "does not cover, each written as a short English noun phrase, e.g. "
-            "'a sick-leave request for 2026-10-01 to 2026-10-03'. Empty for the normal "
-            "single-request turn. One turn is routed to exactly one specialist, so a "
-            "compound request leaves the remainder unactioned; naming them here is what "
-            "lets the reply say so instead of dropping them silently."
+            "does not cover. Empty for the normal single-request turn. Each entry is "
+            "classified and executed on its own, so each MUST be self-contained: repeat "
+            "every date, ticket id, category and detail its clause carried, in English, "
+            "e.g. 'submit a sick leave request from 2026-10-01 to 2026-10-03'. An entry "
+            "that only refers back to the rest of the sentence cannot be actioned."
         )
     )
 
@@ -98,27 +124,21 @@ class SupervisorRoutingDecision(BaseModel):
     )
 
     def unaddressed_note(self) -> str:
-        """The sentence that stops a compound request being dropped in silence.
+        """What the turn is handing back, having actioned everything else.
 
         `我的電腦壞了請開單 + 10/10 - 10/03 要請病假` is one turn carrying two
-        requests. The router picks one intent, the graph dispatches one node, and
-        the employee receives a confident ticket confirmation with nothing to
-        suggest that the leave half was ever read - so they discover the missing
-        sick leave when payroll does. Actioning both is a saga-level design
-        change; saying which one was actioned is a sentence, and it is the part
-        that stops the employee being misled in the meantime.
+        requests, and both are now served - see `HREnterpriseAgent
+        ._serve_remaining_requests`. This is the residue: the parts past
+        `MAX_REQUESTS_PER_TURN`, the ones whose intent has already written once
+        this turn, and the ones whose handler raised. All three are declines,
+        and a decline the employee is not told about is indistinguishable from
+        a request that was never read - which is the failure this exists to
+        foreclose, not the fan-out.
 
-        Appended to the answer rather than replacing it: the half that did run
-        really did run, and the receipt for it is still owed.
+        Appended to the answer rather than replacing it: the parts that did run
+        really did run, and the receipts for them are still owed.
         """
-        items = [str(r).strip() for r in self.unaddressed_requests if str(r).strip()]
-        if not items:
-            return ""
-        return (
-            "\n\n_I have handled one part of that request. Still outstanding: "
-            + "; ".join(items)
-            + ". Send it to me on its own and I will take care of it._"
-        )
+        return render_unaddressed_note(self.unaddressed_requests)
 
     def get_tool_arguments(self) -> dict[str, Any]:
         """Consolidates extracted fields into a unified argument dictionary."""

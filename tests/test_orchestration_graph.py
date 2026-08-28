@@ -3,8 +3,8 @@
 `AgentOrchestrationGraph` is the second of the two stacks in this repository -
 the one `app/__init__.py` serves, as opposed to the REST runtime in
 `src/core/agent.py`. Its shape is a sandwich: inbound Model Armor and DLP, then
-supervisor routing, then exactly one specialist or saga node, then outbound
-Model Armor and re-identification.
+supervisor routing, then one specialist or saga node per request the turn
+carried, then outbound Model Armor, localisation and re-identification.
 
 Both guardrail layers matter and they fail differently. A blocked *prompt*
 returns before any node runs, so nothing is written anywhere. A blocked
@@ -23,23 +23,34 @@ from src.core.agents.supervisor import SupervisorAgentNode
 from src.core.graph import AgentOrchestrationGraph
 from src.grounding.policy_rag.language import Language
 from src.grounding.policy_rag.multilingual import Understanding
-from src.models.routing import SupervisorRoutingDecision
+from src.models.routing import MAX_REQUESTS_PER_TURN, SupervisorRoutingDecision
 
 
 class FakeRouter:
-    def __init__(self, intent="UC_1_1_POLICY_QA", unaddressed=()):
-        self.intent = intent
+    """A router with a scripted answer per call.
+
+    A compound turn classifies more than once - the turn itself, then each
+    request it named - so the intent is a queue rather than a constant. The
+    last entry repeats, which keeps every single-request test reading as
+    `FakeRouter("UC_1_2_WORKWEEK_LEAVE")`.
+    """
+
+    def __init__(self, *intents, unaddressed=()):
+        self.intents = list(intents) or ["UC_1_1_POLICY_QA"]
         self.unaddressed = list(unaddressed)
         self.prompts: list[str] = []
 
     def route_intent(self, prompt, reference_date=None):
+        intent = self.intents[min(len(self.prompts), len(self.intents) - 1)]
         self.prompts.append(prompt)
         return SupervisorRoutingDecision(
-            intent=self.intent,
+            intent=intent,
             target_agent="POLICY_SPECIALIST",
             reasoning="Test routing.",
             confidence=0.87,
-            unaddressed_requests=self.unaddressed,
+            # Only the employee's own turn fans out; a follow-up that named
+            # further requests would be an unbounded chain.
+            unaddressed_requests=self.unaddressed if not self.prompts[:-1] else [],
         )
 
 
@@ -213,7 +224,7 @@ async def test_the_employee_sees_the_re_identified_answer(graph):
         ("UC_2_1_EQUIPMENT_PROCUREMENT", "saga_coordinator"),
     ],
 )
-async def test_exactly_one_node_runs_per_turn(graph, intent, attr):
+async def test_each_intent_dispatches_only_its_own_node(graph, intent, attr):
     graph.supervisor = SupervisorAgentNode(router=FakeRouter(intent))
 
     await graph.invoke(_state())
@@ -423,42 +434,140 @@ async def test_a_state_with_no_employee_id_falls_back_to_the_demo_caller(special
     assert stub.calls[0]["caller_id"] == "EMP-44210"
 
 
-# --- stage 3b: what the turn did not action -----------------------------------
+# --- stage 3b: the other requests the turn carried ----------------------------
 #
-# `test_exactly_one_node_runs_per_turn` above is the invariant that makes this
-# necessary: a turn carrying two requests reaches one node, so the second is not
-# served. Serving both is a saga-level design change; admitting it is a
-# sentence, and it is what stops the employee reading a confident receipt for
-# half a request as a receipt for all of it.
+# `我的電腦壞了請開單 + 10/10 - 10/03 要請病假` is one turn carrying two requests.
+# It opened the IT ticket and dropped the leave, because a turn was classified
+# once and dispatched once. The invariant that replaces "one node per turn" is
+# "one node per request": the router names the requests its chosen intent does
+# not cover, and each is re-classified and dispatched on its own.
+#
+# The bounds are the interesting part. This is a loop that writes to live HR
+# systems on the strength of a model having decided a sentence contained two
+# requests, so it is capped, it will not write to the same system twice, and
+# only the employee's own turn is allowed to add work to it.
 
 
-LEAVE = "a sick-leave request for 2026-10-01 to 2026-10-03"
+LEAVE = "submit a sick leave request from 2026-10-01 to 2026-10-03"
+TICKET = "open an IT ticket for a broken laptop"
 
 
-async def test_the_supervisor_carries_the_dropped_request_on_the_state(graph):
-    state = await graph.invoke(_state())
-    assert "Still outstanding" not in state["final_response"]
-
-    graph.supervisor = SupervisorAgentNode(router=FakeRouter(unaddressed=[LEAVE]))
+async def test_both_halves_of_a_compound_turn_are_served(graph):
+    """The defect, from the other end: the ticket AND the leave, one turn."""
+    graph.supervisor = SupervisorAgentNode(
+        router=FakeRouter(
+            "UC_1_3_SERVICE_IMMEDIATELY_INCIDENT", "UC_1_2_WORKWEEK_LEAVE", unaddressed=[LEAVE]
+        )
+    )
 
     state = await graph.invoke(_state(user_input="laptop broken, and sick leave 10/01-10/03"))
 
-    assert LEAVE in state["unaddressed_note"]
+    assert graph.itsm_agent.seen != []
+    assert graph.hcm_agent.seen != []
+    assert state["final_response"] == "itsm handled it.\n\nhcm handled it."
+    assert "Still outstanding" not in state["final_response"]
 
 
-async def test_the_reply_says_which_half_of_the_turn_ran(graph):
-    graph.supervisor = SupervisorAgentNode(router=FakeRouter(unaddressed=[LEAVE]))
+async def test_the_second_request_reaches_its_node_as_its_own_turn(graph):
+    """It is classified on its own, so it has to arrive on its own: a node
+    reading the original compound sentence would extract the wrong dates."""
+    graph.supervisor = SupervisorAgentNode(
+        router=FakeRouter(
+            "UC_1_3_SERVICE_IMMEDIATELY_INCIDENT", "UC_1_2_WORKWEEK_LEAVE", unaddressed=[LEAVE]
+        )
+    )
+
+    await graph.invoke(_state(user_input="laptop broken, and sick leave 10/01-10/03"))
+
+    assert graph.hcm_agent.seen[0]["masked_input"] == LEAVE
+    assert graph.hcm_agent.seen[0]["user_input"] == LEAVE
+
+
+async def test_a_single_request_turn_still_reaches_exactly_one_node(graph):
+    graph.supervisor = SupervisorAgentNode(router=FakeRouter("UC_1_3_SERVICE_IMMEDIATELY_INCIDENT"))
+
+    await graph.invoke(_state())
+
+    assert graph.itsm_agent.seen != []
+    assert graph.hcm_agent.seen == []
+    assert graph.policy_agent.seen == []
+
+
+async def test_the_same_system_is_not_written_to_twice_in_one_turn(graph):
+    """A router that splits one leave request in two would otherwise file both,
+    and the employee finds out by having a duplicate booking to cancel. The
+    second is declined out loud instead."""
+    graph.supervisor = SupervisorAgentNode(
+        router=FakeRouter("UC_1_2_WORKWEEK_LEAVE", unaddressed=[LEAVE])
+    )
+
+    state = await graph.invoke(_state(user_input="book leave, and book leave"))
+
+    assert len(graph.hcm_agent.seen) == 1
+    assert LEAVE in state["final_response"]
+    assert "Still outstanding" in state["final_response"]
+
+
+async def test_the_fan_out_is_capped(graph):
+    """Four requests in one sentence is likelier to be the router over-splitting
+    one than an employee asking for four things, and each extra part is another
+    unreviewed write."""
+    extras = [f"request {n}" for n in range(4)]
+    graph.supervisor = SupervisorAgentNode(
+        router=FakeRouter(
+            "UC_1_1_POLICY_QA",
+            "UC_1_2_WORKWEEK_LEAVE",
+            "UC_1_3_SERVICE_IMMEDIATELY_INCIDENT",
+            unaddressed=extras,
+        )
+    )
 
     state = await graph.invoke(_state())
 
-    assert state["final_response"].startswith("policy handled it.")
+    served = sum(
+        len(getattr(graph, name).seen)
+        for name in ("policy_agent", "hcm_agent", "itsm_agent", "saga_coordinator")
+    )
+    assert served == MAX_REQUESTS_PER_TURN
+    assert "request 2; request 3" in state["final_response"]
+
+
+async def test_a_part_whose_node_fails_does_not_take_the_rest_of_the_turn_with_it(graph):
+    """Independent requests, not saga steps: a failed leave booking does not
+    make the IT ticket wrong, so nothing is rolled back and nothing is hidden."""
+    class BrokenNode(RecordingNode):
+        async def execute(self, state):
+            raise RuntimeError("WorkWeek returned 503")
+
+    graph.hcm_agent = BrokenNode("hcm")
+    graph.supervisor = SupervisorAgentNode(
+        router=FakeRouter(
+            "UC_1_3_SERVICE_IMMEDIATELY_INCIDENT", "UC_1_2_WORKWEEK_LEAVE", unaddressed=[LEAVE]
+        )
+    )
+
+    state = await graph.invoke(_state())
+
+    assert state["final_response"].startswith("itsm handled it.")
     assert LEAVE in state["final_response"]
+
+
+async def test_an_out_of_domain_part_is_declined_rather_than_dispatched(graph):
+    graph.supervisor = SupervisorAgentNode(
+        router=FakeRouter("UC_1_3_SERVICE_IMMEDIATELY_INCIDENT", "OUT_OF_DOMAIN",
+                          unaddressed=["tell me who won the game"])
+    )
+
+    state = await graph.invoke(_state())
+
+    assert state["final_response"].startswith("itsm handled it.")
+    assert "tell me who won the game" in state["final_response"]
 
 
 async def test_the_disclosure_is_inspected_by_the_outbound_guard(graph):
     """It goes out to the employee, so it is guarded like everything else that does."""
     graph.supervisor = SupervisorAgentNode(
-        router=FakeRouter(unaddressed=["password = 'hunter2'"])
+        router=FakeRouter("UC_1_1_POLICY_QA", unaddressed=["password = 'hunter2'"])
     )
 
     state = await graph.invoke(_state())
@@ -467,23 +576,26 @@ async def test_the_disclosure_is_inspected_by_the_outbound_guard(graph):
     assert "hunter2" not in state["final_response"]
 
 
-async def test_a_containment_refusal_is_not_told_it_handled_one_part(graph):
-    """Route `end`: no node ran, so there is no part that was handled."""
+async def test_a_containment_refusal_serves_nothing_and_promises_nothing(graph):
+    """Route `end`: no node ran, so there is no part that was handled - and the
+    rest of a turn whose first half was just refused is not quietly actioned."""
     graph.supervisor = SupervisorAgentNode(
         router=FakeRouter("OUT_OF_DOMAIN", unaddressed=[LEAVE])
     )
 
     state = await graph.invoke(_state(user_input="who won the game, and book me leave"))
 
+    assert graph.hcm_agent.seen == []
     assert "Still outstanding" not in state["final_response"]
 
 
-async def test_an_escalation_is_not_told_it_handled_one_part(graph):
+async def test_an_escalation_serves_nothing_itself(graph):
     """§5.7 hands the whole turn to a person, dropped requests included."""
-    graph.supervisor = SupervisorAgentNode(router=FakeRouter(unaddressed=[LEAVE]))
+    graph.supervisor = SupervisorAgentNode(router=FakeRouter("UC_1_1_POLICY_QA", unaddressed=[LEAVE]))
 
     state = await graph.invoke(_state(user_input="I want to speak to a human"))
 
+    assert graph.hcm_agent.seen == []
     assert "Still outstanding" not in state["final_response"]
 
 
