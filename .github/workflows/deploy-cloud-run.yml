@@ -199,12 +199,16 @@ jobs:
           PID_DEPLOY_SAAS=$!
 
           IMAGE_TAG_ORCH="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME_ORCHESTRATOR }}:${{ github.sha }}"
+          # Runtime identity is `hr-agent-runner-sa`. `cloud_run_sa` is only the
+          # Terraform resource label (terraform/main.tf:92-96), not the account_id,
+          # and deploying as a name that does not exist is what produced
+          # PERMISSION_DENIED "... denied on service account (or it may not exist)".
           gcloud run deploy ${{ env.SERVICE_NAME_ORCHESTRATOR }} \
             --image "${IMAGE_TAG_ORCH}" \
             --region "${{ env.REGION }}" \
             --platform managed \
             --allow-unauthenticated \
-            --service-account "cloud-run-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
+            --service-account "hr-agent-runner-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
             --set-env-vars "ENABLE_AGENT_REGISTRY_API=true,GCP_PROJECT_ID=${{ env.PROJECT_ID }},AGENT_REGISTRY_LOCATION=${{ env.REGION }},USE_LIVE_MCP=true,DEFAULT_CALLER_ID=EMP-509" \
             --set-secrets "SAAS_MCP_CREDENTIAL=saas-mcp-token:latest" \
             --quiet &
