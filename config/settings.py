@@ -25,9 +25,15 @@ class Settings(BaseSettings):
     # Security & Request Origin
     AUTOMATION_ORIGIN_HEADER: str = "HR_AGENT_ORCHESTRATOR_V1"
     DEFAULT_CALLER_ID: str = "EMP-1001"
+    # The HMAC key session tokens are signed with. Deliberately has no default:
+    # SDD §7.2 is "no secret in code or state - Secret Manager only", and a
+    # committed signing key lets anyone holding the repo mint a session for any
+    # employee id. Unset, `src.security.auth` signs with a per-process random
+    # key, so sessions simply do not survive a restart.
+    SESSION_SECRET_KEY: str | None = None
 
     # Guardrails
-    DEDUPLICATION_WINDOW_MINUTES: int = 30
+    DEDUPLICATION_WINDOW_MINUTES: int = 10
     MAX_LEAVE_RETRIES: int = 3
     TOOL_TIMEOUT_SECONDS: float = 4.0
     SAFETY_LATENCY_BUDGET_MS: int = 120

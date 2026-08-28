@@ -16,11 +16,15 @@ import hashlib
 import hmac
 import json
 import logging
+import secrets
 import time
+from functools import lru_cache
 from typing import Any
 
 import httpx
 from pydantic import BaseModel
+
+from config.settings import get_settings
 
 logger = logging.getLogger("security.auth")
 
@@ -37,7 +41,39 @@ class AuthenticatedUser(BaseModel):
 
 
 
-SESSION_SECRET_KEY = "elevate-enterprise-agentic-session-secret"
+@lru_cache(maxsize=1)
+def _ephemeral_secret() -> str:
+    """Mint one signing key for this process and keep it.
+
+    Cached rather than regenerated per call: a key that changed between minting
+    and verifying would reject every token the process had just issued.
+    """
+    logger.warning(
+        "SESSION_SECRET_KEY is not configured; signing sessions with a "
+        "per-process key. Sessions will not survive a restart or reach a "
+        "second instance. Set it from Secret Manager before deployment."
+    )
+    return secrets.token_urlsafe(32)
+
+
+def session_secret() -> str:
+    """The HMAC key session tokens are signed with.
+
+    Read from configuration (Secret Manager in deployment, the environment
+    locally) on every call, so a rotated key takes effect without a code change.
+    This used to be a module constant with a literal value, which meant every
+    holder of the repository could mint a valid session for any employee id -
+    the token carries `sub`, and `sub` is what the caller-isolation checks in
+    the WorkWeek and ITSM adapters trust. SDD §7.2 is explicit: no secret in
+    code or state, Secret Manager only.
+
+    With nothing configured the process signs with a random key rather than a
+    known one. Sessions then do not survive a restart and are not portable
+    between instances, which is the correct way for an unconfigured deployment
+    to fail: users re-authenticate, instead of tokens being forgeable.
+    """
+    configured = getattr(get_settings(), "SESSION_SECRET_KEY", None)
+    return configured or _ephemeral_secret()
 
 
 def resolve_employee_id(email: str, default_name: str | None = None) -> dict[str, str]:
@@ -110,7 +146,7 @@ def mint_session_token(user: AuthenticatedUser, ttl_seconds: int = 86400) -> str
 
     header_b64 = base64.urlsafe_b64encode(json.dumps(header).encode("utf-8")).decode("utf-8").rstrip("=")
     payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode("utf-8")).decode("utf-8").rstrip("=")
-    sig_raw = hmac.new(SESSION_SECRET_KEY.encode("utf-8"), f"{header_b64}.{payload_b64}".encode(), hashlib.sha256).digest()
+    sig_raw = hmac.new(session_secret().encode("utf-8"), f"{header_b64}.{payload_b64}".encode(), hashlib.sha256).digest()
     sig_b64 = base64.urlsafe_b64encode(sig_raw).decode("utf-8").rstrip("=")
 
     return f"{header_b64}.{payload_b64}.{sig_b64}"
@@ -126,7 +162,7 @@ def verify_session_token(token: str) -> AuthenticatedUser | None:
         return None
 
     header_b64, payload_b64, sig_b64 = parts
-    expected_sig = hmac.new(SESSION_SECRET_KEY.encode("utf-8"), f"{header_b64}.{payload_b64}".encode(), hashlib.sha256).digest()
+    expected_sig = hmac.new(session_secret().encode("utf-8"), f"{header_b64}.{payload_b64}".encode(), hashlib.sha256).digest()
     expected_b64 = base64.urlsafe_b64encode(expected_sig).decode("utf-8").rstrip("=")
 
     if not hmac.compare_digest(sig_b64, expected_b64):
