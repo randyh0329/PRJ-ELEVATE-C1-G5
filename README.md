@@ -93,13 +93,14 @@ Production-grade, multi-agent AI architecture implementing cross-system enterpri
 │   ├── deploy-cloud-run.sh                 # Multi-region Cloud Run container deployment
 │   ├── eval_retrieval.py                   # Policy retrieval benchmark script
 │   └── setup_model_armor_templates.py      # GCP Model Armor ingress/egress template automation
-├── tests/                                  # Pytest suite: 1,150 unit/integration cases (100% pass)
+├── tests/                                  # Pytest suite: 1,192 unit/integration cases (100% pass)
 │   ├── __init__.py
 │   ├── conftest.py                         # Pytest test fixtures & state isolation
 │   ├── test_api_server.py                  # FastAPI REST endpoints & HTTP assertions
 │   ├── test_auth.py                        # Google OIDC & session authentication
 │   ├── test_cross_system_orchestration.py  # UC-2.1 Equipment & UC-2.3 Relocation workflows
 │   ├── test_guardrails.py                  # Deduplication, balance limits & state machine checks
+│   ├── test_itsm_tool_selection.py         # Read vs mutation intent tool selection
 │   ├── test_mcp_client.py                  # FastMCP JSON-RPC client tests
 │   ├── test_mcp_token_manager.py           # Secret Manager user token auto-resolution
 │   ├── test_model_armor.py                 # Model Armor dual-engine, circuit breaker & 100-vector red-team
@@ -298,7 +299,7 @@ methodology.
 
 ## 5. Running Tests & Evaluation
 
-### 5.1 Run Full Pytest Suite (1,150 Unit, Integration & Trajectory Tests)
+### 5.1 Run Full Pytest Suite (1,192 Unit, Integration & Trajectory Tests)
 ```bash
 # Run all tests with verbose output
 PYTHONPATH=. pytest tests/ -v
@@ -337,6 +338,7 @@ is absent or expired.
 | [`tests/test_workweek_flow.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_workweek_flow.py) | UC-1.2 leave balance inquiries & caller isolation | 3 |
 | [`tests/test_service_immediately_client_adapter.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_service_immediately_client_adapter.py) | ServiceImmediately adapter: the four FR-4.2 operations end to end | 50 |
 | [`tests/test_service_immediately_flow.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_service_immediately_flow.py) | UC-1.3 incident creation & deduplication | 2 |
+| [`tests/test_itsm_tool_selection.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_itsm_tool_selection.py) | Read vs mutation intent tool selection & question parsing | 42 |
 | [`tests/test_mcp_client.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_mcp_client.py) | The SaaS FastMCP client, offline | 56 |
 | [`tests/test_mcp_token_manager.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_mcp_token_manager.py) | Secret Manager dynamic FastMCP token resolution | 4 |
 | [`tests/test_model_armor.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/test_model_armor.py) | Model Armor dual-engine, circuit breaker & 100-vector red-team | 9 |
@@ -371,7 +373,7 @@ is absent or expired.
 | [`tests/policy_rag/test_a2a.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_a2a.py) | A2A card discovery, JSON-RPC round trips, header entitlements | 14 |
 | [`tests/policy_rag/test_a2a_executor.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_a2a_executor.py) | Request parsing & the entitlement trust boundary (§4.1) | 23 |
 | [`tests/policy_rag/test_a2a_client_demo.py`](file:///usr/local/google/home/robertkj/PRJ-ELEVATE-C1-G5/tests/policy_rag/test_a2a_client_demo.py) | The reference consumer, driven against the real app | 11 |
-| **Total** | | **1,150** |
+| **Total** | | **1,192** |
 
 ---
 

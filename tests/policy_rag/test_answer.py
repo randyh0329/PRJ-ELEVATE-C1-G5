@@ -3,9 +3,11 @@
 The extractive composer is the default because groundedness is 1.0 by
 construction. The Gemini composer is the interesting one: it does not trust its
 own grounding instruction, it *measures* the result and refuses below 0.85. The
-tests below drive it against a stub client, so nothing here needs the
-`google-genai` package or a network call - the package is not installed in this
-environment, which is itself the reason the import lives inside `__init__`.
+tests below drive it against a stub client, so nothing here needs a network
+call. It is the import guard in `__init__` that keeps `google-genai` optional,
+and the tests exercise both sides of that guard explicitly rather than relying
+on whether the package happens to be installed - it now is, transitively, via
+google-adk.
 """
 
 from __future__ import annotations
@@ -191,15 +193,21 @@ class _FakeGenerateContentConfig:
 def genai_stub(monkeypatch):
     """Install a stand-in `google.genai` so the composer can be constructed.
 
-    `google-genai` is an optional dependency and is deliberately not installed;
-    the composer's own ImportError guard is what covers its absence.
+    Patching `sys.modules` alone is not enough. `from google import genai`
+    resolves as an attribute lookup on the already-imported `google` package,
+    and the real `google-genai` sets that attribute the moment anything imports
+    it - google-adk does. Without the `setattr` the composer would reach the
+    real client, try to authenticate, and fail on absent credentials.
     """
+    import google
+
     types_module = pytypes.ModuleType("google.genai.types")
     types_module.GenerateContentConfig = _FakeGenerateContentConfig
     genai_module = pytypes.ModuleType("google.genai")
     genai_module.types = types_module
     genai_module.Client = _FakeClient
 
+    monkeypatch.setattr(google, "genai", genai_module, raising=False)
     monkeypatch.setitem(sys.modules, "google.genai", genai_module)
     monkeypatch.setitem(sys.modules, "google.genai.types", types_module)
     return genai_module
@@ -210,8 +218,19 @@ def gemini(config, genai_stub) -> GeminiComposer:
     return GeminiComposer(config)
 
 
-def test_the_gemini_composer_is_unavailable_without_its_dependency(config):
-    """It must say which package is missing rather than fail on an attribute."""
+def test_the_gemini_composer_is_unavailable_without_its_dependency(config, monkeypatch):
+    """It must say which package is missing rather than fail on an attribute.
+
+    The absence has to be staged now that google-adk pulls `google-genai` in:
+    both the attribute on the `google` package and the `sys.modules` entry have
+    to go, or the import the guard is protecting would quietly succeed and this
+    test would assert nothing.
+    """
+    import google
+
+    monkeypatch.delattr(google, "genai", raising=False)
+    monkeypatch.setitem(sys.modules, "google.genai", None)
+
     with pytest.raises(ImportError, match="pip install google-genai"):
         GeminiComposer(config)
 
