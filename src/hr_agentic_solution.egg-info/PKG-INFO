@@ -18,6 +18,8 @@ Requires-Dist: faiss-cpu<2,>=1.9
 Requires-Dist: numpy>=1.26
 Requires-Dist: PyYAML>=6
 Requires-Dist: a2a-sdk[http-server]<2,>=1.1
+Requires-Dist: google-adk>=2.8.0
+Requires-Dist: mcp<2.0,>=1.20
 Provides-Extra: dev
 Requires-Dist: pytest-cov>=5.0; extra == "dev"
 Requires-Dist: ruff>=0.6; extra == "dev"

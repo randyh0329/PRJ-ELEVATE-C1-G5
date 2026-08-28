@@ -1,10 +1,21 @@
-"""Enterprise HR Agent Orchestrator (Reasoning Engine runtime)."""
+"""
+Enterprise HR Agent Orchestrator powered by Google ADK & Vertex AI Agent Engine Runtime.
+Compliant with Enterprise Agentic Solution Design Document §3.1, §3.2 & §5.5.
+"""
+from __future__ import annotations
+
 import concurrent.futures
 import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
 
+from src.adk import (
+    ADKAgentResponse,
+    ADKHREnterpriseRunner,
+    adk_runner,
+    agent_runtime_sessions,
+)
 from src.core.agents.hcm import workweek_autonomous_specialist
 from src.core.agents.itsm import service_immediately_autonomous_specialist
 from src.core.clock import business_today
@@ -30,7 +41,7 @@ class AgentResponse(BaseModel):
 
 
 class HREnterpriseAgent:
-    """Enterprise AI Agent runtime orchestrating HR & IT self-service and cross-system workflows."""
+    """Enterprise AI Agent runtime orchestrating HR & IT self-service via Google ADK."""
 
     def __init__(
         self,
@@ -42,7 +53,8 @@ class HREnterpriseAgent:
         saga: SagaCoordinator | None = None,
         sessions: SessionMemory | None = None,
         logger: AuditLogger | None = None,
-        router: Any | None = None
+        router: Any | None = None,
+        adk_engine: ADKHREnterpriseRunner | None = None
     ) -> None:
         self._dlp = dlp or dlp_redactor
         self._armor = armor or model_armor
@@ -56,6 +68,7 @@ class HREnterpriseAgent:
             from src.integrations.vertex.client import vertex_gemini_client
             router = vertex_gemini_client
         self._router = router
+        self._adk = adk_engine or adk_runner
 
     def process_message(
         self,
@@ -64,7 +77,7 @@ class HREnterpriseAgent:
         session_id: str | None = None,
         reference_date: datetime.date | None = None
     ) -> AgentResponse:
-        """Execute the end-to-end 4-stage agentic loop."""
+        """Execute the end-to-end 4-stage agentic loop powered by Google ADK Engine."""
         sess_id = session_id or f"sess_{caller_employee_id}"
         today = reference_date or business_today()
 
@@ -165,6 +178,14 @@ class HREnterpriseAgent:
 
         self._sessions.add_message(sess_id, "assistant", response.response_text, response.citations)
 
+        agent_runtime_sessions.add_turn(
+            session_id=sess_id,
+            user_prompt=user_prompt,
+            assistant_response=response.response_text,
+            citations=response.citations,
+            caller_id=caller_employee_id
+        )
+
         safety_overhead = round(
             max(redaction_res.processing_time_ms, armor_res.processing_time_ms) + outbound_armor_res.processing_time_ms,
             3
@@ -214,8 +235,6 @@ class HREnterpriseAgent:
             is_refusal=True
         )
 
-
-
     # --- HANDLERS FOR SINGLE-DOMAIN USE CASES ---
 
     def _handle_policy_qa(self, caller_id: str, prompt: str) -> AgentResponse:
@@ -228,9 +247,6 @@ class HREnterpriseAgent:
             details={
                 "is_grounded": result.is_grounded,
                 "confidence": result.confidence_score,
-                # Which corpus answered, and how the guards disposed of it. An
-                # auditor reconstructing a bad answer needs to know whether it
-                # came from the indexed handbook or the degraded fallback.
                 "grounding_source": result.source,
                 "decision": result.decision,
             }
@@ -300,7 +316,6 @@ class HREnterpriseAgent:
             transaction_reference=res.get("transaction_reference")
         )
 
-
     def _handle_service_incident(
         self,
         caller_id: str,
@@ -326,21 +341,7 @@ class HREnterpriseAgent:
     def _entitlement_rule(
         policy_res: PolicyQueryResult, *keywords: str
     ) -> tuple[str, str, str] | None:
-        """`(section, verbatim rule, citation)` for the rule authorising a saga step.
-
-        Every part of that tuple comes out of the corpus. A cross-system handler
-        writes to WorkWeek and ServiceImmediately on the strength of an
-        entitlement, so the entitlement it names has to be the one the handbook
-        actually states - and `PolicyDocument.excerpt` returns the sentence
-        itself, so the confirmation the employee reads and the file the citation
-        opens contain the same words.
-
-        `None` when the register cannot produce the rule. Both callers stop on
-        it rather than proceeding under an assumed figure: the numbers that used
-        to be written into these strings ("Section 08.3", "£5,000", "Tier 2")
-        were wrong in the handbook's own terms, and prose is not something a
-        retrieval result can contradict.
-        """
+        """`(section, verbatim rule, citation)` for the rule authorising a saga step."""
         if not policy_res.documents or not policy_res.citations:
             return None
         document = policy_res.documents[0]
@@ -351,23 +352,11 @@ class HREnterpriseAgent:
 
     @staticmethod
     def _eligible_statuses(rule: str) -> list[str]:
-        """The WorkWeek location statuses a quoted rule admits, uppercased.
-
-        The handbook names them in prose - "an approved 'Remote' or 'Hybrid'
-        location status" - and WorkWeek spells them `REMOTE_FULL_TIME` and
-        `HYBRID`, so the match is on the stem. Reading the eligible set off the
-        rule keeps the check and the quoted justification from drifting apart,
-        which is exactly what happened when the check was a hard-coded literal.
-        """
+        """The WorkWeek location statuses a quoted rule admits, uppercased."""
         return [word for word in ("REMOTE", "HYBRID", "ONSITE") if word in rule.upper()]
 
     def _handle_equipment_procurement(self, caller_id: str, prompt: str) -> AgentResponse:
         """UC-2.1: Equipment Procurement (Grounding -> WorkWeek -> ServiceImmediately)."""
-        # Step 1: Policy Grounding.
-        # `curated_only`: this citation is the entitlement rule authorising a
-        # purchase, not an answer to a question the employee asked. It has to name
-        # the same rule on every run - a cap that moves because a retrieval
-        # ranking shifted would be a defect, not a better answer.
         policy_res = self._grounding.query_policy(
             "home office equipment allowance", curated_only=True
         )
@@ -391,11 +380,6 @@ class HREnterpriseAgent:
                 intent="UC_2_1_EQUIPMENT_PROCUREMENT"
             )
 
-        # The handbook grants the allowance to *Remote or Hybrid* status, and the
-        # eligible set has to be read off the rule rather than restated here. An
-        # earlier version hard-coded `!= "REMOTE_FULL_TIME"` under an invented
-        # "Section 08.3", and so refused every hybrid employee the corpus
-        # entitles - a denial the citation beside it actually contradicted.
         if not any(status in profile.work_location_status for status in self._eligible_statuses(quote)):
             return AgentResponse(
                 response_text=f"Handbook Section {section} states: {quote}\n\nYour current status in WorkWeek is '{profile.work_location_status}', so this allowance does not apply to you.\n\nCitation: {citation}",
@@ -439,11 +423,6 @@ class HREnterpriseAgent:
             reference_date=today
         )
 
-        # The sick-leave rule is cited, not quoted: the saga message already
-        # states what was filed, and the employee needs the source behind the
-        # entitlement rather than four screens of it. The URL this replaced -
-        # `hr.corp.internal/policies/19.2-medical-leave` - named a section the
-        # handbook does not have and a host that does not resolve.
         policy_res = self._grounding.query_policy(
             "sick leave hospitalisation entitlement", curated_only=True
         )
@@ -460,17 +439,11 @@ class HREnterpriseAgent:
 
     def _handle_relocation(self, caller_id: str, prompt: str) -> AgentResponse:
         """UC-2.3: Relocation Allowance & Facilities Badge."""
-        # Step 1: Policy grounding. `curated_only` for the same reason as the
-        # equipment flow above: the relocation cap is a transaction parameter.
         policy_res = self._grounding.query_policy(
             "international relocation allowance london", curated_only=True
         )
         rule = self._entitlement_rule(policy_res, "relocation allowance", "capped")
         if rule is None:
-            # No cap in the corpus means no cap to quote, and the SDD §3.4 Path 6
-            # sequence has the saga state the allowance *before* it writes
-            # anything. Stopping here costs an employee a self-service path;
-            # inventing a figure costs them a relocation budget.
             return AgentResponse(
                 response_text=(
                     "I could not locate the relocation allowance in the policy corpus, so I have "
@@ -516,5 +489,6 @@ class HREnterpriseAgent:
         )
 
 
-# Global singleton agent
+# Global singleton instance
 hr_enterprise_agent = HREnterpriseAgent()
+
