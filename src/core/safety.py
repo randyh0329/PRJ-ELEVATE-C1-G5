@@ -1,9 +1,11 @@
-"""Safety perimeter: Cloud DLP SPII Redactor and Vertex AI Model Armor filter."""
+"""Safety perimeter: Cloud DLP SPII Redactor and Google Cloud Model Armor filter."""
 import re
 import time
 from typing import ClassVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from src.security.model_armor import ModelArmorResult, ModelArmorSanitizer, model_armor_sanitizer
 
 
 class RedactionResult(BaseModel):
@@ -20,6 +22,10 @@ class SafetyScanResult(BaseModel):
     refusal_reason: str | None = None
     threat_category: str | None = None
     processing_time_ms: float
+    verdict: str = "ALLOW"
+    filter_details: dict = Field(default_factory=dict)
+    deadline_exceeded: bool = False
+    circuit_breaker_tripped: bool = False
 
 
 class DLPRedactor:
@@ -68,41 +74,47 @@ class DLPRedactor:
 
 
 class ModelArmor:
-    """Simulates Vertex AI Model Armor for prompt injection & jailbreak prevention."""
+    """Adapter wrapping ModelArmorSanitizer for prompt and response safety screening."""
 
-    # Adversarial & Jailbreak patterns
-    INJECTION_PATTERNS: ClassVar[list[re.Pattern[str]]] = [
-        re.compile(r"ignore\s+(all\s+)?(previous|prior)\s+instructions?", re.IGNORECASE),
-        re.compile(r"you\s+are\s+now\s+(DAN|unrestricted|god\s+mode)", re.IGNORECASE),
-        re.compile(r"override\s+(all\s+)?(system|safety)\s+(rules|prompts|guardrails)", re.IGNORECASE),
-        re.compile(r"reveal\s+(your\s+)?(system\s+prompt|hidden\s+instructions)", re.IGNORECASE),
-        re.compile(r"disregard\s+(the\s+)?above", re.IGNORECASE),
-        re.compile(r"bypass\s+security\s+controls?", re.IGNORECASE),
-    ]
+    def __init__(self, sanitizer: ModelArmorSanitizer | None = None) -> None:
+        self._sanitizer = sanitizer or model_armor_sanitizer
 
-    def scan_prompt(self, prompt: str) -> SafetyScanResult:
+    def scan_prompt(self, prompt: str, timeout_ms: int = 150) -> SafetyScanResult:
         """Scan inbound user prompt for prompt injections and malicious overrides."""
-        start_time = time.perf_counter()
-
-        for pattern in self.INJECTION_PATTERNS:
-            if pattern.search(prompt):
-                duration_ms = (time.perf_counter() - start_time) * 1000.0
-                return SafetyScanResult(
-                    is_safe=False,
-                    refusal_reason="I cannot process this request as it violates enterprise AI safety policies.",
-                    threat_category="PROMPT_INJECTION_OR_JAILBREAK",
-                    processing_time_ms=round(duration_ms, 3)
-                )
-
-        duration_ms = (time.perf_counter() - start_time) * 1000.0
+        res: ModelArmorResult = self._sanitizer.sanitize_user_prompt(prompt, timeout_ms=timeout_ms)
         return SafetyScanResult(
-            is_safe=True,
-            refusal_reason=None,
-            threat_category=None,
-            processing_time_ms=round(duration_ms, 3)
+            is_safe=res.is_safe,
+            refusal_reason=res.refusal_message,
+            threat_category=res.threat_category,
+            processing_time_ms=res.processing_time_ms,
+            verdict=res.verdict,
+            filter_details=res.filter_details,
+            deadline_exceeded=res.deadline_exceeded,
+            circuit_breaker_tripped=res.circuit_breaker_tripped,
         )
+
+    def scan_response(self, response_text: str, timeout_ms: int = 150) -> SafetyScanResult:
+        """Scan outbound model response for toxicity, credentials, and data leakage."""
+        res: ModelArmorResult = self._sanitizer.sanitize_model_response(response_text, timeout_ms=timeout_ms)
+        return SafetyScanResult(
+            is_safe=res.is_safe,
+            refusal_reason=res.refusal_message,
+            threat_category=res.threat_category,
+            processing_time_ms=res.processing_time_ms,
+            verdict=res.verdict,
+            filter_details=res.filter_details,
+            deadline_exceeded=res.deadline_exceeded,
+            circuit_breaker_tripped=res.circuit_breaker_tripped,
+        )
+
+    def sanitize_user_prompt(self, prompt: str, timeout_ms: int = 150) -> ModelArmorResult:
+        return self._sanitizer.sanitize_user_prompt(prompt, timeout_ms=timeout_ms)
+
+    def sanitize_model_response(self, response_text: str, timeout_ms: int = 150) -> ModelArmorResult:
+        return self._sanitizer.sanitize_model_response(response_text, timeout_ms=timeout_ms)
 
 
 # Global singleton instances
 dlp_redactor = DLPRedactor()
 model_armor = ModelArmor()
+
