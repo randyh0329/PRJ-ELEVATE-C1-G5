@@ -9,7 +9,10 @@ Routes:
 from __future__ import annotations
 
 import logging
+import threading
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from a2a.server.request_handlers import DefaultRequestHandlerV2
 from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
@@ -26,6 +29,79 @@ from src.grounding.policy_rag.service import PolicyRagService
 logger = logging.getLogger(__name__)
 
 
+class _DeferredService:
+    """A `PolicyRagService` that loads off the critical path to the port bind.
+
+    Constructing the service loads the embedding model, which is ~85% of a cold
+    start (5.05s of 5.95s measured warm, with the weights already on local
+    disk). Doing that inside `build_app` means uvicorn's `--factory` has not yet
+    bound port 8080 while it happens, so a platform health check gets no TCP
+    connection at all - `ERROR_CONNECTION_FAILED`, which reads as a container
+    that crashed rather than one that is still coming up. That is how revision
+    `hr-policy-rag-service-00009-vgq` was rejected.
+
+    Loading in a background thread lets the port open in well under a second.
+    The service is still not *ready* any sooner - but "not ready" is now
+    something the process can say out loud, over HTTP, instead of something an
+    operator has to infer from a refused connection.
+
+    Attribute access forwards to the real service and blocks until it exists, so
+    a request that arrives early waits rather than failing. `PolicyRagExecutor`
+    only touches the service per-request, never at construction.
+    """
+
+    def __init__(self, factory: Callable[[], PolicyRagService]) -> None:
+        self._factory = factory
+        self._service: PolicyRagService | None = None
+        self._error: BaseException | None = None
+        self._done = threading.Event()
+        self._started = threading.Lock()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        with self._started:
+            if self._thread is not None:
+                return
+            self._thread = threading.Thread(
+                target=self._load, name="policy-rag-warmup", daemon=True
+            )
+            self._thread.start()
+
+    def _load(self) -> None:
+        try:
+            self._service = self._factory()
+        except BaseException as exc:
+            # Swallowed here only so the thread does not die silently; `resolve`
+            # re-raises it, and `/healthz` reports it as 500 rather than leaving
+            # the container to look healthy while answering nothing.
+            self._error = exc
+            logger.exception("policy RAG service failed to load")
+        finally:
+            self._done.set()
+
+    @property
+    def ready(self) -> bool:
+        return self._service is not None
+
+    @property
+    def error(self) -> BaseException | None:
+        return self._error
+
+    def resolve(self, timeout: float | None = None) -> PolicyRagService:
+        self.start()
+        self._done.wait(timeout)
+        if self._error is not None:
+            raise self._error
+        if self._service is None:
+            raise TimeoutError("policy RAG service is still loading")
+        return self._service
+
+    def __getattr__(self, name: str) -> Any:
+        # Only reached for names not found on the instance, so the private
+        # attributes above never recurse through here.
+        return getattr(self.resolve(), name)
+
+
 def build_app(
     service: PolicyRagService | None = None,
     *,
@@ -34,12 +110,24 @@ def build_app(
 ) -> Starlette:
     """Build the ASGI app.
 
-    The index is loaded once at startup, not per request: it is a read-only
+    The index is loaded once per process, not per request: it is a read-only
     artefact and the embedding model load is the expensive part. That also means
     a corpus republish requires a restart or a rolling deploy - the same
     trade-off as any immutable-artefact serving path.
+
+    "Once per process" is not the same as "before we accept connections",
+    though, and this function is what uvicorn `--factory` runs *before* it binds
+    the port. So when we are constructing the service ourselves it loads in a
+    background thread and this returns immediately. An injected `service` is
+    used as given: callers that pass one - the tests, the eval harness - have
+    already paid for it and want it ready.
     """
-    service = service or PolicyRagService.from_config(config_path)
+    deferred: _DeferredService | None = None
+    if service is None:
+        deferred = _DeferredService(lambda: PolicyRagService.from_config(config_path))
+        deferred.start()
+        service = deferred  # type: ignore[assignment]  # forwards by __getattr__
+
     card = build_agent_card(public_url)
 
     handler = DefaultRequestHandlerV2(
@@ -49,7 +137,25 @@ def build_app(
     )
 
     async def healthz(_request) -> JSONResponse:
-        return JSONResponse({"status": "ok", "chunks": len(service.index)})
+        """Honest about the three states, rather than 200 for two of them.
+
+        A startup probe reading this gets a real answer while the model loads,
+        so a slow start is reported as a slow start. Returning 200 early would
+        pass the probe sooner, at the cost of routing the first real request
+        into a service that cannot answer it yet.
+        """
+        if deferred is None:
+            return JSONResponse({"status": "ok", "chunks": len(service.index)})
+        if deferred.error is not None:
+            return JSONResponse(
+                {"status": "error", "detail": str(deferred.error)}, status_code=500
+            )
+        if not deferred.ready:
+            return JSONResponse(
+                {"status": "loading", "detail": "embedding model and index still loading"},
+                status_code=503,
+            )
+        return JSONResponse({"status": "ok", "chunks": len(deferred.resolve().index)})
 
     routes: list[Route] = [
         *create_agent_card_routes(card),

@@ -145,3 +145,113 @@ def test_terraform_still_says_who_may_invoke_each_service():
 def test_each_service_still_deploys_under_its_own_identity(account):
     """Dropping the auth flags must not disturb the runtime service accounts."""
     assert f'--service-account "{account}@' in _deploy_step()
+
+
+# --- what Terraform declares vs what the deploy actually applies ---------------
+#
+# Nothing in this repository runs `terraform apply`. terraform/main.tf describes
+# the services; `gcloud run deploy` is what creates their revisions, and it
+# inherits any setting the command line does not mention. So raising the startup
+# budget in Terraform alone changed nothing: revision
+# hr-policy-rag-service-00009-vgq was created with the old 35s budget and
+# rejected exactly as before. These tests exist because the Terraform reads
+# correct and the deploy still ships the old value - the file is not the state.
+
+
+def _workflow_probe_budgets() -> list[int]:
+    """Startup budget from each `--startup-probe` on the deploy command line."""
+    budgets = []
+    for flag in re.findall(r"--startup-probe\s+\"([^\"]+)\"", _deploy_step()):
+        expanded = flag.replace("${PROBE_TIMING}", _probe_timing_var())
+        v = {k: int(n) for k, n in re.findall(r"(\w+)=(\d+)", expanded)}
+        budgets.append(
+            v.get("initialDelaySeconds", 0)
+            + v.get("failureThreshold", 1) * v.get("periodSeconds", 10)
+        )
+    return budgets
+
+
+def _probe_timing_var() -> str:
+    """The shared PROBE_TIMING assignment the three deploys interpolate."""
+    match = re.search(r'PROBE_TIMING="([^"]+)"', _deploy_step())
+    return match.group(1) if match else ""
+
+
+def test_the_deploy_command_sets_the_startup_probe_itself():
+    """The bug this section documents.
+
+    A budget that lives only in Terraform is not applied by anything. It has to
+    be on the command line that creates the revision.
+    """
+    budgets = _workflow_probe_budgets()
+
+    assert len(budgets) == 3, (
+        f"expected all 3 services to set --startup-probe, found {len(budgets)}; "
+        "a service without it inherits whatever the live revision already has"
+    )
+
+
+@pytest.mark.parametrize("index", range(3))
+def test_the_deployed_startup_budget_is_large_enough(index):
+    budgets = _workflow_probe_budgets()
+    if index >= len(budgets):
+        pytest.fail("a deploy is missing --startup-probe; see the test above")
+
+    assert MINIMUM_STARTUP_BUDGET_SECONDS <= budgets[index] <= 240, (
+        f"deploy #{index} asks for {budgets[index]}s; Cloud Run caps the budget at "
+        f"240s and a cold start needs at least {MINIMUM_STARTUP_BUDGET_SECONDS}s"
+    )
+
+
+def test_the_workflow_and_terraform_agree_on_the_budget():
+    """Two writers, one setting. They should not drift apart silently."""
+    declared = {_startup_budget(b) for b in _services().values()} - {None}
+    applied = set(_workflow_probe_budgets())
+
+    assert declared == applied, (
+        f"terraform declares {sorted(declared)}s but the deploy applies "
+        f"{sorted(applied)}s; the deploy is what takes effect"
+    )
+
+
+def _deploy_blocks() -> dict[str, str]:
+    """Each `gcloud run deploy` invocation, keyed by the service it deploys.
+
+    The workflow names services through `${{ env.SERVICE_NAME_* }}`, so the
+    literal names only exist in the workflow-level `env:` block. Resolving them
+    here keeps the expectations below written in terms of real service names.
+    """
+    workflow = yaml.safe_load(_WORKFLOW_PATH.read_text())
+    names = {k: v for k, v in workflow["env"].items() if k.startswith("SERVICE_NAME_")}
+
+    blocks: dict[str, str] = {}
+    for raw in _deploy_step().split("gcloud run deploy ")[1:]:
+        for var, service in names.items():
+            if f"env.{var}" in raw.split("\n")[0]:
+                blocks[service] = raw
+    return blocks
+
+
+@pytest.mark.parametrize(
+    ("service", "path"),
+    [
+        ("hr-policy-rag-service", "/healthz"),
+        ("saas-integration-adapters", "/health"),
+        ("hr-agentic-service", "/health"),
+    ],
+)
+def test_the_probe_points_at_a_path_that_service_actually_serves(service, path):
+    """A probe on the wrong path fails a container that is working fine.
+
+    The policy RAG app serves `/healthz` (a2a_app/server.py); the other two are
+    FastAPI apps serving `/health` (src/main.py, src/integrations/mcp/server.py).
+    Getting these crossed turns a healthy deployment into a rejected revision -
+    and the two services that currently deploy fine are the ones with the most
+    to lose from a careless probe.
+    """
+    blocks = _deploy_blocks()
+
+    assert service in blocks, f"no `gcloud run deploy` block found for {service}"
+    assert f"httpGet.path={path}" in blocks[service], (
+        f"{service} serves {path}; its startup probe points somewhere else"
+    )
