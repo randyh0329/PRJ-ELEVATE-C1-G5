@@ -287,10 +287,22 @@ resource "google_cloud_run_v2_service" "hr_agentic_service" {
           path = "/health"
           port = 8080
         }
-        initial_delay_seconds = 5
-        timeout_seconds       = 3
+        # 10 + 23*10 = 240s, the Cloud Run maximum. The previous 5 + 3*10 = 35s
+        # rejected `hr-policy-rag-service-00008-p7l` with ERROR_CONNECTION_FAILED:
+        # these services do their loading before uvicorn binds the port, and
+        # `build_app` alone measures ~12s warm - with the FAISS index already
+        # built and the embedding model already on local disk. A cold instance,
+        # after an image import that itself took 2m6s, does not fit in 35s.
+        #
+        # A generous threshold is close to free. A healthy container answers the
+        # first probe after startup and the remaining attempts are never made;
+        # the threshold only bounds how long a genuinely broken container takes
+        # to be declared broken. Trading four minutes of that against a deploy
+        # that fails on slow-but-correct startup is the right way round.
+        initial_delay_seconds = 10
+        timeout_seconds       = 5
         period_seconds        = 10
-        failure_threshold     = 3
+        failure_threshold     = 23
       }
 
       liveness_probe {
@@ -378,10 +390,22 @@ resource "google_cloud_run_v2_service" "hr_policy_rag_service" {
           path = "/healthz"
           port = 8080
         }
-        initial_delay_seconds = 5
-        timeout_seconds       = 3
+        # 10 + 23*10 = 240s, the Cloud Run maximum. The previous 5 + 3*10 = 35s
+        # rejected `hr-policy-rag-service-00008-p7l` with ERROR_CONNECTION_FAILED:
+        # these services do their loading before uvicorn binds the port, and
+        # `build_app` alone measures ~12s warm - with the FAISS index already
+        # built and the embedding model already on local disk. A cold instance,
+        # after an image import that itself took 2m6s, does not fit in 35s.
+        #
+        # A generous threshold is close to free. A healthy container answers the
+        # first probe after startup and the remaining attempts are never made;
+        # the threshold only bounds how long a genuinely broken container takes
+        # to be declared broken. Trading four minutes of that against a deploy
+        # that fails on slow-but-correct startup is the right way round.
+        initial_delay_seconds = 10
+        timeout_seconds       = 5
         period_seconds        = 10
-        failure_threshold     = 3
+        failure_threshold     = 23
       }
 
       liveness_probe {
@@ -495,10 +519,22 @@ resource "google_cloud_run_v2_service" "saas_adapter_service" {
           path = "/health"
           port = 8080
         }
-        initial_delay_seconds = 5
-        timeout_seconds       = 3
+        # 10 + 23*10 = 240s, the Cloud Run maximum. The previous 5 + 3*10 = 35s
+        # rejected `hr-policy-rag-service-00008-p7l` with ERROR_CONNECTION_FAILED:
+        # these services do their loading before uvicorn binds the port, and
+        # `build_app` alone measures ~12s warm - with the FAISS index already
+        # built and the embedding model already on local disk. A cold instance,
+        # after an image import that itself took 2m6s, does not fit in 35s.
+        #
+        # A generous threshold is close to free. A healthy container answers the
+        # first probe after startup and the remaining attempts are never made;
+        # the threshold only bounds how long a genuinely broken container takes
+        # to be declared broken. Trading four minutes of that against a deploy
+        # that fails on slow-but-correct startup is the right way round.
+        initial_delay_seconds = 10
+        timeout_seconds       = 5
         period_seconds        = 10
-        failure_threshold     = 3
+        failure_threshold     = 23
       }
 
       liveness_probe {

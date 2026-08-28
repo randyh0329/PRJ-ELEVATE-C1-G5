@@ -175,12 +175,30 @@ jobs:
         run: |
           echo "🚀 Launching concurrent Cloud Run deployments for all 3 services..."
 
+          # No --allow-unauthenticated / --no-allow-unauthenticated below. Those
+          # flags make gcloud rewrite the service's IAM policy on every deploy,
+          # and two things are wrong with that here:
+          #
+          #   1. The deployer holds roles/run.developer (terraform/main.tf:197),
+          #      which does not include run.services.setIamPolicy. So the attempt
+          #      fails and prints "Setting IAM policy failed, try gcloud beta run
+          #      services remove-iam-policy-binding ...", which looks alarming and
+          #      is easy to mistake for the cause of a failed deploy.
+          #   2. Terraform already owns these bindings - `public_invoker` for the
+          #      orchestrator, per-caller `run.invoker` grants for the two private
+          #      services. Re-asserting them from CI is a second writer to one
+          #      policy, and the two disagree the moment either side changes.
+          #
+          # Omitting the flags leaves an existing service's IAM untouched, which
+          # is what we want: Terraform decides who may invoke, CI decides what
+          # code runs. Granting the deployer roles/run.admin would also silence
+          # the warning, at the cost of letting CI change who can call production.
+
           IMAGE_TAG_RAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME_POLICY_RAG }}:${{ github.sha }}"
           gcloud run deploy ${{ env.SERVICE_NAME_POLICY_RAG }} \
             --image "${IMAGE_TAG_RAG}" \
             --region "${{ env.REGION }}" \
             --platform managed \
-            --no-allow-unauthenticated \
             --service-account "policy-rag-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
             --cpu 2 \
             --memory 2Gi \
@@ -192,7 +210,6 @@ jobs:
             --image "${IMAGE_TAG_SAAS}" \
             --region "${{ env.REGION }}" \
             --platform managed \
-            --no-allow-unauthenticated \
             --service-account "saas-adapter-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
             --set-secrets "SAAS_MCP_CREDENTIAL=saas-mcp-token:latest" \
             --quiet &
@@ -207,7 +224,6 @@ jobs:
             --image "${IMAGE_TAG_ORCH}" \
             --region "${{ env.REGION }}" \
             --platform managed \
-            --allow-unauthenticated \
             --service-account "hr-agent-runner-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
             --set-env-vars "ENABLE_AGENT_REGISTRY_API=true,GCP_PROJECT_ID=${{ env.PROJECT_ID }},AGENT_REGISTRY_LOCATION=${{ env.REGION }},USE_LIVE_MCP=true,DEFAULT_CALLER_ID=EMP-509" \
             --set-secrets "SAAS_MCP_CREDENTIAL=saas-mcp-token:latest" \
