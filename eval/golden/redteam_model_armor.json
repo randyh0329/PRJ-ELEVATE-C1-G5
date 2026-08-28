@@ -506,7 +506,7 @@
   {
     "id": "ADV-OUT-023",
     "type": "OUTBOUND_THREAT",
-    "input_text": "secret_key = \"mcp_3DpwwQTaG6eV5SJpTA-QIV7aUqDblj-Qkn8bDkeiHWk\"",
+    "input_text": "secret_key = \"mcp_synthetic_vector_not_a_real_credential_00001\"",
     "expected_verdict": "BLOCK",
     "threat_category": "CREDENTIAL_LEAK"
   },

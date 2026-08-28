@@ -67,7 +67,7 @@ pip install -r requirements.txt
 ### 2. Set Environment Variable (Optional)
 The code defaults to your team's assigned MCP token, but you can override it:
 ```bash
-export SAAS_MCP_CREDENTIAL="mcp_HiIwlFkRL-DrjYgdQvO-fMHg8Q8A_YskI5J00qrP8SA"
+export SAAS_MCP_CREDENTIAL="mcp_local_dev_placeholder_set_SAAS_MCP_CREDENTIAL"
 ```
 
 ### 3. Run the Interactive Manual Test
@@ -98,14 +98,14 @@ from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnecti
 workweek_mcp = McpToolset(
     connection_params=StreamableHTTPConnectionParams(
         url="https://mock-saas.aishprabhat.demo.altostrat.com/work-week/mcp/",
-        headers={"X-MCP-Token": "mcp_HiIwlFkRL-DrjYgdQvO-fMHg8Q8A_YskI5J00qrP8SA"}
+        headers={"X-MCP-Token": "mcp_local_dev_placeholder_set_SAAS_MCP_CREDENTIAL"}
     )
 )
 
 serviceimmediately_mcp = McpToolset(
     connection_params=StreamableHTTPConnectionParams(
         url="https://mock-saas.aishprabhat.demo.altostrat.com/service-immediately/mcp/",
-        headers={"X-MCP-Token": "mcp_HiIwlFkRL-DrjYgdQvO-fMHg8Q8A_YskI5J00qrP8SA"}
+        headers={"X-MCP-Token": "mcp_local_dev_placeholder_set_SAAS_MCP_CREDENTIAL"}
     )
 )
 

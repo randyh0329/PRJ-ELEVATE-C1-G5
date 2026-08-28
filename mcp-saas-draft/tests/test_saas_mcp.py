@@ -23,10 +23,10 @@ from src.adk_tools import (
 def test_mcp_client_headers_custom_x_token():
     client = SaaSMCPClient(
         base_url="https://mock-saas.aishprabhat.demo.altostrat.com",
-        mcp_token="mcp_HiIwlFkRL-DrjYgdQvO-fMHg8Q8A_YskI5J00qrP8SA"
+        mcp_token="mcp_local_dev_placeholder_set_SAAS_MCP_CREDENTIAL"
     )
     headers = client._get_headers()
-    assert headers["X-MCP-Token"] == "mcp_HiIwlFkRL-DrjYgdQvO-fMHg8Q8A_YskI5J00qrP8SA"
+    assert headers["X-MCP-Token"] == "mcp_local_dev_placeholder_set_SAAS_MCP_CREDENTIAL"
     assert "Authorization" not in headers
     assert "application/json" in headers["Accept"]
 

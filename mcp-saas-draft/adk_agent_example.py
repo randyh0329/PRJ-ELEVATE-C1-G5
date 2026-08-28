@@ -48,7 +48,7 @@ def create_adk_agent_with_streamable_http():
         from google.adk.tools.mcp_tool import McpToolset
         from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
 
-        token = os.environ.get("SAAS_MCP_CREDENTIAL", "mcp_HiIwlFkRL-DrjYgdQvO-fMHg8Q8A_YskI5J00qrP8SA")
+        token = os.environ.get("SAAS_MCP_CREDENTIAL", "mcp_local_dev_placeholder_set_SAAS_MCP_CREDENTIAL")
 
         workweek_mcp = McpToolset(
             connection_params=StreamableHTTPConnectionParams(
