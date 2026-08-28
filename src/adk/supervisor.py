@@ -370,5 +370,6 @@ class ADKHREnterpriseRunner:
         )
 
 
-# Global default instance
+# Global default instances
+hr_enterprise_supervisor = create_hr_supervisor_agent()
 adk_runner = ADKHREnterpriseRunner()
