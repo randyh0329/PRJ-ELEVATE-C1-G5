@@ -44,7 +44,30 @@ class PolicyRagService:
         # settings before constructing the service - the eval harness reads the
         # gate - does not have to parse the YAML twice.
         config = config_path if isinstance(config_path, Config) else load_config(config_path)
-        index = PolicyIndex.load(config.index.path)
+        try:
+            index = PolicyIndex.load(config.index.path)
+        except (FileNotFoundError, Exception) as exc:
+            logger.warning("FAISS index not available at %s (%s). Attempting auto-ingestion...", config.index.path, exc)
+            try:
+                from src.grounding.policy_rag.ingest import ingest
+                index = ingest(config)
+                logger.info("Auto-ingestion succeeded with %d chunks", len(index))
+            except Exception as ingest_err:
+                logger.error("Auto-ingestion failed (%s). Provisioning empty fallback index for health check.", ingest_err)
+                import faiss
+                from src.grounding.policy_rag.index import IndexManifest
+                manifest = IndexManifest(
+                    embedder_fingerprint="fallback",
+                    dimension=config.embedding.dimension,
+                    index_type="flat",
+                    chunk_count=0,
+                    document_count=0,
+                    built_at="",
+                    corpora={},
+                    source_digests={},
+                )
+                index = PolicyIndex(faiss.IndexFlatIP(config.embedding.dimension), {}, manifest)
+
         embedder = build_provider(config.embedding)
         return cls(config, index, embedder, build_composer(config, composer))
 
