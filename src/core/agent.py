@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from src.core.agents.hcm import workweek_autonomous_specialist
+from src.core.agents.itsm import service_immediately_autonomous_specialist
 from src.core.clock import business_today
 from src.core.safety import DLPRedactor, ModelArmor, dlp_redactor, model_armor
 from src.core.saga import SagaCoordinator, saga_coordinator
@@ -257,112 +258,18 @@ class HREnterpriseAgent:
         prompt: str,
         original_prompt: str | None = None
     ) -> AgentResponse:
-        """UC-1.3: ServiceImmediately Support Desk Incident Management."""
-        import re
+        """UC-1.3: Autonomous ServiceImmediately ITSM Tool-Calling Agent."""
         raw_prompt = original_prompt or prompt
-        p = raw_prompt.lower()
-
-        # 1. Check for specific ticket status query (e.g., "What is the status of ticket INC-5001?")
-        tid_match = re.search(r'\b(INC[-_]?\d{3,8})\b', raw_prompt, re.IGNORECASE)
-        is_query_intent = any(k in p for k in ["status", "check", "view", "details", "lookup", "how is"]) and not any(
-            k in p for k in ["create", "open a", "submit a", "report a", "new ticket"]
+        res = service_immediately_autonomous_specialist.plan_and_execute(
+            prompt=raw_prompt,
+            caller_id=caller_id
         )
-
-        if tid_match or is_query_intent:
-            ticket_id = tid_match.group(1).upper() if tid_match else "INC-5001"
-            ticket = self._sn_client.get_ticket_details(caller_id, ticket_id)
-            if ticket:
-                msg = (
-                    f"Status for Support Incident Ticket **[{ticket.ticket_id}]** in ServiceImmediately:\n"
-                    f"- **Status:** {ticket.status}\n"
-                    f"- **Priority:** {ticket.priority}\n"
-                    f"- **Category:** {ticket.category}\n"
-                    f"- **Summary:** {ticket.short_description}"
-                )
-                return AgentResponse(
-                    response_text=msg,
-                    intent="UC_1_3_SERVICE_IMMEDIATELY_INCIDENT",
-                    action_performed="GET_TICKET_DETAILS",
-                    transaction_reference=ticket.ticket_id
-                )
-            else:
-                # If specific ID not found, provide helpful active tickets list
-                tickets = self._sn_client.list_tickets_for_user(caller_id)
-                if tickets:
-                    items = "\n".join([f"- **[{t.ticket_id}]** {t.short_description} (Status: {t.status}, Priority: {t.priority})" for t in tickets[:5]])
-                    msg = f"Ticket **[{ticket_id}]** was not found. Here are your active support tickets in ServiceImmediately:\n\n{items}"
-                else:
-                    msg = f"Ticket **[{ticket_id}]** was not found in ServiceImmediately."
-                return AgentResponse(
-                    response_text=msg,
-                    intent="UC_1_3_SERVICE_IMMEDIATELY_INCIDENT",
-                    action_performed="GET_TICKET_NOT_FOUND"
-                )
-
-        # 2. Check for listing all user tickets (e.g., "List all my active support tickets")
-        if any(k in p for k in ["list", "show my tickets", "my active tickets", "all my tickets", "my tickets"]):
-            tickets = self._sn_client.list_tickets_for_user(caller_id)
-            if not tickets:
-                msg = "You currently have no active support tickets in ServiceImmediately."
-            else:
-                items = "\n".join([f"- **[{t.ticket_id}]** {t.short_description} (Status: **{t.status}**, Priority: {t.priority})" for t in tickets])
-                msg = f"You have **{len(tickets)} active support ticket(s)** in ServiceImmediately:\n\n{items}"
-            return AgentResponse(
-                response_text=msg,
-                intent="UC_1_3_SERVICE_IMMEDIATELY_INCIDENT",
-                action_performed="LIST_TICKETS"
-            )
-
-        # 3. Create support incident ticket
-        category = "IT_GENERAL"
-        priority = "3 - Moderate"
-        desc = raw_prompt[:100]
-
-        if any(k in p for k in ["vpn", "wifi", "network", "internet", "dns", "connection"]):
-            category = "IT_NETWORK"
-            desc = "VPN/WiFi network connection intermittent drops" if "vpn" in p or "wifi" in p else raw_prompt[:100]
-        elif any(k in p for k in ["laptop", "screen", "keyboard", "battery", "hardware", "monitor", "display", "mouse"]):
-            category = "IT_HARDWARE"
-            desc = "Laptop/hardware equipment malfunction"
-        elif any(k in p for k in ["access", "permission", "password", "login", "github", "account", "unlock"]):
-            category = "IT_ACCESS"
-            desc = "User account permissions and system access request"
-
-        try:
-            ticket = self._sn_client.create_incident_ticket(
-                caller_employee_id=caller_id,
-                category=category,
-                requested_priority=priority,
-                short_description=desc
-            )
-            msg = f"Support Incident Ticket [{ticket.ticket_id}] has been created in ServiceImmediately with Priority '{ticket.priority}' (Category: {ticket.category}). An IT specialist will investigate."
-            return AgentResponse(
-                response_text=msg,
-                intent="UC_1_3_SERVICE_IMMEDIATELY_INCIDENT",
-                action_performed="CREATE_INCIDENT",
-                transaction_reference=ticket.ticket_id
-            )
-        except ValueError as ve:
-            err_str = str(ve)
-            if "Duplicate ticket detected" in err_str:
-                tid_match_err = re.search(r'\b(INC\d{3,8})\b', err_str)
-                existing_tid = tid_match_err.group(1) if tid_match_err else "INC-ACTIVE"
-                friendly_msg = (
-                    f"⚠️ Duplicate ticket detected: You already have an active ticket [{existing_tid}] "
-                    f"for category '{category}' created recently in ServiceImmediately.\n\n"
-                    f"An IT specialist is actively investigating it. "
-                    f"To check its latest progress, you can ask: *\"What is the status of ticket {existing_tid}?\"*"
-                )
-                return AgentResponse(
-                    response_text=friendly_msg,
-                    intent="UC_1_3_SERVICE_IMMEDIATELY_INCIDENT",
-                    action_performed="CREATE_INCIDENT_DUPLICATE_PREVENTED"
-                )
-            return AgentResponse(
-                response_text=f"⚠️ Unable to create ticket: {err_str}",
-                intent="UC_1_3_SERVICE_IMMEDIATELY_INCIDENT",
-                action_performed="CREATE_INCIDENT_FAILED"
-            )
+        return AgentResponse(
+            response_text=res["response_text"],
+            intent="UC_1_3_SERVICE_IMMEDIATELY_INCIDENT",
+            action_performed=res["action_performed"],
+            transaction_reference=res.get("transaction_reference")
+        )
 
     # --- HANDLERS FOR CROSS-SYSTEM ORCHESTRATION USE CASES ---
 

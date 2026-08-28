@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from config.settings import get_settings
 from src.core.clock import business_today
-from src.models.routing import SupervisorRoutingDecision, WorkWeekToolSelection
+from src.models.routing import ITSMToolSelection, SupervisorRoutingDecision, WorkWeekToolSelection
 
 logger = logging.getLogger("integrations.vertex")
 
@@ -64,6 +64,18 @@ class VertexGeminiClient:
         "- update_personal_info: For updating employee contact info. Extract home_address and/or phone_number.\n"
         "- get_employee_profile: For retrieving profile details like job title, manager, department, or full profile.\n"
         "- none: If the prompt is purely conversational and requires no tool call.\n\n"
+        "Respond strictly with the provided JSON schema."
+    )
+
+    ITSM_TOOL_SYSTEM_INSTRUCTION = (
+        "You are the ServiceImmediately ITSM Specialist Agent operating under SDD §3.2 & §5.1.\n"
+        "Your role is to analyze the employee's request and autonomously select the appropriate ServiceImmediately FastMCP tool and extract arguments:\n\n"
+        "- create_incident: For reporting IT issues, outages, bugs, hardware failures, access requests, or opening a new support ticket.\n"
+        "  Extract category ('IT_NETWORK', 'IT_HARDWARE', 'IT_ACCESS', or 'IT_GENERAL'), short_description, and priority ('1 - Critical', '2 - High', '3 - Moderate', '4 - Low').\n"
+        "- get_ticket_details: For checking the status, progress, details, or assignee of a specific ticket. Extract ticket_id (e.g. INC-5001, INC0003466).\n"
+        "- list_tickets: For viewing, listing, or checking all active/open support tickets for the current employee.\n"
+        "- post_comment: For adding a note, reply, or update comment to an existing ticket. Extract ticket_id and comment_body.\n"
+        "- none: If the prompt requires no tool call.\n\n"
         "Respond strictly with the provided JSON schema."
     )
 
@@ -290,6 +302,22 @@ class VertexGeminiClient:
             logger.warning("Vertex AI live tool selector failed (%s). Using deterministic local fallback.", e)
             return self._fallback_select_workweek_tool(prompt, ref)
 
+    def select_itsm_tool(
+        self,
+        prompt: str,
+    ) -> ITSMToolSelection:
+        """Select ServiceImmediately ITSM FastMCP tool and extract arguments using Gemini (with offline fallback)."""
+        try:
+            return self.generate_structured(
+                prompt=f"User IT request: {prompt}",
+                system_instruction=self.ITSM_TOOL_SYSTEM_INSTRUCTION,
+                response_model=ITSMToolSelection,
+                temperature=0.0,
+            )
+        except Exception as e:
+            logger.warning("Vertex AI live ITSM tool selector failed (%s). Using deterministic local fallback.", e)
+            return self._fallback_select_itsm_tool(prompt)
+
     def _fallback_route_intent(self, prompt: str, ref_date: datetime.date) -> SupervisorRoutingDecision:
         import re
         p = prompt.lower()
@@ -399,6 +427,41 @@ class VertexGeminiClient:
                 }
             )
         return WorkWeekToolSelection(tool_name="get_employee_balances", arguments={})
+
+    def _fallback_select_itsm_tool(self, prompt: str) -> ITSMToolSelection:
+        import re
+        p = prompt.lower()
+        tid_match = re.search(r'\b(INC[-_]?\d{3,8})\b', prompt, re.IGNORECASE)
+
+        if tid_match or (any(k in p for k in ["status", "check", "details", "lookup", "how is"]) and not any(k in p for k in ["create", "open", "new", "report"])):
+            tid = tid_match.group(1).upper() if tid_match else "INC-5001"
+            return ITSMToolSelection(
+                tool_name="get_ticket_details",
+                ticket_id=tid,
+                reasoning="Fallback: ticket lookup."
+            )
+
+        if any(k in p for k in ["list", "show my tickets", "active tickets", "my tickets", "all tickets"]):
+            return ITSMToolSelection(
+                tool_name="list_tickets",
+                reasoning="Fallback: list user tickets."
+            )
+
+        cat = "IT_GENERAL"
+        if any(k in p for k in ["vpn", "wifi", "network", "internet", "dns", "connection"]):
+            cat = "IT_NETWORK"
+        elif any(k in p for k in ["laptop", "screen", "keyboard", "battery", "hardware", "monitor", "display", "mouse"]):
+            cat = "IT_HARDWARE"
+        elif any(k in p for k in ["access", "permission", "password", "login", "github", "account", "unlock"]):
+            cat = "IT_ACCESS"
+
+        return ITSMToolSelection(
+            tool_name="create_incident",
+            category=cat,
+            short_description=prompt[:100],
+            priority="3 - Moderate",
+            reasoning="Fallback: create incident ticket."
+        )
 
     def _clean_schema(self, schema: dict[str, Any]) -> dict[str, Any]:
         """Sanitize Pydantic JSON schema for Vertex AI Gemini OpenAPI compatibility."""

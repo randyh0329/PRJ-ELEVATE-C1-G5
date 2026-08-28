@@ -188,3 +188,65 @@ class WorkWeekToolSelection(BaseModel):
         if self.phone_number:
             args["phone_number"] = self.phone_number
         return args
+
+
+class ITSMToolSelection(BaseModel):
+    """
+    Structured output schema for ServiceImmediately ITSM Specialist (Gemini 3.7 Flash Function Calling).
+    Identifies which FastMCP tool to invoke along with typed arguments.
+    """
+    tool_name: Literal[
+        "create_incident",
+        "get_ticket_details",
+        "list_tickets",
+        "post_comment",
+        "none",
+    ] = Field(
+        description="The specific ServiceImmediately tool to call, or 'none' if general conversational response."
+    )
+    category: str | None = Field(
+        default="IT_GENERAL",
+        description="Ticket category: 'IT_NETWORK', 'IT_HARDWARE', 'IT_ACCESS', or 'IT_GENERAL'."
+    )
+    short_description: str | None = Field(
+        default=None,
+        description="Concise description/title of the incident or request."
+    )
+    priority: str | None = Field(
+        default="3 - Moderate",
+        description="Priority string: '1 - Critical', '2 - High', '3 - Moderate', or '4 - Low'."
+    )
+    ticket_id: str | None = Field(
+        default=None,
+        description="The target ticket ID for lookup or comment (e.g., 'INC-5001', 'INC0003466')."
+    )
+    comment_body: str | None = Field(
+        default=None,
+        description="Comment text to post on the ticket."
+    )
+    arguments: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Dictionary of parameters to pass to the FastMCP tool."
+    )
+    reasoning: str = Field(
+        description="Reasoning for selecting this specific tool and argument extraction."
+    )
+    direct_response: str | None = Field(
+        default=None,
+        description="Optional direct message if no tool call is needed."
+    )
+
+    def get_effective_arguments(self) -> dict[str, Any]:
+        """Consolidates explicit fields and generic arguments into a unified dictionary."""
+        args = dict(self.arguments or {})
+        if self.category:
+            args["category"] = self.category
+        if self.short_description:
+            args["short_description"] = self.short_description
+        if self.priority:
+            args["priority"] = self.priority
+        if self.ticket_id:
+            args["ticket_id"] = self.ticket_id
+        if self.comment_body:
+            args["body"] = self.comment_body
+        return args
