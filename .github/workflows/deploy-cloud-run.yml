@@ -79,7 +79,10 @@ jobs:
       - name: Build and Push Docker Image
         run: |
           IMAGE_TAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME }}"
-          docker build -t ${IMAGE_TAG}:${{ github.sha }} -t ${IMAGE_TAG}:latest .
+          # Stamp the commit into the image so /health and the UI can report it.
+          docker build \
+            --build-arg GIT_COMMIT_SHA=${{ github.sha }} \
+            -t ${IMAGE_TAG}:${{ github.sha }} -t ${IMAGE_TAG}:latest .
           docker push ${IMAGE_TAG}:${{ github.sha }}
           docker push ${IMAGE_TAG}:latest
 
