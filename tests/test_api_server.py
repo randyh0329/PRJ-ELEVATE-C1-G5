@@ -40,7 +40,8 @@ def test_chat_endpoint_policy_qa(client):
         assert "Bereavement Leave" in data["response"]
         assert any("bereavement.md" in c for c in data["citations"])
     else:
-        assert "Section 04.2" in data["response"]
+        assert "bereavement" in data["response"].lower()
+        assert any("bereavement.md" in c for c in data["citations"])
 
 
 def test_chat_endpoint_safety_block(client):

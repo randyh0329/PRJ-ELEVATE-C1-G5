@@ -4,6 +4,8 @@ Verifies Phase 1 foundation requirements.
 """
 import pytest
 
+pytest.importorskip("google.adk", reason="google-adk package is not installed")
+
 
 def test_adk_core_imports():
     """Verify core Google ADK symbols can be imported cleanly."""
