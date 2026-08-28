@@ -140,6 +140,63 @@ def test_the_a2a_interface_cannot_be_subclassed_without_implementing_it():
         Partial()
 
 
+async def test_the_vertex_search_pipeline_refuses_rather_than_returning_nothing():
+    """`FaissPolicyRAG` is the working implementation of this same interface.
+
+    Returning `[]` here instead of raising would be indistinguishable from "the
+    corpus has no good match", and a caller would present an ungrounded answer
+    as a grounded one - the FR-5.2 failure the whole grounding layer exists to
+    prevent.
+    """
+    from src.grounding.rag_boilerplate import BaseRAGPipeline, VertexAISearchRAGBoilerplate
+
+    pipeline = VertexAISearchRAGBoilerplate()
+    assert isinstance(pipeline, BaseRAGPipeline)
+
+    with pytest.raises(NotImplementedError, match="deferred beyond MVP 1"):
+        await pipeline.index_documents(["gs://handbooks/altostrat-sg.pdf"])
+    with pytest.raises(NotImplementedError, match="deferred beyond MVP 1"):
+        await pipeline.semantic_search("bereavement leave")
+
+
+def test_the_vertex_adapter_defaults_to_the_handbook_datastore():
+    from src.grounding.rag_boilerplate import VertexAISearchRAGBoilerplate
+
+    default = VertexAISearchRAGBoilerplate()
+    assert default.datastore_id.endswith("/dataStores/hr-handbook")
+    assert default.project_id is None
+
+    named = VertexAISearchRAGBoilerplate(datastore_id="ds/other", project_id="proj-1")
+    assert named.datastore_id == "ds/other"
+    assert named.project_id == "proj-1"
+
+
+def test_the_rag_interface_cannot_be_subclassed_without_implementing_it():
+    from src.grounding.rag_boilerplate import BaseRAGPipeline
+
+    class Partial(BaseRAGPipeline):
+        async def semantic_search(self, query, top_k=5):
+            return []
+
+    with pytest.raises(TypeError, match="index_documents"):
+        Partial()
+
+
+def test_a_retrieved_chunk_carries_its_provenance():
+    """`metadata` defaults to empty, but the identifying fields are required -
+    a chunk that cannot be cited back to a document is not usable for grounding."""
+    from src.grounding.rag_boilerplate import RAGDocumentChunk
+
+    chunk = RAGDocumentChunk(
+        chunk_id="c-1",
+        content="Employees accrue 14 days of paid vacation leave per year.",
+        document_uri="okf/altostrat-sg-handbook/leave/vacation.md",
+        similarity_score=0.91,
+    )
+
+    assert chunk.metadata == {}
+
+
 # ---------------------------------------------------------------------------
 # Settings
 # ---------------------------------------------------------------------------

@@ -4,7 +4,11 @@ import re
 import pytest
 
 from src.core.agent import HREnterpriseAgent
-from src.core.models.routing import SupervisorRoutingDecision, WorkWeekToolSelection
+from src.core.models.routing import (
+    ITSMToolSelection,
+    SupervisorRoutingDecision,
+    WorkWeekToolSelection,
+)
 from src.core.session import session_store
 from src.integrations.service_immediately.mock_service import service_immediately_mock_service
 from src.integrations.vertex.client import VertexGeminiClient
@@ -177,6 +181,21 @@ class MockVertexGeminiClient:
             reasoning="Mock: Balances query."
         )
 
+    def select_itsm_tool(self, prompt: str, **kwargs) -> ITSMToolSelection:
+        """Delegate to the production offline router rather than restating it.
+
+        This used to be a copy of `_fallback_select_itsm_tool`. Two copies of a
+        routing table drift, and the drift is invisible in exactly the direction
+        that matters: the suite goes green against the mock's rules while the
+        rules that actually ship are wrong. That is not hypothetical - the copy
+        reproduced a bug where "any open tickets for me?" filed a new ticket.
+
+        Delegating keeps the determinism this fixture is for (the real method
+        is pure and needs no network) and makes every ITSM turn in the suite an
+        assertion about production routing.
+        """
+        return VertexGeminiClient._fallback_select_itsm_tool(prompt)
+
 
 @pytest.fixture(autouse=True)
 def mock_vertex_gemini(monkeypatch):
@@ -184,6 +203,7 @@ def mock_vertex_gemini(monkeypatch):
     mock_client = MockVertexGeminiClient()
     monkeypatch.setattr(VertexGeminiClient, "route_intent", lambda self, prompt, **kwargs: mock_client.route_intent(prompt, **kwargs))
     monkeypatch.setattr(VertexGeminiClient, "select_workweek_tool", lambda self, prompt, **kwargs: mock_client.select_workweek_tool(prompt, **kwargs))
+    monkeypatch.setattr(VertexGeminiClient, "select_itsm_tool", lambda self, prompt, **kwargs: mock_client.select_itsm_tool(prompt, **kwargs))
 
 
 @pytest.fixture(autouse=True)

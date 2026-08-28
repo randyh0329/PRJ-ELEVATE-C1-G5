@@ -32,7 +32,7 @@ variable "saas_mcp_token" {
   description = "Personal Access Token for FastMCP authentication (X-MCP-Token)."
   type        = string
   sensitive   = true
-  default     = "mcp_HiIwlFkRL-DrjYgdQvO-fMHg8Q8A_YskI5J00qrP8SA"
+  default     = "mcp_local_dev_placeholder_set_SAAS_MCP_CREDENTIAL"
 }
 
 variable "github_repository" {
@@ -57,7 +57,7 @@ variable "initial_mcp_user_tokens" {
   description = "Initial JSON mapping of user emails to FastMCP tokens in Secret Manager."
   type        = string
   sensitive   = true
-  default     = "{\"romij@google.com\": \"mcp_3DpwwQTaG6eV5SJpTA-QIV7aUqDblj-Qkn8bDkeiHWk\", \"teammate@google.com\": \"mcp_3DpwwQTaG6eV5SJpTA-QIV7aUqDblj-Qkn8bDkeiHWk\"}"
+  default     = "{\"romij@google.com\": \"mcp_local_dev_placeholder_set_SAAS_MCP_CREDENTIAL\", \"teammate@google.com\": \"mcp_local_dev_placeholder_set_SAAS_MCP_CREDENTIAL\"}"
 }
 
 

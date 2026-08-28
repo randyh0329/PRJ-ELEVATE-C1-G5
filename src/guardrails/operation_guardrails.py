@@ -17,13 +17,20 @@ class GuardrailValidationResult(BaseModel):
 class OperationGuardrailEngine:
     """Enforces strict transactional and operational guardrails across HR and ITSM operations."""
 
+    #: The ITSM lifecycle of SDD §5.9 (`enum: [New, In Progress, On Hold,
+    #: Resolved, Closed]`). The vocabulary matters as much as the edges: the
+    #: table previously read "Work in Progress" / "Pending User Info", so a
+    #: ticket in the enum's "In Progress" matched no key at all and *every*
+    #: transition off it was refused as illegal.
+    #:
+    #: `Closed` is terminal and `New -> Closed` is absent, which are the two
+    #: rules §5.3 names explicitly (S1 and S2 in the rules-engine flowchart).
     VALID_TICKET_TRANSITIONS: ClassVar[dict[str, list[str]]] = {
-        "New": ["Work in Progress", "Cancelled"],
-        "Work in Progress": ["Resolved", "Pending User Info", "Cancelled"],
-        "Pending User Info": ["Work in Progress", "Resolved", "Cancelled"],
-        "Resolved": ["Closed", "Work in Progress"],
-        "Closed": [],
-        "Cancelled": []
+        "New": ["In Progress", "On Hold", "Resolved"],
+        "In Progress": ["On Hold", "Resolved"],
+        "On Hold": ["In Progress", "Resolved"],
+        "Resolved": ["Closed", "In Progress"],
+        "Closed": []
     }
 
     VALID_PRIORITIES: ClassVar[list[str]] = ["1 - Critical", "2 - High", "3 - Moderate", "4 - Low"]
@@ -106,10 +113,14 @@ class OperationGuardrailEngine:
         requester_id: str,
         category: str,
         existing_tickets: list[dict],
-        window_minutes: int = 30,
+        window_minutes: int = 10,
         now: datetime.datetime | None = None
     ) -> GuardrailValidationResult:
-        """Prevent duplicate ticket creation within a defined rolling window."""
+        """Prevent duplicate ticket creation within a defined rolling window.
+
+        Ten minutes is the window FR-4.3 specifies ("same requestor, category,
+        10-minute window"), not a tunable default.
+        """
         current_time = now or datetime.datetime.now(datetime.timezone.utc)
 
         for ticket in existing_tickets:

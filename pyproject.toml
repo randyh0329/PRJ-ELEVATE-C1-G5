@@ -24,6 +24,9 @@ dependencies = [
     "numpy>=1.26",
     "PyYAML>=6",
     "a2a-sdk[http-server]>=1.1,<2",
+    # Google ADK (Agent Development Kit) & Vertex AI Agent Runtime integration
+    "google-adk>=2.8.0",
+    "mcp>=1.20,<2.0",
 ]
 
 [project.optional-dependencies]
@@ -99,7 +102,10 @@ pythonpath = ["."]
 asyncio_mode = "auto"
 
 [tool.coverage.run]
-source = ["src", "app", "config", "eval", "scripts", "a2a_app"]
+# `a2a_app` is not listed: it is a subpackage of `src/grounding/policy_rag`, so
+# `src` already measures it, and naming it again only earns a never-imported
+# warning on every run.
+source = ["src", "app", "config", "eval", "scripts"]
 branch = true
 
 [tool.coverage.report]

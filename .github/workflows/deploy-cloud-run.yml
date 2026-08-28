@@ -80,9 +80,11 @@ jobs:
 
       - name: Build and Push Docker Images (All 3 Microservices)
         run: |
-          # 1. Orchestrator Image
+          # 1. Orchestrator Image (Stamped with git commit SHA for build info)
           TAG_ORCH="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME_ORCHESTRATOR }}"
-          docker build -f Dockerfile.orchestrator -t ${TAG_ORCH}:${{ github.sha }} -t ${TAG_ORCH}:latest .
+          docker build -f Dockerfile.orchestrator \
+            --build-arg GIT_COMMIT_SHA=${{ github.sha }} \
+            -t ${TAG_ORCH}:${{ github.sha }} -t ${TAG_ORCH}:latest .
           docker push ${TAG_ORCH}:${{ github.sha }}
           docker push ${TAG_ORCH}:latest
 

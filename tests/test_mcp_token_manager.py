@@ -27,10 +27,10 @@ def test_mcp_token_manager_save_and_retrieve():
 def test_mcp_token_manager_masking():
     """Verify sensitive FastMCP token masking for UI security."""
     mgr = MCPTokenManager()
-    masked = mgr.mask_token("mcp_3DpwwQTaG6eV5SJpTA-QIV7aUqDblj-Qkn8bDkeiHWk")
-    assert masked.startswith("mcp_3Dpw...")
-    assert masked.endswith("iHWk")
-    assert "G6eV5SJp" not in masked
+    masked = mgr.mask_token("mcp_ABCDefghIJKLmnopQRSTuvwxYZ0123456789wxyz")
+    assert masked.startswith("mcp_ABCD...")
+    assert masked.endswith("wxyz")
+    assert "IJKLmnop" not in masked
 
     assert mgr.mask_token(None) == "None"
     assert mgr.mask_token("short") == "******"

@@ -64,7 +64,7 @@ async def test_node_refuses_what_the_corpus_does_not_cover():
     assert state["citations"] == []
 
 
-# --- the mock datastore fallback --------------------------------------------
+# --- the curated OKF register fallback ---------------------------------------
 
 
 @pytest.fixture
@@ -72,21 +72,59 @@ def no_index(monkeypatch):
     monkeypatch.setattr(type(faiss_policy_rag), "is_ready", property(lambda self: False))
 
 
-async def test_node_falls_back_to_the_mock_datastore(no_index):
+async def test_node_falls_back_to_the_curated_register(no_index):
     state = await PolicySpecialistNode().execute(_state("what is the bereavement policy"))
 
     assert state["grounding_source"] == "curated"
-    assert "5 consecutive paid business days" in state["final_response"]
-    # The mock has no composer, so the node appends the citation itself.
-    assert "Source: [Bereavement Leave Policy]" in state["final_response"]
+    # Both backends now read the same corpus, so both must produce the same
+    # figure. The dict this register replaced said "5 consecutive paid business
+    # days", and a fallback that quietly contradicts the primary path is worse
+    # than one that refuses.
+    assert "4 weeks" in state["final_response"]
+    assert "5 consecutive paid business days" not in state["final_response"]
+    # No composer on this path, so the node appends the citation itself - and it
+    # is a URL that opens the cited text, not an invented `hr.corp.internal` one.
+    assert "Source: [Bereavement Leave (Global) - Handbook Section 22]" in state["final_response"]
+    assert "https://github.com/" in state["final_response"]
 
 
-async def test_mock_datastore_refuses_hallucination_baits(no_index):
+async def test_curated_register_refuses_hallucination_baits(no_index):
+    """No bait list any more: the coverage floor refuses this on the evidence."""
     state = await PolicySpecialistNode().execute(_state("reimbursement for personal pet helicopter transport"))
 
     assert state["policy_decision"] == "refuse"
     assert state["grounding_score"] == 0.0
     assert "could not find a verified answer" in state["final_response"]
+
+
+async def test_curated_register_refuses_what_the_corpus_does_not_cover(no_index):
+    """A keyword register has no notion of "not in the corpus" unless one is
+    built in, so a query matching nothing must not fall through to the
+    highest-scoring near-miss."""
+    state = await PolicySpecialistNode().execute(_state("what is the guest wifi password"))
+
+    assert state["policy_decision"] == "refuse"
+    assert state["citations"] == []
+    assert "could not find a verified answer" in state["final_response"]
+
+
+async def test_curated_register_refuses_an_ambiguous_topic(no_index):
+    """"leave" alone matches eleven leave concepts equally well. Returning
+    whichever sorted first would present a coin-flip as a determinate answer."""
+    answer = PolicySpecialistNode()._query_curated_store("tell me about leave")
+
+    assert answer.decision == "refuse"
+
+
+async def test_curated_register_flags_a_documented_source_conflict(no_index):
+    """The bereavement concept records a dispute over intern eligibility. The
+    OKF `Conflict` convention exists so the register does not silently pick a
+    side, and the caveat is how that reaches the employee."""
+    answer = PolicySpecialistNode()._query_curated_store("what is the bereavement policy")
+
+    assert answer.decision == "answer"
+    assert "inconsistent" in answer.text
+    assert "People Ops" in answer.text
 
 
 # --- the grounding gate ------------------------------------------------------

@@ -1,15 +1,17 @@
 """Enterprise HR Agent Orchestrator (Reasoning Engine runtime)."""
+import concurrent.futures
 import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from src.core.agents.hcm import workweek_autonomous_specialist
+from src.core.agents.itsm import service_immediately_autonomous_specialist
 from src.core.clock import business_today
 from src.core.safety import DLPRedactor, ModelArmor, dlp_redactor, model_armor
 from src.core.saga import SagaCoordinator, saga_coordinator
 from src.core.session import SessionMemory, session_store
-from src.grounding.policy_engine import DualGroundingEngine, dual_grounding_engine
+from src.grounding.policy_engine import DualGroundingEngine, PolicyQueryResult, dual_grounding_engine
 from src.integrations.service_immediately.client import ServiceImmediatelyClient, service_immediately_client
 from src.integrations.workweek.client import WorkWeekClient, workweek_client
 from src.models.routing import SupervisorRoutingDecision
@@ -66,23 +68,40 @@ class HREnterpriseAgent:
         sess_id = session_id or f"sess_{caller_employee_id}"
         today = reference_date or business_today()
 
-        # --- STAGE 1: INGRESS SAFETY & DLP SCANNING (<120ms) ---
-        redaction_res = self._dlp.redact(user_prompt)
+        # --- STAGE 1: INGRESS SAFETY & DLP SCANNING (Group G1 Concurrency, p95 <= 80ms) ---
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            future_dlp = executor.submit(self._dlp.redact, user_prompt)
+            future_armor = executor.submit(
+                self._armor.scan_prompt,
+                user_prompt,
+                getattr(self._armor, "deadline_ms", 150)
+            )
+
+            redaction_res = future_dlp.result()
+            armor_res = future_armor.result()
+
         sanitized_prompt = redaction_res.sanitized_text
 
-        armor_res = self._armor.scan_prompt(sanitized_prompt)
         if not armor_res.is_safe:
             self._logger.log_event(
                 caller_employee_id=caller_employee_id,
-                action_type="SAFETY_VIOLATION_BLOCKED",
+                action_type="ARMOR_INBOUND_BLOCK",
                 status="REFUSED",
-                details={"reason": armor_res.refusal_reason, "threat": armor_res.threat_category}
+                details={
+                    "reason": armor_res.refusal_reason,
+                    "threat": armor_res.threat_category,
+                    "filter_details": armor_res.filter_details,
+                }
             )
             return AgentResponse(
-                response_text=armor_res.refusal_reason or "Request refused by safety guardrails.",
+                response_text=armor_res.refusal_reason or "I am unable to process this request as it falls outside acceptable corporate usage policies.",
                 intent="SAFETY_REFUSAL",
                 is_refusal=True,
-                processing_metadata={"dlp_ms": redaction_res.processing_time_ms, "armor_ms": armor_res.processing_time_ms}
+                processing_metadata={
+                    "dlp_ms": redaction_res.processing_time_ms,
+                    "armor_in_ms": armor_res.processing_time_ms,
+                    "guardrail_verdict_in": getattr(armor_res, "verdict", "BLOCK"),
+                }
             )
 
         # --- STAGE 2: INTENT CLASSIFICATION (Gemini 3.7 Flash Supervisor Router) ---
@@ -110,7 +129,11 @@ class HREnterpriseAgent:
                 original_prompt=user_prompt
             )
         elif intent == "UC_1_3_SERVICE_IMMEDIATELY_INCIDENT":
-            response = self._handle_service_incident(caller_employee_id, sanitized_prompt)
+            response = self._handle_service_incident(
+                caller_employee_id,
+                sanitized_prompt,
+                original_prompt=user_prompt
+            )
         elif intent == "UC_1_1_POLICY_QA":
             response = self._handle_policy_qa(caller_employee_id, sanitized_prompt)
         elif intent == "OUT_OF_DOMAIN":
@@ -118,9 +141,40 @@ class HREnterpriseAgent:
         else:
             response = self._handle_general_or_fallback(caller_employee_id, sanitized_prompt)
 
-        # --- STAGE 4: SESSION STORAGE & AUDIT LOG EMISSION ---
+        # --- STAGE 4: EGRESS SAFETY SCAN (Group G2 Outbound) & RELEASE (Group G3) ---
+        outbound_armor_res = self._armor.scan_response(
+            response.response_text,
+            timeout_ms=getattr(self._armor, "deadline_ms", 150)
+        )
+        if not outbound_armor_res.is_safe:
+            self._logger.log_event(
+                caller_employee_id=caller_employee_id,
+                action_type="ARMOR_OUTBOUND_BLOCK",
+                status="REFUSED",
+                details={
+                    "reason": outbound_armor_res.refusal_reason,
+                    "threat": outbound_armor_res.threat_category,
+                    "filter_details": outbound_armor_res.filter_details,
+                }
+            )
+            response.response_text = outbound_armor_res.refusal_reason or "I could not produce a safe answer to that request. Please contact the HR helpdesk directly."
+            response.is_refusal = True
+            response.intent = "SAFETY_REFUSAL"
+            response.citations = []
+            response.action_performed = None
+
         self._sessions.add_message(sess_id, "assistant", response.response_text, response.citations)
+
+        safety_overhead = round(
+            max(redaction_res.processing_time_ms, armor_res.processing_time_ms) + outbound_armor_res.processing_time_ms,
+            3
+        )
         response.processing_metadata["dlp_ms"] = redaction_res.processing_time_ms
+        response.processing_metadata["armor_in_ms"] = armor_res.processing_time_ms
+        response.processing_metadata["armor_out_ms"] = outbound_armor_res.processing_time_ms
+        response.processing_metadata["safety_overhead_ms"] = safety_overhead
+        response.processing_metadata["guardrail_verdict_in"] = getattr(armor_res, "verdict", "ALLOW")
+        response.processing_metadata["guardrail_verdict_out"] = getattr(outbound_armor_res, "verdict", "ALLOW")
         response.processing_metadata["detected_spii"] = redaction_res.detected_types
         response.processing_metadata["router_confidence"] = routing_decision.confidence
         response.processing_metadata["router_reasoning"] = routing_decision.reasoning
@@ -247,44 +301,65 @@ class HREnterpriseAgent:
         )
 
 
-    def _handle_service_incident(self, caller_id: str, prompt: str) -> AgentResponse:
-        """UC-1.3: ServiceImmediately Support Desk Incident Management."""
-        category = "IT_NETWORK"
-        priority = "3 - Moderate"
-        desc = "VPN connection dropping intermittently"
-
-        if "vpn" in prompt.lower():
-            desc = "VPN connection dropping intermittently"
-            category = "IT_NETWORK"
-        elif "wifi" in prompt.lower():
-            desc = "Office WiFi authentication error"
-            category = "IT_NETWORK"
-        else:
-            desc = prompt[:80]
-            category = "IT_GENERAL"
-
-        try:
-            ticket = self._sn_client.create_incident_ticket(
-                caller_employee_id=caller_id,
-                category=category,
-                requested_priority=priority,
-                short_description=desc
-            )
-            msg = f"Support Incident Ticket [{ticket.ticket_id}] has been created in ServiceImmediately with Priority '{ticket.priority}'. An IT specialist will investigate."
-            return AgentResponse(
-                response_text=msg,
-                intent="UC_1_3_SERVICE_IMMEDIATELY_INCIDENT",
-                action_performed="CREATE_INCIDENT",
-                transaction_reference=ticket.ticket_id
-            )
-        except ValueError as ve:
-            return AgentResponse(
-                response_text=f"Unable to create ticket: {ve!s}",
-                intent="UC_1_3_SERVICE_IMMEDIATELY_INCIDENT",
-                action_performed="CREATE_INCIDENT_FAILED"
-            )
+    def _handle_service_incident(
+        self,
+        caller_id: str,
+        prompt: str,
+        original_prompt: str | None = None
+    ) -> AgentResponse:
+        """UC-1.3: Autonomous ServiceImmediately ITSM Tool-Calling Agent."""
+        raw_prompt = original_prompt or prompt
+        res = service_immediately_autonomous_specialist.plan_and_execute(
+            prompt=raw_prompt,
+            caller_id=caller_id
+        )
+        return AgentResponse(
+            response_text=res["response_text"],
+            intent="UC_1_3_SERVICE_IMMEDIATELY_INCIDENT",
+            action_performed=res["action_performed"],
+            transaction_reference=res.get("transaction_reference")
+        )
 
     # --- HANDLERS FOR CROSS-SYSTEM ORCHESTRATION USE CASES ---
+
+    @staticmethod
+    def _entitlement_rule(
+        policy_res: PolicyQueryResult, *keywords: str
+    ) -> tuple[str, str, str] | None:
+        """`(section, verbatim rule, citation)` for the rule authorising a saga step.
+
+        Every part of that tuple comes out of the corpus. A cross-system handler
+        writes to WorkWeek and ServiceImmediately on the strength of an
+        entitlement, so the entitlement it names has to be the one the handbook
+        actually states - and `PolicyDocument.excerpt` returns the sentence
+        itself, so the confirmation the employee reads and the file the citation
+        opens contain the same words.
+
+        `None` when the register cannot produce the rule. Both callers stop on
+        it rather than proceeding under an assumed figure: the numbers that used
+        to be written into these strings ("Section 08.3", "£5,000", "Tier 2")
+        were wrong in the handbook's own terms, and prose is not something a
+        retrieval result can contradict.
+        """
+        if not policy_res.documents or not policy_res.citations:
+            return None
+        document = policy_res.documents[0]
+        quote = document.excerpt(*keywords)
+        if quote is None:
+            return None
+        return document.section_id, quote, policy_res.citations[0]
+
+    @staticmethod
+    def _eligible_statuses(rule: str) -> list[str]:
+        """The WorkWeek location statuses a quoted rule admits, uppercased.
+
+        The handbook names them in prose - "an approved 'Remote' or 'Hybrid'
+        location status" - and WorkWeek spells them `REMOTE_FULL_TIME` and
+        `HYBRID`, so the match is on the stem. Reading the eligible set off the
+        rule keeps the check and the quoted justification from drifting apart,
+        which is exactly what happened when the check was a hard-coded literal.
+        """
+        return [word for word in ("REMOTE", "HYBRID", "ONSITE") if word in rule.upper()]
 
     def _handle_equipment_procurement(self, caller_id: str, prompt: str) -> AgentResponse:
         """UC-2.1: Equipment Procurement (Grounding -> WorkWeek -> ServiceImmediately)."""
@@ -294,9 +369,19 @@ class HREnterpriseAgent:
         # the same rule on every run - a cap that moves because a retrieval
         # ranking shifted would be a defect, not a better answer.
         policy_res = self._grounding.query_policy(
-            "remote work hardware allowance monitor", curated_only=True
+            "home office equipment allowance", curated_only=True
         )
-        citation = policy_res.citations[0] if policy_res.citations else "[View Policy Section 08.3](https://hr.corp.internal/policies/08.3-remote-equipment)"
+        rule = self._entitlement_rule(policy_res, "home office equipment allowance")
+        if rule is None:
+            return AgentResponse(
+                response_text=(
+                    "I could not locate the home office equipment rule in the policy corpus, "
+                    "so I have not raised a hardware request. Please contact People Ops."
+                ),
+                intent="UC_2_1_EQUIPMENT_PROCUREMENT",
+                action_performed="PROCUREMENT_UNGROUNDED",
+            )
+        section, quote, citation = rule
 
         # Step 2: WorkWeek Profile Check
         profile = self._ww_client.get_employee_profile(caller_id, caller_id)
@@ -306,9 +391,14 @@ class HREnterpriseAgent:
                 intent="UC_2_1_EQUIPMENT_PROCUREMENT"
             )
 
-        if profile.work_location_status != "REMOTE_FULL_TIME":
+        # The handbook grants the allowance to *Remote or Hybrid* status, and the
+        # eligible set has to be read off the rule rather than restated here. An
+        # earlier version hard-coded `!= "REMOTE_FULL_TIME"` under an invented
+        # "Section 08.3", and so refused every hybrid employee the corpus
+        # entitles - a denial the citation beside it actually contradicted.
+        if not any(status in profile.work_location_status for status in self._eligible_statuses(quote)):
             return AgentResponse(
-                response_text=f"Under Section 08.3, home office equipment is available only for full-time remote employees. Your current status in WorkWeek is '{profile.work_location_status}'. {citation}",
+                response_text=f"Handbook Section {section} states: {quote}\n\nYour current status in WorkWeek is '{profile.work_location_status}', so this allowance does not apply to you.\n\nCitation: {citation}",
                 intent="UC_2_1_EQUIPMENT_PROCUREMENT",
                 citations=[citation]
             )
@@ -318,10 +408,10 @@ class HREnterpriseAgent:
             caller_employee_id=caller_id,
             item='27in_Monitor',
             shipping_address=profile.home_address,
-            referenced_policy_section="Sec 08.3"
+            referenced_policy_section=f"Sec {section}"
         )
 
-        msg = f"Verified under Section 08.3 that you are eligible for home office hardware. Verified remote status in WorkWeek. ServiceImmediately Hardware Request [{req.request_id}] has been created for shipping to your registered address ({profile.home_address}).\n\nCitation: {citation}"
+        msg = f"Handbook Section {section} states: {quote}\n\nYour WorkWeek status is '{profile.work_location_status}', so you are eligible. ServiceImmediately Hardware Request [{req.request_id}] has been created for shipping to your registered address ({profile.home_address}).\n\nCitation: {citation}"
         return AgentResponse(
             response_text=msg,
             intent="UC_2_1_EQUIPMENT_PROCUREMENT",
@@ -349,13 +439,21 @@ class HREnterpriseAgent:
             reference_date=today
         )
 
-        citation = "[View Policy Section 19.2](https://hr.corp.internal/policies/19.2-medical-leave)"
-        response_text = f"{saga_res.message}\n\nCitation: {citation}"
+        # The sick-leave rule is cited, not quoted: the saga message already
+        # states what was filed, and the employee needs the source behind the
+        # entitlement rather than four screens of it. The URL this replaced -
+        # `hr.corp.internal/policies/19.2-medical-leave` - named a section the
+        # handbook does not have and a host that does not resolve.
+        policy_res = self._grounding.query_policy(
+            "sick leave hospitalisation entitlement", curated_only=True
+        )
+        citation = policy_res.citations[0] if policy_res.citations else ""
+        response_text = f"{saga_res.message}\n\nCitation: {citation}" if citation else saga_res.message
 
         return AgentResponse(
             response_text=response_text,
             intent="UC_2_2_MEDICAL_LEAVE_DELEGATION",
-            citations=[citation],
+            citations=[citation] if citation else [],
             action_performed="SAGA_MEDICAL_LEAVE",
             transaction_reference=saga_res.escalation_ticket_id
         )
@@ -367,7 +465,21 @@ class HREnterpriseAgent:
         policy_res = self._grounding.query_policy(
             "international relocation allowance london", curated_only=True
         )
-        citation = policy_res.citations[0] if policy_res.citations else "[View Policy Section 14.1](https://hr.corp.internal/policies/14.1-international-relocation)"
+        rule = self._entitlement_rule(policy_res, "relocation allowance", "capped")
+        if rule is None:
+            # No cap in the corpus means no cap to quote, and the SDD §3.4 Path 6
+            # sequence has the saga state the allowance *before* it writes
+            # anything. Stopping here costs an employee a self-service path;
+            # inventing a figure costs them a relocation budget.
+            return AgentResponse(
+                response_text=(
+                    "I could not locate the relocation allowance in the policy corpus, so I have "
+                    "not changed your record or raised a badge request. Please contact People Ops."
+                ),
+                intent="UC_2_3_RELOCATION_ALLOWANCE_BADGE",
+                action_performed="RELOCATION_UNGROUNDED",
+            )
+        section, quote, citation = rule
 
         # Step 2: WorkWeek Contact & Office Update
         self._ww_client.update_contact_info(
@@ -385,7 +497,7 @@ class HREnterpriseAgent:
             start_date=(business_today() + datetime.timedelta(days=30)).isoformat()
         )
 
-        msg = f"According to Section 14.1 (International Relocation), your Tier 2 allowance is £5,000. Your WorkWeek office assignment has been updated to London. Facilities Badge Ticket [{fac_ticket.ticket_id}] has been created for your first day access.\n\nCitation: {citation}"
+        msg = f"Handbook Section {section} states: {quote}\n\nYour WorkWeek office assignment has been updated to London. Facilities Badge Ticket [{fac_ticket.ticket_id}] has been created for your first day access.\n\nCitation: {citation}"
         return AgentResponse(
             response_text=msg,
             intent="UC_2_3_RELOCATION_ALLOWANCE_BADGE",

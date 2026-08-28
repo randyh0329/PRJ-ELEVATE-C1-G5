@@ -19,6 +19,7 @@ import copy
 import pytest
 
 from src.grounding.faiss_pipeline import FaissPolicyRAG
+from src.grounding.policy_rag.config import load_config
 from src.grounding.policy_rag.embeddings import build_provider
 from src.grounding.policy_rag.service import PolicyRagService
 from src.grounding.rag_boilerplate import BaseRAGPipeline, RAGDocumentChunk
@@ -109,6 +110,80 @@ async def test_index_documents_rejects_an_undeclared_corpus(pipeline):
     """
     with pytest.raises(ValueError, match="undeclared corpus"):
         await pipeline.index_documents(["gs://some-bucket/handbook.pdf"])
+
+
+@pytest.fixture
+def rebuildable(config, index, monkeypatch):
+    """A pipeline whose `ingest` is recorded rather than run.
+
+    Function-scoped and separate from `pipeline`: `index_documents` drops the
+    cached service so the next access rebuilds it, which would leave the shared
+    module-scoped fixture reloading a real index from disk.
+    """
+    from src.grounding.policy_rag import ingest as ingest_module
+
+    calls: list = []
+    monkeypatch.setattr(ingest_module, "ingest", calls.append)
+    pipe = FaissPolicyRAG(
+        config=config, service=PolicyRagService(config, index, build_provider(config.embedding))
+    )
+    return pipe, calls
+
+
+async def test_naming_every_declared_corpus_rebuilds_the_index(rebuildable, config):
+    pipe, calls = rebuildable
+
+    assert await pipe.index_documents([c.id for c in config.corpora]) is True
+    assert calls == [config]
+
+
+async def test_an_empty_request_rebuilds_everything(rebuildable, config):
+    """No ids named is "rebuild the index", the only whole-artefact operation
+    this pipeline has."""
+    pipe, calls = rebuildable
+
+    assert await pipe.index_documents([]) is True
+    assert calls == [config]
+
+
+async def test_naming_a_subset_still_rebuilds_the_whole_index(rebuildable, config, caplog):
+    """Building only `handbook` would *evict* the OKF bundle rather than refresh
+    one corpus in place, so a partial request is widened - and said so."""
+    pipe, calls = rebuildable
+    subset = [config.corpora[0].id]
+    assert len(config.corpora) > 1
+
+    with caplog.at_level("INFO", logger="grounding.faiss_pipeline"):
+        await pipe.index_documents(subset)
+
+    assert calls == [config]
+    assert "rebuilding all of" in caplog.text
+
+
+async def test_a_rebuild_drops_the_cached_service(rebuildable):
+    """The old service holds the pre-rebuild index in memory; keeping it would
+    serve stale retrieval for the rest of the process's life."""
+    pipe, _ = rebuildable
+
+    await pipe.index_documents([])
+
+    assert pipe._service is None
+
+
+async def test_a_pipeline_given_a_config_path_loads_it_before_rebuilding(monkeypatch, tmp_path):
+    """`FaissPolicyRAG(config=...)` also accepts a path, as `load_config` does."""
+    from src.grounding.policy_rag import config as config_module
+    from src.grounding.policy_rag import ingest as ingest_module
+
+    loaded = load_config()
+    monkeypatch.setattr(config_module, "load_config", lambda path=None: loaded)
+    calls: list = []
+    monkeypatch.setattr(ingest_module, "ingest", calls.append)
+
+    pipe = FaissPolicyRAG(config=str(tmp_path / "corpus.yaml"))
+    await pipe.index_documents([])
+
+    assert calls == [loaded]
 
 
 def test_the_package_exports_the_pipeline_lazily():

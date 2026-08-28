@@ -36,7 +36,7 @@ class MCPTokenManager:
         self.cache_ttl = cache_ttl_seconds
         
         # Local fallback store for offline dev/pytest/sandbox
-        default_cred = getattr(settings, "SAAS_MCP_CREDENTIAL", "mcp_3DpwwQTaG6eV5SJpTA-QIV7aUqDblj-Qkn8bDkeiHWk")
+        default_cred = getattr(settings, "SAAS_MCP_CREDENTIAL", "mcp_local_dev_placeholder_set_SAAS_MCP_CREDENTIAL")
         self._fallback_store: Dict[str, str] = {
             "romij@google.com": default_cred,
             "teammate@google.com": default_cred,

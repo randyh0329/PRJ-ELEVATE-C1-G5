@@ -191,6 +191,22 @@ def test_the_harness_prints_a_summary(offline, golden, capsys):
     assert "refusal accuracy" in out
 
 
+def test_a_clean_run_prints_no_failure_list(offline, tmp_path, capsys):
+    """The failure list is the noisy part of the output; a green run has to be
+    readable at a glance, or CI logs stop being read at all."""
+    golden = tmp_path / "clean.json"
+    golden.write_text(
+        json.dumps({"questions": [{"id": "g-refuse", "query": "who won the 1998 world cup", "expect": "refuse"}]}),
+        encoding="utf-8",
+    )
+
+    assert harness.main(["--golden", str(golden), "--gate", "1.0"]) == 0
+
+    out = capsys.readouterr().out
+    assert "1/1" in out
+    assert "failing" not in out
+
+
 def test_show_failures_explains_each_failure(offline, golden, capsys):
     """A bare failure list names the case; --show-failures says why it failed."""
     assert harness.main(["--golden", str(golden), "--gate", "1.0", "--show-failures"]) == 0
@@ -409,3 +425,24 @@ def test_the_sweeper_fails_rather_than_recommending_an_inadmissible_config(
 
     assert code == 1
     assert "no admissible calibration" in capsys.readouterr().out
+
+
+def test_the_sweeper_puts_the_repo_on_the_path_when_run_as_a_script():
+    """`python scripts/eval_retrieval.py` puts `scripts/` on `sys.path`, not the
+    repo root, so the script bootstraps its own imports. Under pytest the root is
+    already there and the bootstrap never runs - which is exactly how it comes to
+    break unnoticed, so it is reloaded here without it.
+    """
+    import importlib
+    import sys
+
+    root = str(sweeper.REPO_ROOT)
+    stripped = [entry for entry in sys.path if entry != root]
+    original = list(sys.path)
+    sys.path[:] = stripped
+    try:
+        reloaded = importlib.reload(sweeper)
+        assert root in sys.path
+        assert reloaded.DEFAULT_GOLDEN
+    finally:
+        sys.path[:] = original

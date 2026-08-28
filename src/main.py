@@ -1,5 +1,8 @@
 """FastAPI REST API server and interactive CLI runner for HR Agentic Solution."""
+from __future__ import annotations
+
 import argparse
+from html import escape
 import logging
 import sys
 from typing import Any
@@ -23,6 +26,7 @@ from src.security.auth import (
 )
 from src.security.mcp_token_manager import mcp_token_manager
 from src.telemetry.audit_logger import audit_logger
+from src.telemetry.build_info import UNKNOWN, BuildInfo, get_build_info
 
 logger = logging.getLogger("api.main")
 
@@ -78,7 +82,14 @@ class ChatResponse(BaseModel):
 @app.get("/health")
 def health_check():
     """Service health probe."""
-    return {"status": "HEALTHY", "service": "hr-agentic-solution", "version": "0.1.0"}
+    return {
+        "status": "HEALTHY",
+        "service": "hr-agentic-solution",
+        "version": "0.1.0",
+        # `version` is the hand-maintained release number and moves rarely; the
+        # commit is what tells you whether a given fix is actually deployed.
+        "build": get_build_info().as_dict(),
+    }
 
 
 @app.get("/.well-known/agent-card.json")
@@ -129,10 +140,7 @@ def serve_agent_card():
     }
 
 
-@app.get("/", response_class=HTMLResponse)
-def serve_web_chat_ui():
-    """Serve responsive interactive web chat UI for testing agent features."""
-    return """<!DOCTYPE html>
+_CHAT_UI_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -156,6 +164,13 @@ def serve_web_chat_ui():
     .brand { display: flex; align-items: center; gap: 12px; }
     .brand h1 { font-size: 1.1rem; font-weight: 600; }
     .badge { background: rgba(56, 189, 248, 0.12); color: var(--primary); font-size: 0.75rem; padding: 3px 10px; border-radius: 9999px; border: 1px solid rgba(56, 189, 248, 0.25); font-weight: 600; }
+    .build-badge { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.02em; text-decoration: none; cursor: help; }
+    .build-badge:hover { background: rgba(56, 189, 248, 0.25); }
+    /* Amber, not blue: "running my uncommitted edits" is the state a developer
+       most needs to notice, and it must not read as a clean deploy. */
+    .build-badge-dirty { background: rgba(251, 191, 36, 0.15); color: #fbbf24; border-color: rgba(251, 191, 36, 0.35); }
+    .build-badge-dirty:hover { background: rgba(251, 191, 36, 0.28); }
+    .build-badge-unknown { background: rgba(148, 163, 184, 0.12); color: var(--muted); border-color: rgba(148, 163, 184, 0.3); }
     .auth-section { display: flex; align-items: center; gap: 12px; font-size: 0.85rem; }
     .user-chip { display: flex; align-items: center; gap: 8px; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 20px; padding: 5px 14px; font-size: 0.82rem; }
     .btn-connect { background: #2563eb; color: white; border: none; border-radius: 6px; padding: 7px 16px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: background 0.15s; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.25); }
@@ -181,10 +196,26 @@ def serve_web_chat_ui():
     .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
     .btn-secondary { background: #334155; color: var(--text); border: none; border-radius: 6px; padding: 8px 16px; font-size: 0.85rem; cursor: pointer; }
     .btn-primary { background: var(--primary); color: #0f172a; font-weight: 600; border: none; border-radius: 6px; padding: 8px 18px; font-size: 0.85rem; cursor: pointer; }
-    .main-container { flex: 1; display: flex; flex-direction: column; max-width: 900px; width: 100%; margin: 0 auto; padding: 16px; overflow: hidden; }
-    .quick-actions { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 14px; scrollbar-width: none; }
-    .quick-btn { background: #1e293b; color: var(--text); border: 1px solid var(--border); border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; cursor: pointer; white-space: nowrap; transition: all 0.2s; }
-    .quick-btn:hover { background: var(--primary); color: #0f172a; border-color: var(--primary); }
+    .main-container { flex: 1; display: flex; flex-direction: column; max-width: 960px; width: 100%; margin: 0 auto; padding: 16px; overflow: hidden; }
+    
+    .action-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .category-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+    .tab-btn { background: rgba(255, 255, 255, 0.05); color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: 0.75rem; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+    .tab-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.1); }
+    .tab-btn.active { background: var(--primary); color: #0f172a; font-weight: 600; border-color: var(--primary); }
+    
+    .quick-actions { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 14px; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent; }
+    .quick-actions::-webkit-scrollbar { height: 4px; }
+    .quick-actions::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+    .quick-btn { background: #1e293b; color: var(--text); border: 1px solid var(--border); border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; cursor: pointer; white-space: nowrap; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+    .quick-btn:hover { background: var(--primary); color: #0f172a; border-color: var(--primary); transform: translateY(-1px); }
+    .quick-btn.itsm { border-color: rgba(245, 158, 11, 0.4); }
+    .quick-btn.itsm:hover { background: #f59e0b; color: #0f172a; border-color: #f59e0b; }
+    .quick-btn.policy { border-color: rgba(56, 189, 248, 0.4); }
+    .quick-btn.policy:hover { background: #38bdf8; color: #0f172a; border-color: #38bdf8; }
+    .quick-btn.cross { border-color: rgba(168, 85, 247, 0.4); }
+    .quick-btn.cross:hover { background: #a855f7; color: #ffffff; border-color: #a855f7; }
+    
     .chat-window { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding-right: 6px; }
     .msg { display: flex; flex-direction: column; max-width: 82%; }
     .msg.user { align-self: flex-end; }
@@ -221,6 +252,7 @@ def serve_web_chat_ui():
     <div class="brand">
       <h1>🚀 HR Agentic Solution</h1>
       <span class="badge">Google Cloud MVP 1</span>
+      __BUILD_BADGE__
     </div>
     <div class="registry-pill" title="Toggle between Legacy Architecture and live Agent Registry Architecture">
       <span style="font-size: 0.78rem; font-weight: 600; color: var(--muted); display: flex; align-items: center; gap: 4px;">🧪 Agent Registry</span>
@@ -253,17 +285,40 @@ def serve_web_chat_ui():
     </div>
   </header>
 
-
-
   <div class="main-container">
-    <div class="quick-actions">
-      <button class="quick-btn" onclick="sendQuick('What is my current leave balance?')">🏖️ Leave Balances</button>
-      <button class="quick-btn" onclick="sendQuick('Who is my manager?')">👤 Who is my Manager?</button>
-      <button class="quick-btn" onclick="sendQuick('What is my department?')">🏢 My Department</button>
-      <button class="quick-btn" onclick="sendQuick('What is my registered address?')">📍 Registered Address</button>
-      <button class="quick-btn" onclick="sendQuick('What is my Job Profile?')">📋 Complete Profile</button>
-      <button class="quick-btn" onclick="sendQuick('What is the bereavement leave policy?')">📖 Bereavement Policy</button>
-      <button class="quick-btn" onclick="sendQuick('Submit 2 days vacation starting next Monday')">✈️ Request Time Off</button>
+    <div class="action-header">
+      <div class="category-tabs" id="categoryTabs">
+        <button class="tab-btn active" onclick="filterCategory('all')">✨ All Actions</button>
+        <button class="tab-btn" onclick="filterCategory('hr')">🏖️ WorkWeek (HR)</button>
+        <button class="tab-btn" onclick="filterCategory('itsm')">🛠️ ServiceImmediately (ITSM)</button>
+        <button class="tab-btn" onclick="filterCategory('policy')">📚 Policies & FAQ</button>
+        <button class="tab-btn" onclick="filterCategory('cross')">🔄 Cross-System</button>
+      </div>
+    </div>
+
+    <div class="quick-actions" id="quickActionsList">
+      <!-- WorkWeek / HR Actions -->
+      <button class="quick-btn hr" data-cat="hr" onclick="sendQuick('What is my current leave balance?')">🌴 Leave Balances</button>
+      <button class="quick-btn hr" data-cat="hr" onclick="sendQuick('Submit 2 days vacation starting next Monday')">✈️ Request Vacation</button>
+      <button class="quick-btn hr" data-cat="hr" onclick="sendQuick('Who is my manager and what is my department?')">👤 Manager & Dept</button>
+      <button class="quick-btn hr" data-cat="hr" onclick="sendQuick('Show my recent leave request history')">📋 Leave History</button>
+
+      <!-- ServiceImmediately / ITSM Actions -->
+      <button class="quick-btn itsm" data-cat="itsm" onclick="sendQuick('Create an IT ticket because my VPN connection keeps dropping.')">🔌 Report VPN Issue</button>
+      <button class="quick-btn itsm" data-cat="itsm" onclick="sendQuick('Create an IT ticket for laptop screen flickering and hardware malfunction.')">💻 Report Laptop Issue</button>
+      <button class="quick-btn itsm" data-cat="itsm" onclick="sendQuick('Create an IT ticket requesting access to enterprise GitHub repository.')">🔑 Request System Access</button>
+      <button class="quick-btn itsm" data-cat="itsm" onclick="sendQuick('List all my active support tickets')">🎫 My Active Tickets</button>
+      <button class="quick-btn itsm" data-cat="itsm" onclick="sendQuick('What is the status of ticket INC-5001?')">🔍 Check Ticket Status</button>
+
+      <!-- HR & IT Policies & FAQ -->
+      <button class="quick-btn policy" data-cat="policy" onclick="sendQuick('What is the company bereavement leave entitlement policy?')">📖 Bereavement Policy</button>
+      <button class="quick-btn policy" data-cat="policy" onclick="sendQuick('What is the policy for purchasing home office monitors for remote workers?')">🏠 Remote Work Policy</button>
+      <button class="quick-btn policy" data-cat="policy" onclick="sendQuick('What is the company parental leave duration and entitlement policy?')">👶 Parental Leave Policy</button>
+
+      <!-- Cross-System Orchestration Actions -->
+      <button class="quick-btn cross" data-cat="cross" onclick="sendQuick('I just read the remote work policy and saw I am eligible for a home office monitor. Can you verify my remote status and order one for me?')">🖥️ Order Home Monitor (UC-2.1)</button>
+      <button class="quick-btn cross" data-cat="cross" onclick="sendQuick('I need to take short-term medical leave starting next Monday. What is the process, and can you set it up for me?')">🏥 Medical Leave & Delegate (UC-2.2)</button>
+      <button class="quick-btn cross" data-cat="cross" onclick="sendQuick('I am transferring to the London office next month. Can you tell me the relocation allowance, update my record, and get my building access sorted?')">🇬🇧 London Transfer & Badge (UC-2.3)</button>
     </div>
 
     <div class="chat-window" id="chatWindow">
@@ -715,11 +770,62 @@ def serve_web_chat_ui():
       sendMessage();
     }
 
+    function filterCategory(cat) {
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('onclick').includes(`'${cat}'`));
+      });
+      document.querySelectorAll('#quickActionsList .quick-btn').forEach(btn => {
+        if (cat === 'all' || btn.getAttribute('data-cat') === cat) {
+          btn.style.display = 'inline-flex';
+        } else {
+          btn.style.display = 'none';
+        }
+      });
+    }
+
     window.addEventListener('DOMContentLoaded', checkAuth);
 
   </script>
 </body>
 </html>"""
+
+
+def _build_badge_html(build: BuildInfo) -> str:
+    """The version chip in the header: `⑂ 1a2b3c4`, linked to the commit.
+
+    A dirty tree gets a different colour, because "running my edits" and
+    "running what is on the branch" are the two answers a developer is trying
+    to tell apart and they should not look alike. An unresolved version is a
+    plain span - an `<a>` with an empty href reloads the page, which is a worse
+    lie than admitting the build is unknown.
+    """
+    if build.commit == UNKNOWN:
+        return (
+            '<span class="badge build-badge build-badge-unknown" '
+            'title="Build version unknown: no GIT_COMMIT_SHA, and no git repository to read.">'
+            "⑂ unknown</span>"
+        )
+
+    title = build.commit
+    classes = "badge build-badge"
+    if build.dirty:
+        title += " (tracked files differ - this process is running local edits)"
+        classes += " build-badge-dirty"
+
+    return (
+        f'<a class="{classes}" href="{escape(build.url or "", quote=True)}" '
+        f'target="_blank" rel="noopener" title="{escape(title, quote=True)}">'
+        f"⑂ {escape(build.label)}</a>"
+    )
+
+
+@app.get("/", response_class=HTMLResponse)
+def serve_web_chat_ui():
+    """Serve responsive interactive web chat UI for testing agent features."""
+    # Substituted rather than interpolated: the page is ~500 lines of CSS and
+    # JavaScript, and every `{` in it would have to be doubled to make the
+    # literal an f-string.
+    return _CHAT_UI_HTML.replace("__BUILD_BADGE__", _build_badge_html(get_build_info()))
 
 
 

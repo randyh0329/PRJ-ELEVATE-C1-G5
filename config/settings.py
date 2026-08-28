@@ -25,20 +25,41 @@ class Settings(BaseSettings):
     # Security & Request Origin
     AUTOMATION_ORIGIN_HEADER: str = "HR_AGENT_ORCHESTRATOR_V1"
     DEFAULT_CALLER_ID: str = "EMP-1001"
+    # The HMAC key session tokens are signed with. Deliberately has no default:
+    # SDD §7.2 is "no secret in code or state - Secret Manager only", and a
+    # committed signing key lets anyone holding the repo mint a session for any
+    # employee id. Unset, `src.security.auth` signs with a per-process random
+    # key, so sessions simply do not survive a restart.
+    SESSION_SECRET_KEY: str | None = None
 
     # Guardrails
-    DEDUPLICATION_WINDOW_MINUTES: int = 30
+    DEDUPLICATION_WINDOW_MINUTES: int = 10
     MAX_LEAVE_RETRIES: int = 3
     TOOL_TIMEOUT_SECONDS: float = 4.0
     SAFETY_LATENCY_BUDGET_MS: int = 120
 
     # SaaS FastMCP Settings (WorkWeek & ServiceImmediately)
     SAAS_MCP_BASE_URL: str = "https://mock-saas.aishprabhat.demo.altostrat.com"
-    SAAS_MCP_CREDENTIAL: str = "mcp_3DpwwQTaG6eV5SJpTA-QIV7aUqDblj-Qkn8bDkeiHWk"
+    # Placeholder only. The real token comes from Secret Manager in every
+    # deployed environment (`--set-secrets SAAS_MCP_CREDENTIAL=saas-mcp-token:latest`
+    # in .github/workflows/deploy-cloud-run.yml and scripts/deploy-cloud-run.sh);
+    # locally, export SAAS_MCP_CREDENTIAL or put it in .env, which is gitignored.
+    # Do not paste a live token here - this repository is public, and the value
+    # that used to sit on this line had to be rotated.
+    SAAS_MCP_CREDENTIAL: str = "mcp_local_dev_placeholder_set_SAAS_MCP_CREDENTIAL"
     USE_LIVE_MCP: bool = True
     GCP_PROJECT_ID: str = "pe-group5"
     MCP_USER_TOKENS_SECRET_ID: str = "mcp-user-tokens"
     USE_SECRET_MANAGER: bool = True
+
+    # Model Armor Settings (§4.3, FR-1.3, NFR-1.1, NFR-2.1, ALRT-08)
+    PROJECT_ID: str = "pe-group5"
+    REGION: str = "us-central1"
+    USE_LIVE_MODEL_ARMOR: bool = False
+    MODEL_ARMOR_USER_TEMPLATE: str = "hr-ingress-template"
+    MODEL_ARMOR_MODEL_TEMPLATE: str = "hr-egress-template"
+    MODEL_ARMOR_DEADLINE_MS: int = 150
+    MODEL_ARMOR_CIRCUIT_BREAKER_RATE: float = 0.02
 
     # Future Boilerplate Settings (Live SaaS / RAG / A2A)
     WORKDAY_API_BASE_URL: str = "https://api.workday.com/v40"

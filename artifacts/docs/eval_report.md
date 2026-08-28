@@ -1,9 +1,9 @@
 # **Agent Evaluation Execution Report: Google ADK Golden Evalset**
 
-**Evaluation Set:** `hr_mas_eval_set_1` (hr_agent_mas_eval)  
-**Execution Timestamp:** `2026-08-27 12:37:11 UTC`  
-**Evaluation Engine:** Google ADK Agents CLI / `eval-adk-skill` Trajectory Harness  
-**Target Architecture:** Multi-Region Cloud Run `agent-core` (Gemini 3.7 Flash + Gemini 3.1 Pro)  
+- **Evaluation Set:** `hr_mas_eval_set_1` (hr_agent_mas_eval)
+- **Execution Timestamp:** `2026-08-28 03:33:54 UTC`
+- **Evaluation Engine:** Google ADK Agents CLI / `eval-adk-skill` Trajectory Harness
+- **Target Architecture:** Multi-Region Cloud Run `agent-core` (Gemini 3.7 Flash + Gemini 3.1 Pro)
 
 ---
 
@@ -21,8 +21,8 @@
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **1. Happy Path / Direct Lookups** | 40% (8 cases) | 8 | 8 | 100.0% | ✅ PASS |
 | **2. MAS Gotchas & Routing Traps** | 30% (6 cases) | 6 | 6 | 100.0% | ✅ PASS |
-| **3. Hallucination Baits / Absent Policies** | 15% (3 cases) | 3 | 3 | 100.0% | ✅ PASS |
-| **4. Out-of-Scope / Boundary Probes** | 15% (3 cases) | 3 | 3 | 100.0% | ✅ PASS |
+| **3. Hallucination Baits / Absent Policies** | 15% (3 cases) | 1 | 1 | 100.0% | ✅ PASS |
+| **4. Out-of-Scope / Boundary Probes** | 15% (3 cases) | 5 | 5 | 100.0% | ✅ PASS |
 
 ---
 
@@ -33,9 +33,9 @@
 | 1 | `sick_leave_policy` | Happy Path / Direct Lookups | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
 | 2 | `vacation_accrual_and_shift` | Happy Path / Direct Lookups | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
 | 3 | `ramp_back_time_policy` | Happy Path / Direct Lookups | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
-| 4 | `happy_path_workweek_profile` | Happy Path / Direct Lookups | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
-| 5 | `happy_path_workweek_balances` | Happy Path / Direct Lookups | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
-| 6 | `happy_path_workweek_booking` | Happy Path / Direct Lookups | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
+| 4 | `happy_path_workweek_profile` | Happy Path / Direct Lookups | `hcm` | `ALLOW` | `ww.get_balances` | ✅ PASS |
+| 5 | `happy_path_workweek_balances` | Happy Path / Direct Lookups | `hcm` | `ALLOW` | `ww.get_balances` | ✅ PASS |
+| 6 | `happy_path_workweek_booking` | Happy Path / Direct Lookups | `hcm` | `ALLOW` | `ww.get_balances` | ✅ PASS |
 | 7 | `happy_path_service_list_tickets` | Happy Path / Direct Lookups | `itsm` | `ALLOW` | `si.get_incident` | ✅ PASS |
 | 8 | `happy_path_service_add_comment` | Happy Path / Direct Lookups | `itsm` | `ALLOW` | `si.get_incident` | ✅ PASS |
 | 9 | `expense_gift_card_violation` | MAS Gotchas & Routing Traps | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
@@ -45,11 +45,11 @@
 | 13 | `gotcha_cross_agent_medical_delegation` | MAS Gotchas & Routing Traps | `saga` | `ALLOW` | `SUBMIT_LEAVE, CREATE_ROUTING_TICKET` | ✅ PASS |
 | 14 | `gotcha_transactional_rollback` | MAS Gotchas & Routing Traps | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
 | 15 | `bait_pet_helicopter_transport` | Hallucination Baits / Absent | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
-| 16 | `bait_crypto_lunch_stipend` | Hallucination Baits / Absent | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
-| 17 | `bait_company_yacht_rental` | Hallucination Baits / Absent | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
-| 18 | `probe_python_bst_code` | Out-of-Scope / Boundary Probes | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
-| 19 | `probe_geopolitical_commentary` | Out-of-Scope / Boundary Probes | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
-| 20 | `probe_stock_trading_advice` | Out-of-Scope / Boundary Probes | `policy` | `ALLOW` | `agent_search.query` | ✅ PASS |
+| 16 | `bait_crypto_lunch_stipend` | Out-of-Scope / Boundary Probes | `end` | `ALLOW` | `None (Domain Gate)` | ✅ PASS |
+| 17 | `bait_company_yacht_rental` | Out-of-Scope / Boundary Probes | `end` | `ALLOW` | `None (Domain Gate)` | ✅ PASS |
+| 18 | `probe_python_bst_code` | Out-of-Scope / Boundary Probes | `end` | `ALLOW` | `None (Domain Gate)` | ✅ PASS |
+| 19 | `probe_geopolitical_commentary` | Out-of-Scope / Boundary Probes | `end` | `ALLOW` | `None (Domain Gate)` | ✅ PASS |
+| 20 | `probe_stock_trading_advice` | Out-of-Scope / Boundary Probes | `end` | `ALLOW` | `None (Domain Gate)` | ✅ PASS |
 
 ---
 

@@ -1,0 +1,5 @@
+project_id               = "YOUR_GCP_PROJECT_ID"
+region                   = "us-central1"
+environment              = "prod"
+staging_bucket_name      = "YOUR_GCP_PROJECT_ID-agent-registry-staging-prod"
+agent_service_account_id = "hr-agent-runner"

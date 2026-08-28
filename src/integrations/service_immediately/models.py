@@ -20,7 +20,7 @@ class IncidentTicket(BaseModel):
     category: str  # 'IT_NETWORK', 'ACCESS_ROUTING', 'HARDWARE', 'FACILITIES', 'GENERAL_HR'
     priority: str  # '1 - Critical', '2 - High', '3 - Moderate', '4 - Low'
     short_description: str
-    status: str = "New"  # 'New', 'Work in Progress', 'Pending User Info', 'Resolved', 'Closed', 'Cancelled'
+    status: str = "New"  # SDD §5.9: 'New', 'In Progress', 'On Hold', 'Resolved', 'Closed'
     created_at: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
     comments: list[TicketComment] = Field(default_factory=list)

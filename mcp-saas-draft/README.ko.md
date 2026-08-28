@@ -68,7 +68,7 @@ pip install -r requirements.txt
 ### 2. 환경변수 설정 (선택 사항)
 기본값으로 팀 토큰이 내장되어 있으나, 필요 시 재지정할 수 있습니다:
 ```bash
-export SAAS_MCP_CREDENTIAL="mcp_HiIwlFkRL-DrjYgdQvO-fMHg8Q8A_YskI5J00qrP8SA"
+export SAAS_MCP_CREDENTIAL="mcp_local_dev_placeholder_set_SAAS_MCP_CREDENTIAL"
 ```
 
 ### 3. 대화형 수동 테스트 스크립트 실행
@@ -99,14 +99,14 @@ from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnecti
 workweek_mcp = McpToolset(
     connection_params=StreamableHTTPConnectionParams(
         url="https://mock-saas.aishprabhat.demo.altostrat.com/work-week/mcp/",
-        headers={"X-MCP-Token": "mcp_HiIwlFkRL-DrjYgdQvO-fMHg8Q8A_YskI5J00qrP8SA"}
+        headers={"X-MCP-Token": "mcp_local_dev_placeholder_set_SAAS_MCP_CREDENTIAL"}
     )
 )
 
 serviceimmediately_mcp = McpToolset(
     connection_params=StreamableHTTPConnectionParams(
         url="https://mock-saas.aishprabhat.demo.altostrat.com/service-immediately/mcp/",
-        headers={"X-MCP-Token": "mcp_HiIwlFkRL-DrjYgdQvO-fMHg8Q8A_YskI5J00qrP8SA"}
+        headers={"X-MCP-Token": "mcp_local_dev_placeholder_set_SAAS_MCP_CREDENTIAL"}
     )
 )
 

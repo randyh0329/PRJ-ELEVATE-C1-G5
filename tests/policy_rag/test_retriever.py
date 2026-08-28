@@ -6,13 +6,23 @@ which has no semantic signal. See `scripts/eval_retrieval.py`.
 
 from __future__ import annotations
 
+from pathlib import Path
+from types import SimpleNamespace
+from urllib.parse import unquote
+
 import pytest
 
+from src.grounding.citations import citation_base_url
 from src.grounding.policy_rag.config import GENERAL_ENTITLEMENT
 from src.grounding.policy_rag.documents import Chunk
 from src.grounding.policy_rag.embeddings import build_provider
 from src.grounding.policy_rag.index import PolicyIndex
-from src.grounding.policy_rag.retriever import RetrievalRequest, Retriever, tokenize
+from src.grounding.policy_rag.retriever import (
+    RetrievalRequest,
+    Retriever,
+    _citation_resolves,
+    tokenize,
+)
 
 
 @pytest.fixture(scope="module")
@@ -218,8 +228,19 @@ def test_every_returned_hit_has_a_resolvable_citation(retriever):
 
 
 def test_citation_points_at_a_real_anchor(config, retriever):
+    """The uri is a link the employee can open; the file it names has to exist.
+
+    Those are separate claims and both are checked here, because the uri stopped
+    being a filesystem path: it is a blob URL now, so "renders as a link" and
+    "the target is real" can no longer fail together in a way one assertion
+    would catch.
+    """
+    base = citation_base_url()
+
     for hit in _all(retriever, query="sick leave medical certificate"):
-        path, _, anchor = hit.citation.uri.partition("#")
+        assert hit.citation.uri.startswith(base)
+        url, _, anchor = hit.citation.uri.partition("#")
+        path = unquote(url.removeprefix(base))
         assert (config.repo_root / path).is_file()
         if anchor:
             assert anchor == hit.chunk.anchor
@@ -258,6 +279,92 @@ def test_evict_document_removes_its_vectors(config, chunks, index, tmp_path):
     assert removed > 0
     assert len(working.chunks) == before - removed
     assert not any(c.path == path for c in working.chunks)
+
+
+def test_a_hit_whose_citation_does_not_resolve_is_rejected(retriever, caplog):
+    """FR-5.3: a citation that does not resolve is not a citation.
+
+    Showing the passage anyway would present handbook text with no way to check
+    it - which is the ungrounded answer the whole retrieval layer exists to stop.
+    """
+    import src.grounding.policy_rag.retriever as retriever_module
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(retriever_module, "_citation_resolves", lambda root, path, anchor: False)
+        with caplog.at_level("WARNING", logger="src.grounding.policy_rag.retriever"):
+            result = retriever.retrieve(
+                RetrievalRequest(query="vacation leave accrual", relevance_gate=0.0, top_k=50)
+            )
+
+    assert result.hits == []
+    assert result.rejected
+    assert "unresolvable citation" in caplog.text
+
+
+# --- degenerate inputs --------------------------------------------------------
+
+
+def test_an_index_with_no_chunks_has_no_idf_table():
+    """Reachable after evicting the last document; the division in the IDF
+    formula would be by zero."""
+    assert Retriever._build_idf(SimpleNamespace(chunks=[])) == {}
+
+
+def test_a_query_of_nothing_but_stopwords_scores_no_corroboration(retriever):
+    """`tokenize` can legitimately return nothing ("what is it?"). Zero is the
+    honest answer - there is nothing to corroborate against, not perfect overlap."""
+    assert tokenize("what is it") == []
+    assert retriever._lexical_score([], _chunk("Fourteen days of paid vacation leave.")) == 0.0
+
+
+def test_a_collapsed_calibration_band_falls_back_to_the_raw_cosine(retriever, config):
+    """`cosine_floor == cosine_ceiling` divides by zero. It is a misconfiguration,
+    but the service must degrade to raw cosine rather than fail every query."""
+    calibration = config.retrieval
+    original = calibration.cosine_ceiling
+    calibration.cosine_ceiling = calibration.cosine_floor
+    try:
+        assert retriever._calibrate(0.6) == pytest.approx(0.6)
+        assert retriever._calibrate(1.4) == pytest.approx(1.0)
+        assert retriever._calibrate(-0.2) == pytest.approx(0.0)
+    finally:
+        calibration.cosine_ceiling = original
+
+
+# --- the citation integrity check itself --------------------------------------
+
+
+def test_a_citation_to_a_missing_file_does_not_resolve(tmp_path):
+    assert _citation_resolves(tmp_path, "gone.md", "accrual") is False
+
+
+def test_a_citation_to_a_file_with_no_anchor_resolves(tmp_path):
+    (tmp_path / "leave.md").write_text("# Accrual\n\nFourteen days.\n", encoding="utf-8")
+
+    assert _citation_resolves(tmp_path, "leave.md", "") is True
+
+
+def test_an_anchor_matching_no_heading_does_not_resolve(tmp_path):
+    """A deep link to a section that is not in the document sends the reader to
+    the top of the file with no way to tell the claim was never there."""
+    (tmp_path / "leave.md").write_text("# Accrual\n\n**20.1 Eligibility**\n", encoding="utf-8")
+
+    assert _citation_resolves(tmp_path, "leave.md", "accrual") is True
+    assert _citation_resolves(tmp_path, "leave.md", "201-eligibility") is True
+    assert _citation_resolves(tmp_path, "leave.md", "carryover-and-payout") is False
+
+
+def test_a_file_that_cannot_be_read_does_not_resolve(tmp_path, monkeypatch):
+    """Unreadable is not the same as absent, but for a citation it has to be
+    treated the same: nothing can be shown to back the claim."""
+    (tmp_path / "unreadable.md").write_text("# Accrual\n", encoding="utf-8")
+
+    def _refuse(self, *args, **kwargs):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(Path, "read_text", _refuse)
+
+    assert _citation_resolves(tmp_path, "unreadable.md", "accrual") is False
 
 
 def test_tokenize_drops_stopwords_but_keeps_figures():

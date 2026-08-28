@@ -27,6 +27,7 @@ locals {
     "orgpolicy.googleapis.com",
     "logging.googleapis.com",
     "monitoring.googleapis.com",
+    "modelarmor.googleapis.com",
     "agentregistry.googleapis.com"
   ]
 }
@@ -41,7 +42,6 @@ resource "google_project_service" "enabled_apis" {
 
 # -----------------------------------------------------------------------------
 # 2. Artifact Registry Docker Repository
-
 # -----------------------------------------------------------------------------
 resource "google_artifact_registry_repository" "docker_repo" {
   depends_on    = [google_project_service.enabled_apis]
@@ -87,7 +87,7 @@ resource "google_secret_manager_secret_version" "mcp_user_tokens_initial" {
 }
 
 # -----------------------------------------------------------------------------
-# 4. Service Account for Cloud Run Runtime (Least Privilege - SDD §7.2)
+# 4. Service Account for Cloud Run Runtime (Least Privilege - SDD §4.9 & §7.2)
 # -----------------------------------------------------------------------------
 resource "google_service_account" "cloud_run_sa" {
   depends_on   = [google_project_service.enabled_apis]
@@ -130,6 +130,13 @@ resource "google_project_iam_member" "cloud_run_logging" {
 resource "google_project_iam_member" "cloud_run_monitoring" {
   project = var.project_id
   role    = "roles/monitoring.metricWriter"
+  member  = "serviceAccount:${google_service_account.cloud_run_sa.email}"
+}
+
+# Grant Cloud Run SA Model Armor user role (§4.3, §4.9)
+resource "google_project_iam_member" "cloud_run_model_armor" {
+  project = var.project_id
+  role    = "roles/modelarmor.user"
   member  = "serviceAccount:${google_service_account.cloud_run_sa.email}"
 }
 
