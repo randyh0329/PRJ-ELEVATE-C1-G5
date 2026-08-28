@@ -26,7 +26,8 @@ locals {
     "cloudresourcemanager.googleapis.com",
     "orgpolicy.googleapis.com",
     "logging.googleapis.com",
-    "monitoring.googleapis.com"
+    "monitoring.googleapis.com",
+    "agentregistry.googleapis.com"
   ]
 }
 
@@ -238,7 +239,7 @@ resource "google_cloud_run_v2_service" "hr_agentic_service" {
       }
 
       env {
-        name  = "SAAS_MCP_BASE_URL"
+        name = "SAAS_MCP_BASE_URL"
 
         value = var.saas_mcp_base_url
       }
@@ -320,6 +321,220 @@ resource "google_cloud_run_v2_service_iam_member" "public_invoker" {
   name     = google_cloud_run_v2_service.hr_agentic_service.name
   role     = "roles/run.invoker"
   member   = "allUsers"
+}
+
+# -----------------------------------------------------------------------------
+# 7. Dedicated Microservice: Policy RAG A2A Agent (Service 2 - Private)
+# -----------------------------------------------------------------------------
+resource "google_service_account" "policy_rag_sa" {
+  depends_on   = [google_project_service.enabled_apis]
+  project      = var.project_id
+  account_id   = "policy-rag-sa"
+  display_name = "Policy RAG A2A Agent Service Account"
+}
+
+resource "google_cloud_run_v2_service" "hr_policy_rag_service" {
+  depends_on = [
+    google_project_service.enabled_apis,
+    google_artifact_registry_repository.docker_repo
+  ]
+
+  project  = var.project_id
+  location = var.region
+  name     = "hr-policy-rag-service"
+  ingress  = "INGRESS_TRAFFIC_ALL"
+
+  template {
+    service_account = google_service_account.policy_rag_sa.email
+
+    scaling {
+      min_instance_count = 0
+      max_instance_count = 5
+    }
+
+    containers {
+      image = var.container_image
+
+      resources {
+        limits = {
+          cpu    = "2000m"
+          memory = "2048Mi"
+        }
+      }
+
+      ports {
+        container_port = 8080
+      }
+
+      startup_probe {
+        http_get {
+          path = "/healthz"
+          port = 8080
+        }
+        initial_delay_seconds = 5
+        timeout_seconds       = 3
+        period_seconds        = 10
+        failure_threshold     = 3
+      }
+
+      liveness_probe {
+        http_get {
+          path = "/healthz"
+          port = 8080
+        }
+        timeout_seconds   = 3
+        period_seconds    = 15
+        failure_threshold = 3
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      template[0].containers[0].image
+    ]
+  }
+}
+
+# Grant Orchestrator SA permission to invoke Policy RAG (IAM OIDC Authentication)
+resource "google_cloud_run_v2_service_iam_member" "orchestrator_invokes_policy_rag" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.hr_policy_rag_service.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.cloud_run_sa.email}"
+}
+
+# Grant CI/CD deployer SA permissions
+resource "google_cloud_run_v2_service_iam_member" "deployer_invokes_policy_rag" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.hr_policy_rag_service.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.github_deployer_sa.email}"
+}
+
+resource "google_service_account_iam_member" "deployer_sa_user_policy_rag" {
+  service_account_id = google_service_account.policy_rag_sa.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.github_deployer_sa.email}"
+}
+
+
+# -----------------------------------------------------------------------------
+# 8. Dedicated Microservice: SaaS Integration Adapters (Service 3 - Private)
+# -----------------------------------------------------------------------------
+resource "google_service_account" "saas_adapter_sa" {
+  depends_on   = [google_project_service.enabled_apis]
+  project      = var.project_id
+  account_id   = "saas-adapter-sa"
+  display_name = "SaaS FastMCP Adapters Service Account"
+}
+
+resource "google_secret_manager_secret_iam_member" "adapter_token_accessor" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.saas_mcp_token.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.saas_adapter_sa.email}"
+}
+
+resource "google_cloud_run_v2_service" "saas_adapter_service" {
+  depends_on = [
+    google_project_service.enabled_apis,
+    google_artifact_registry_repository.docker_repo,
+    google_secret_manager_secret_version.saas_mcp_token_version,
+    google_secret_manager_secret_iam_member.adapter_token_accessor
+  ]
+
+  project  = var.project_id
+  location = var.region
+  name     = "saas-integration-adapters"
+  ingress  = "INGRESS_TRAFFIC_ALL"
+
+  template {
+    service_account = google_service_account.saas_adapter_sa.email
+
+    scaling {
+      min_instance_count = 0
+      max_instance_count = 5
+    }
+
+    containers {
+      image = var.container_image
+
+      resources {
+        limits = {
+          cpu    = "1000m"
+          memory = "1024Mi"
+        }
+      }
+
+      ports {
+        container_port = 8080
+      }
+
+      env {
+        name = "SAAS_MCP_CREDENTIAL"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.saas_mcp_token.secret_id
+            version = "latest"
+          }
+        }
+      }
+
+      startup_probe {
+        http_get {
+          path = "/health"
+          port = 8080
+        }
+        initial_delay_seconds = 5
+        timeout_seconds       = 3
+        period_seconds        = 10
+        failure_threshold     = 3
+      }
+
+      liveness_probe {
+        http_get {
+          path = "/health"
+          port = 8080
+        }
+        timeout_seconds   = 3
+        period_seconds    = 15
+        failure_threshold = 3
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      template[0].containers[0].image
+    ]
+  }
+}
+
+# Grant Orchestrator SA permission to invoke SaaS Adapters (IAM OIDC Authentication)
+resource "google_cloud_run_v2_service_iam_member" "orchestrator_invokes_saas_adapter" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.saas_adapter_service.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.cloud_run_sa.email}"
+}
+
+# Grant CI/CD deployer SA permissions
+resource "google_cloud_run_v2_service_iam_member" "deployer_invokes_saas_adapter" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.saas_adapter_service.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.github_deployer_sa.email}"
+}
+
+resource "google_service_account_iam_member" "deployer_sa_user_saas_adapter" {
+  service_account_id = google_service_account.saas_adapter_sa.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.github_deployer_sa.email}"
 }
 
 

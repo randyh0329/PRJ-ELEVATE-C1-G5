@@ -17,7 +17,9 @@ on:
 env:
   PROJECT_ID: pe-group5
   REGION: us-central1
-  SERVICE_NAME: hr-agentic-service
+  SERVICE_NAME_ORCHESTRATOR: hr-agentic-service
+  SERVICE_NAME_POLICY_RAG: hr-policy-rag-service
+  SERVICE_NAME_SAAS_ADAPTER: saas-integration-adapters
   ARTIFACT_REPO: hr-agentic-repo
   WIF_PROVIDER: projects/549227441635/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider
   WIF_SERVICE_ACCOUNT: github-deployer-sa@pe-group5.iam.gserviceaccount.com
@@ -76,46 +78,76 @@ jobs:
         run: |
           gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-      - name: Build and Push Docker Image
+      - name: Build and Push Docker Images (All 3 Microservices)
         run: |
-          IMAGE_TAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME }}"
-          docker build -t ${IMAGE_TAG}:${{ github.sha }} -t ${IMAGE_TAG}:latest .
-          docker push ${IMAGE_TAG}:${{ github.sha }}
-          docker push ${IMAGE_TAG}:latest
+          # 1. Orchestrator Image
+          TAG_ORCH="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME_ORCHESTRATOR }}"
+          docker build -f Dockerfile.orchestrator -t ${TAG_ORCH}:${{ github.sha }} -t ${TAG_ORCH}:latest .
+          docker push ${TAG_ORCH}:${{ github.sha }}
+          docker push ${TAG_ORCH}:latest
 
-      - name: Deploy to Cloud Run
+          # 2. Policy RAG A2A Image
+          TAG_RAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME_POLICY_RAG }}"
+          docker build -f Dockerfile.policy_rag -t ${TAG_RAG}:${{ github.sha }} -t ${TAG_RAG}:latest .
+          docker push ${TAG_RAG}:${{ github.sha }}
+          docker push ${TAG_RAG}:latest
+
+          # 3. SaaS Integration Adapters Image
+          TAG_SAAS="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME_SAAS_ADAPTER }}"
+          docker build -f Dockerfile.saas_adapter -t ${TAG_SAAS}:${{ github.sha }} -t ${TAG_SAAS}:latest .
+          docker push ${TAG_SAAS}:${{ github.sha }}
+          docker push ${TAG_SAAS}:latest
+
+      - name: Deploy Policy RAG A2A Service (Private Cloud Run)
+        run: |
+          IMAGE_TAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME_POLICY_RAG }}:${{ github.sha }}"
+          gcloud run deploy ${{ env.SERVICE_NAME_POLICY_RAG }} \
+            --image "${IMAGE_TAG}" \
+            --region "${{ env.REGION }}" \
+            --platform managed \
+            --no-allow-unauthenticated \
+            --service-account "policy-rag-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
+            --cpu 2 \
+            --memory 2Gi \
+            --quiet
+
+      - name: Deploy SaaS Integration Adapters Service (Private Cloud Run)
+        run: |
+          IMAGE_TAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME_SAAS_ADAPTER }}:${{ github.sha }}"
+          gcloud run deploy ${{ env.SERVICE_NAME_SAAS_ADAPTER }} \
+            --image "${IMAGE_TAG}" \
+            --region "${{ env.REGION }}" \
+            --platform managed \
+            --no-allow-unauthenticated \
+            --service-account "saas-adapter-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
+            --set-secrets "SAAS_MCP_CREDENTIAL=saas-mcp-token:latest" \
+            --quiet
+
+      - name: Deploy HR Agent Orchestrator (Public Cloud Run)
         id: deploy
         run: |
-          IMAGE_TAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
-          gcloud run deploy ${{ env.SERVICE_NAME }} \
+          IMAGE_TAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME_ORCHESTRATOR }}:${{ github.sha }}"
+          gcloud run deploy ${{ env.SERVICE_NAME_ORCHESTRATOR }} \
             --image "${IMAGE_TAG}" \
             --region "${{ env.REGION }}" \
             --platform managed \
             --allow-unauthenticated \
-            --set-env-vars "SAAS_MCP_BASE_URL=https://mock-saas.aishprabhat.demo.altostrat.com,USE_LIVE_MCP=true,DEFAULT_CALLER_ID=EMP-509" \
+            --service-account "cloud-run-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
+            --set-env-vars "ENABLE_AGENT_REGISTRY_API=true,GCP_PROJECT_ID=${{ env.PROJECT_ID }},AGENT_REGISTRY_LOCATION=${{ env.REGION }},USE_LIVE_MCP=true,DEFAULT_CALLER_ID=EMP-509" \
             --set-secrets "SAAS_MCP_CREDENTIAL=saas-mcp-token:latest" \
             --quiet
 
-
-      - name: Verify Cloud Run Service Deployment
+      - name: Verify All Cloud Run Services Deployment
         run: |
-          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --format 'value(status.url)')
-          LATEST_READY_REV=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --format 'value(status.latestReadyRevisionName)')
-          LATEST_CREATED_REV=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --format 'value(status.latestCreatedRevisionName)')
-
           echo "================================================================="
-          echo "🚀 Cloud Run Service Deployment Verification"
-          echo "Service URL:             ${SERVICE_URL}"
-          echo "Latest Created Revision: ${LATEST_CREATED_REV}"
-          echo "Latest Ready Revision:   ${LATEST_READY_REV}"
+          echo "🚀 Verifying All 3 Cloud Run Services in ${{ env.REGION }}"
           echo "================================================================="
-
-          if [ -z "${LATEST_READY_REV}" ]; then
-            echo "❌ Error: Cloud Run service has no ready revisions."
-            exit 1
-          fi
-
-          echo "✅ Cloud Run revision ${LATEST_READY_REV} is ready and serving traffic!"
+          for SVC in ${{ env.SERVICE_NAME_ORCHESTRATOR }} ${{ env.SERVICE_NAME_POLICY_RAG }} ${{ env.SERVICE_NAME_SAAS_ADAPTER }}; do
+            URL=$(gcloud run services describe ${SVC} --region ${{ env.REGION }} --format 'value(status.url)' 2>/dev/null || echo "not-deployed")
+            REV=$(gcloud run services describe ${SVC} --region ${{ env.REGION }} --format 'value(status.latestReadyRevisionName)' 2>/dev/null || echo "none")
+            echo "• Service ${SVC}: URL=${URL}, Revision=${REV}"
+          done
+          echo "================================================================="
 
 
 

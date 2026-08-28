@@ -93,3 +93,54 @@ def test_agent_registry_fail_fast_diagnostics(monkeypatch) -> None:
     assert data["intent"] == "REGISTRY_FAIL_FAST"
     assert "Agent Registry Fail-Fast Diagnostic" in data["response"]
     assert data["processing_metadata"]["stage"] == "A2A_DISCOVERY"
+
+
+def test_saas_mcp_microservice_endpoints() -> None:
+    """Verify the standalone FastMCP SaaS Adapter microservice (Cloud Run Service 3)."""
+    from src.integrations.mcp.server import app as mcp_app
+
+    mcp_client = TestClient(mcp_app)
+
+    # 1. Health Probe
+    h_resp = mcp_client.get("/health")
+    assert h_resp.status_code == 200
+    assert h_resp.json()["status"] == "HEALTHY"
+
+    # 2. WorkWeek tools/list
+    w_resp = mcp_client.post("/work-week/mcp/", json={
+        "jsonrpc": "2.0",
+        "id": "1",
+        "method": "tools/list",
+        "params": {}
+    })
+    assert w_resp.status_code == 200
+    w_data = w_resp.json()
+    assert "result" in w_data
+    tool_names = [t["name"] for t in w_data["result"]["tools"]]
+    assert "get_employee_balances" in tool_names
+    assert "submit_time_off_request" in tool_names
+
+    # 3. WorkWeek tools/call get_employee_balances
+    bal_resp = mcp_client.post("/work-week/mcp/", json={
+        "jsonrpc": "2.0",
+        "id": "2",
+        "method": "tools/call",
+        "params": {
+            "name": "get_employee_balances",
+            "arguments": {"employee_id": "EMP-509"}
+        }
+    })
+    assert bal_resp.status_code == 200
+    bal_data = bal_resp.json()
+    assert "vacation_days_remaining" in bal_data["result"]
+
+    # 4. ServiceImmediately tools/list
+    itsm_resp = mcp_client.post("/service-immediately/mcp/", json={
+        "jsonrpc": "2.0",
+        "id": "3",
+        "method": "tools/list",
+        "params": {}
+    })
+    assert itsm_resp.status_code == 200
+    itsm_data = itsm_resp.json()
+    assert "create_incident" in [t["name"] for t in itsm_data["result"]["tools"]]

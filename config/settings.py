@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     VERTEX_SEARCH_DATASTORE_ID: str | None = None
     A2A_PUBSUB_TOPIC: str | None = None
 
+    # GCP Agent Registry Settings
+    POLICY_A2A_URL: str = "http://127.0.0.1:8000"
+    AGENT_REGISTRY_LOCATION: str = "us-central1"
+    ENABLE_AGENT_REGISTRY_API: bool = False
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
