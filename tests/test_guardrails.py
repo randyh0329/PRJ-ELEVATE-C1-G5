@@ -36,10 +36,10 @@ def test_leave_guardrail_past_date():
 
 
 def test_ticket_deduplication_guardrail():
-    """Verify duplicate ticket creation within 30 minutes is rejected."""
+    """Verify duplicate ticket creation within the FR-4.3 window is rejected."""
     engine = OperationGuardrailEngine()
     now = datetime.datetime(2026, 8, 27, 10, 0, 0, tzinfo=datetime.timezone.utc)
-    recent_ticket_time = (now - datetime.timedelta(minutes=10)).isoformat()
+    recent_ticket_time = (now - datetime.timedelta(minutes=4)).isoformat()
 
     existing_tickets = [{
         "ticket_id": "INC123450",
@@ -52,7 +52,7 @@ def test_ticket_deduplication_guardrail():
         requester_id="EMP-1001",
         category="IT_NETWORK",
         existing_tickets=existing_tickets,
-        window_minutes=30,
+        window_minutes=10,
         now=now
     )
     assert not res.is_valid
@@ -64,7 +64,7 @@ def test_ticket_status_state_machine():
     engine = OperationGuardrailEngine()
 
     # Valid transition
-    res_valid = engine.validate_ticket_transition("New", "Work in Progress")
+    res_valid = engine.validate_ticket_transition("New", "In Progress")
     assert res_valid.is_valid
 
     # Invalid transition (New directly to Closed)
