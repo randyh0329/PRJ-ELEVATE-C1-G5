@@ -20,7 +20,7 @@
 - [x] 4.2 Validate ADK Multi-Agent integration test suite (`tests/adk/test_adk_multi_agent.py`) at 100% pass rate
 - [x] 4.3 Verify ADK evaluation suite harness (`tests/test_eval_suite_runner.py`) at 100% pass rate
 
-## Phase 5: Verification & Production Readiness
-- [x] 5.1 Verify FastAPI `/chat`, `/health`, and REST API endpoints over ADK Agent Runtime
-- [x] 5.2 Validate live WorkWeek & ServiceImmediately intent dispatching and policy grounding citations
-- [x] 5.3 Validate Model Armor threat scanning and DLP PII redaction on ADK pipeline
+## Phase 5: Provisioning & Deployment to Agent Runtime (Deployment)
+- [x] 5.1 Align `agents-cli-manifest.yaml` with the ADK multi-agent configuration and Agent Engine managed sessions
+- [x] 5.2 Update Reasoning Engine registration requirements and execute dry-run deployment for 8-agent fleet (`deploy_to_agent_registry.py`)
+- [x] 5.3 Verify agent catalog and pre-flight smoke tests (`verify_agent_registry.py --mock` 8/8 passed)
