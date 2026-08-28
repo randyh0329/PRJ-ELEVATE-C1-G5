@@ -1,5 +1,5 @@
 # Cloud Build GitOps Pipeline for Enterprise HR Agentic Platform
-# Compliant with GCP Agent Registry & Cloud Run Architecture
+# Compliant with ADK & Cloud Run Architecture
 
 steps:
   # 1. Install dependencies & Ingest Policy RAG
@@ -14,19 +14,7 @@ steps:
         python -m src.grounding.policy_rag.cli ingest
         PYTHONPATH=. pytest tests/ -v
 
-  # 2. Deploy 8-Agent Fleet to Vertex AI Agent Registry / Reasoning Engine
-  - name: 'python:3.13-slim'
-    id: 'deploy-agent-registry'
-    entrypoint: 'bash'
-    args:
-      - '-c'
-      - |
-        pip install -r requirements.txt
-        PYTHONPATH=. python agent_registry_deployment/scripts/deploy_to_agent_registry.py \
-          --project $PROJECT_ID \
-          --location ${_REGION}
-
-  # 3. Build & Push Docker Image for Gateway / UI
+  # 2. Build & Push Docker Image for Gateway / UI
   - name: 'gcr.io/cloud-builders/docker'
     id: 'build-image'
     args:
