@@ -42,6 +42,16 @@ COPY ["ALTOSTRAT SINGAPORE EMPLOYEE POLICY HANDBOOK & CONDUCT GUIDELINES.md", ".
 # downloaded on the first request: a cold Cloud Run instance reaching out to
 # huggingface.co mid-query is both slow and a runtime dependency on a third
 # party that the served page does not need to have.
+# Fail the build on an absent corpus rather than shipping a service that
+# answers every policy question with a refusal while reporting HEALTHY. The
+# ingest below would also fail, but on a model download rather than on the
+# thing that is actually missing, which sends the reader to the wrong place.
+RUN python -c "\
+from src.grounding.okf_store import okf_store; \
+n = len(okf_store.all_policies()); \
+print(f'policy corpus: {n} documents'); \
+raise SystemExit(0 if n else 'FATAL: okf/ corpus missing or empty in image')"
+
 ENV HF_HOME=/app/.cache/huggingface
 RUN python -m src.grounding.policy_rag.cli ingest
 
