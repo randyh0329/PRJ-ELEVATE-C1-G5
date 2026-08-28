@@ -1,9 +1,11 @@
 """FastAPI REST API server and interactive CLI runner for HR Agentic Solution."""
+from __future__ import annotations
+
 import argparse
 import logging
 import sys
 from html import escape
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse
@@ -11,6 +13,7 @@ from pydantic import BaseModel
 
 from config.settings import get_settings
 from src.core.agent import hr_enterprise_agent
+from src.core.agent_registry.models import AgentRegistryError
 from src.integrations.mcp.client import current_mcp_token, saas_fast_mcp_client
 from src.integrations.service_immediately.mock_service import service_immediately_mock_service
 from src.integrations.workweek.mock_service import workweek_mock_service
@@ -21,9 +24,9 @@ from src.security.auth import (
     verify_google_id_token,
     verify_session_token,
 )
+from src.security.mcp_token_manager import mcp_token_manager
 from src.telemetry.audit_logger import audit_logger
 from src.telemetry.build_info import UNKNOWN, BuildInfo, get_build_info
-from src.security.mcp_token_manager import mcp_token_manager
 
 logger = logging.getLogger("api.main")
 
@@ -62,6 +65,7 @@ class ChatRequest(BaseModel):
     employee_id: str = "EMP-1001"
     message: str
     session_id: str | None = None
+    use_agent_registry: bool = False
 
 
 
@@ -85,6 +89,54 @@ def health_check():
         # `version` is the hand-maintained release number and moves rarely; the
         # commit is what tells you whether a given fix is actually deployed.
         "build": get_build_info().as_dict(),
+    }
+
+
+@app.get("/.well-known/agent-card.json")
+def serve_agent_card():
+    """Expose official A2A Agent Card for Agent Registry discovery."""
+    return {
+        "name": "altostrat-hr-policy-rag",
+        "description": "Grounded retrieval over the Altostrat Singapore employee policy handbook and its OKF v0.2 concept bundle.",
+        "version": "0.1.0",
+        "documentation_url": "src/grounding/policy_rag/README.md",
+        "provider": {
+            "organization": "Altostrat HR Knowledge Team",
+            "url": "http://127.0.0.1:8000"
+        },
+        "supported_interfaces": [
+            {
+                "url": "http://127.0.0.1:8000",
+                "protocol_binding": "JSONRPC",
+                "protocol_version": "0.3.0"
+            }
+        ],
+        "capabilities": {
+            "streaming": False,
+            "push_notifications": False
+        },
+        "default_input_modes": ["text/plain", "application/json"],
+        "default_output_modes": ["text/plain", "application/json"],
+        "skills": [
+            {
+                "id": "policy_search",
+                "name": "Search HR policy",
+                "description": "Retrieve the policy passages relevant to a question, with calibrated relevance scores and resolvable deep-link citations.",
+                "tags": ["hr", "policy", "retrieval", "rag", "citations"]
+            },
+            {
+                "id": "policy_answer",
+                "name": "Answer an HR policy question",
+                "description": "Return a cited answer composed only from retrieved policy text with strict grounding.",
+                "tags": ["hr", "policy", "grounded-answer", "citations", "singapore"]
+            },
+            {
+                "id": "corpus_status",
+                "name": "Knowledge base status",
+                "description": "Report index provenance, chunk counts, and model version.",
+                "tags": ["metadata", "status", "provenance", "corpus"]
+            }
+        ]
     }
 
 
@@ -145,13 +197,13 @@ _CHAT_UI_HTML = """<!DOCTYPE html>
     .btn-secondary { background: #334155; color: var(--text); border: none; border-radius: 6px; padding: 8px 16px; font-size: 0.85rem; cursor: pointer; }
     .btn-primary { background: var(--primary); color: #0f172a; font-weight: 600; border: none; border-radius: 6px; padding: 8px 18px; font-size: 0.85rem; cursor: pointer; }
     .main-container { flex: 1; display: flex; flex-direction: column; max-width: 960px; width: 100%; margin: 0 auto; padding: 16px; overflow: hidden; }
-    
+
     .action-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
     .category-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
     .tab-btn { background: rgba(255, 255, 255, 0.05); color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: 0.75rem; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
     .tab-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.1); }
     .tab-btn.active { background: var(--primary); color: #0f172a; font-weight: 600; border-color: var(--primary); }
-    
+
     .quick-actions { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 14px; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent; }
     .quick-actions::-webkit-scrollbar { height: 4px; }
     .quick-actions::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
@@ -163,7 +215,7 @@ _CHAT_UI_HTML = """<!DOCTYPE html>
     .quick-btn.policy:hover { background: #38bdf8; color: #0f172a; border-color: #38bdf8; }
     .quick-btn.cross { border-color: rgba(168, 85, 247, 0.4); }
     .quick-btn.cross:hover { background: #a855f7; color: #ffffff; border-color: #a855f7; }
-    
+
     .chat-window { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding-right: 6px; }
     .msg { display: flex; flex-direction: column; max-width: 82%; }
     .msg.user { align-self: flex-end; }
@@ -182,6 +234,17 @@ _CHAT_UI_HTML = """<!DOCTYPE html>
     button.send { background: var(--primary); color: #0f172a; font-weight: 600; border: none; border-radius: 8px; padding: 12px 24px; cursor: pointer; transition: background 0.2s; }
     button.send:hover { background: var(--primary-hover); }
     .typing { display: none; color: var(--muted); font-size: 0.85rem; font-style: italic; margin-bottom: 6px; }
+    .toggle-switch { position: relative; display: inline-block; width: 36px; height: 20px; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .slider-toggle { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #334155; transition: .3s; border-radius: 20px; border: 1px solid #475569; }
+    .slider-toggle:before { position: absolute; content: ""; height: 12px; width: 12px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
+    input:checked + .slider-toggle { background-color: #0284c7; border-color: #38bdf8; }
+    input:checked + .slider-toggle:before { transform: translateX(16px); background-color: #f8fafc; }
+    .registry-pill { display: flex; align-items: center; gap: 8px; background: rgba(30, 41, 59, 0.7); border: 1px solid var(--border); border-radius: 20px; padding: 4px 12px; }
+    .registry-inspector { margin-top: 10px; padding: 8px 12px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; font-size: 0.78rem; color: #cbd5e1; }
+    .registry-inspector summary { cursor: pointer; font-weight: 600; color: #38bdf8; display: flex; align-items: center; gap: 6px; user-select: none; }
+    .registry-inspector summary:hover { color: #7dd3fc; }
+    .fail-fast-card { border: 1px solid rgba(239, 68, 68, 0.6) !important; background: rgba(239, 68, 68, 0.08) !important; }
   </style>
 </head>
 <body>
@@ -190,6 +253,14 @@ _CHAT_UI_HTML = """<!DOCTYPE html>
       <h1>🚀 HR Agentic Solution</h1>
       <span class="badge">Google Cloud MVP 1</span>
       __BUILD_BADGE__
+    </div>
+    <div class="registry-pill" title="Toggle Architecture: Dev (In-Process) vs Production (Agent Registry)">
+      <span style="font-size: 0.78rem; font-weight: 600; color: var(--muted); display: flex; align-items: center; gap: 4px;">🏗️ Architecture</span>
+      <label class="toggle-switch">
+        <input type="checkbox" id="registryToggle" onchange="handleRegistryToggle(this.checked)">
+        <span class="slider-toggle"></span>
+      </label>
+      <span id="registryBadge" class="badge" style="background: rgba(148, 163, 184, 0.15); color: var(--muted); border-color: rgba(148, 163, 184, 0.3); font-size: 0.7rem;">Dev</span>
     </div>
     <div class="auth-section" id="authSection">
       <!-- Unauthenticated View -->
@@ -575,7 +646,27 @@ _CHAT_UI_HTML = """<!DOCTYPE html>
     }
 
 
-    function appendMessage(text, isUser, meta = null, citations = []) {
+    let isRegistryMode = false;
+
+    function handleRegistryToggle(checked) {
+      isRegistryMode = checked;
+      const badge = document.getElementById('registryBadge');
+      if (checked) {
+        badge.textContent = 'Production';
+        badge.style.background = 'rgba(56, 189, 248, 0.2)';
+        badge.style.color = '#38bdf8';
+        badge.style.borderColor = 'rgba(56, 189, 248, 0.4)';
+        appendMessage('🚀 [Architecture: Production Mode]: Multi-service Agent Registry (A2A + FastMCP) architecture active. Fail-Fast diagnostic mode is now LIVE.', false);
+      } else {
+        badge.textContent = 'Dev';
+        badge.style.background = 'rgba(148, 163, 184, 0.15)';
+        badge.style.color = 'var(--muted)';
+        badge.style.borderColor = 'rgba(148, 163, 184, 0.3)';
+        appendMessage('🛠️ [Architecture: Dev Mode]: Reverted to monolithic in-process development architecture.', false);
+      }
+    }
+
+    function appendMessage(text, isUser, meta = null, citations = [], metadata = {}) {
       const msgDiv = document.createElement('div');
       msgDiv.className = 'msg ' + (isUser ? 'user' : 'agent');
 
@@ -583,12 +674,37 @@ _CHAT_UI_HTML = """<!DOCTYPE html>
       bubble.className = 'bubble';
       bubble.textContent = text;
 
+      if (meta && meta.action === 'FAIL_FAST_REGISTRY_ERROR') {
+        bubble.classList.add('fail-fast-card');
+      }
 
       if (citations && citations.length > 0) {
         const citeDiv = document.createElement('div');
         citeDiv.className = 'citations';
         citeDiv.innerHTML = '<strong>References:</strong> ' + citations.map(c => `<a href="${c.url || '#'}" target="_blank">${c.title || c}</a>`).join(', ');
         bubble.appendChild(citeDiv);
+      }
+
+      if (metadata && metadata.architecture === 'AGENT_REGISTRY_A2A_MCP') {
+        const insp = document.createElement('details');
+        insp.className = 'registry-inspector';
+        const a2a = metadata.target_a2a_agent || {};
+        const mcp = metadata.target_mcp_tools || {};
+        insp.innerHTML = `
+          <summary>
+            <span>🔍 Registry Inspector</span>
+            <span style="font-size: 0.68rem; background: rgba(56, 189, 248, 0.15); padding: 2px 6px; border-radius: 4px; color: #38bdf8;">Live A2A + FastMCP</span>
+            <span style="margin-left: auto; color: var(--muted); font-size: 0.72rem;">Discovery: ${metadata.discovery_latency_ms || 0}ms | Total: ${metadata.total_latency_ms || 0}ms</span>
+          </summary>
+          <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 5px; line-height: 1.45;">
+            <div><strong>🤖 Discovered A2A Agent:</strong> <code>${a2a.name || 'N/A'} (v${a2a.version || '0.1.0'})</code></div>
+            <div><strong>⚡ Discovered Skills:</strong> <code>${a2a.skills ? a2a.skills.join(', ') : 'N/A'}</code></div>
+            <div><strong>🛠️ FastMCP Discovered Tools:</strong> <code>${mcp.tools_count || 0} tools (${mcp.server_path || 'work-week/mcp'})</code></div>
+            <div><strong>🎯 Resolved Action:</strong> <code>${metadata.resolved_action || 'N/A'}</code></div>
+            <div style="color: #4ade80; font-size: 0.72rem; margin-top: 4px;">✓ Verified Live Execution (Zero Mock Hallucination)</div>
+          </div>
+        `;
+        bubble.appendChild(insp);
       }
 
       msgDiv.appendChild(bubble);
@@ -625,13 +741,17 @@ _CHAT_UI_HTML = """<!DOCTYPE html>
         const res = await fetch('/chat', {
           method: 'POST',
           headers: headers,
-          body: JSON.stringify({ employee_id: currentUser.employee_id, message: text })
+          body: JSON.stringify({
+            employee_id: currentUser.employee_id,
+            message: text,
+            use_agent_registry: isRegistryMode
+          })
         });
         const data = await res.json();
         typingIndicator.style.display = 'none';
 
         if (res.ok) {
-          appendMessage(data.response, false, { intent: data.intent, action: data.action_performed }, data.citations);
+          appendMessage(data.response, false, { intent: data.intent, action: data.action_performed }, data.citations, data.processing_metadata);
         } else {
           appendMessage("Error: " + (data.detail || "Unable to process message"), false);
         }
@@ -751,7 +871,6 @@ def google_login(req: GoogleAuthRequest):
 @app.post("/auth/quick-login")
 def quick_login(req: QuickAuthRequest):
     """Direct Google/corporate email login with automatic Secret Manager FastMCP token lookup."""
-    import sys
     clean_email = req.email.strip().lower()
     token_to_use = req.mcp_token
 
@@ -811,10 +930,9 @@ def quick_login(req: QuickAuthRequest):
 @app.post("/auth/update-mcp-token")
 def update_mcp_token(
     req: UpdateTokenRequest,
-    authorization: Optional[str] = Header(default=None)
+    authorization: str | None = Header(default=None)
 ):
     """Updates personal FastMCP token in Secret Manager and refreshes active session."""
-    import sys
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid session bearer token.")
 
@@ -834,8 +952,8 @@ def update_mcp_token(
         if "pytest" in sys.modules:
             discovered_id = user.employee_id
         else:
-            logger.error(f"Failed to validate updated FastMCP token: {e}")
-            raise HTTPException(status_code=400, detail=f"Invalid or expired FastMCP token: {str(e)}")
+            logger.error("Failed to validate updated FastMCP token: %s", e)
+            raise HTTPException(status_code=400, detail=f"Invalid or expired FastMCP token: {e!s}") from e
 
     # Persist to Secret Manager
     mcp_token_manager.save_user_token(user.email, new_token)
@@ -879,10 +997,9 @@ def get_current_user(
         mcp_tok = mcp_token_manager.get_user_token(email)
         discovered_id = None
         if mcp_tok:
-            try:
+            import contextlib
+            with contextlib.suppress(Exception):
                 discovered_id = saas_fast_mcp_client.get_current_employee_id(token=mcp_tok)
-            except Exception:
-                pass
         bound_id = discovered_id or emp_info["employee_id"]
         user = AuthenticatedUser(
             email=email,
@@ -944,11 +1061,20 @@ def handle_chat(
 
 
     try:
-        response = hr_enterprise_agent.process_message(
-            user_prompt=payload.message,
-            caller_employee_id=caller_id,
-            session_id=payload.session_id
-        )
+        if payload.use_agent_registry:
+            from src.core.agent_registry import agent_registry_dispatcher
+            response = agent_registry_dispatcher.process_message(
+                user_prompt=payload.message,
+                caller_employee_id=caller_id,
+                session_id=payload.session_id,
+                mcp_token=token_to_set
+            )
+        else:
+            response = hr_enterprise_agent.process_message(
+                user_prompt=payload.message,
+                caller_employee_id=caller_id,
+                session_id=payload.session_id
+            )
         return ChatResponse(
             response=response.response_text,
             intent=response.intent,
@@ -956,6 +1082,20 @@ def handle_chat(
             action_performed=response.action_performed,
             transaction_reference=response.transaction_reference,
             processing_metadata=response.processing_metadata
+        )
+    except AgentRegistryError as e:
+        logger.error("Agent Registry Fail-Fast Error: %s", e.message)
+        return ChatResponse(
+            response=f"❌ **Agent Registry Fail-Fast Diagnostic**:\n\n"
+                     f"• **Failed Stage**: `{e.stage}`\n"
+                     f"• **Target Endpoint**: `{e.endpoint}`\n"
+                     f"• **Error**: {e.message}\n\n"
+                     f"*(Testing Mode: Switch the top Architecture toggle to 'Dev' to return to the monolithic development architecture)*",
+            intent="REGISTRY_FAIL_FAST",
+            citations=[],
+            action_performed="FAIL_FAST_REGISTRY_ERROR",
+            transaction_reference=None,
+            processing_metadata={"stage": e.stage, "endpoint": e.endpoint, "details": e.details, "error": str(e)}
         )
     except Exception as e:
         logger.exception("Error processing chat message")

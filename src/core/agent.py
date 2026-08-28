@@ -10,12 +10,18 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from src.adk import (
-    ADKAgentResponse,
-    ADKHREnterpriseRunner,
-    adk_runner,
-    agent_runtime_sessions,
-)
+try:
+    from src.adk import (
+        ADKAgentResponse,
+        ADKHREnterpriseRunner,
+        adk_runner,
+        agent_runtime_sessions,
+    )
+except (ImportError, ModuleNotFoundError):
+    ADKAgentResponse = Any  # type: ignore[misc,assignment]
+    ADKHREnterpriseRunner = Any  # type: ignore[misc,assignment]
+    adk_runner = None
+    agent_runtime_sessions = None
 from src.core.agents.hcm import workweek_autonomous_specialist
 from src.core.agents.itsm import service_immediately_autonomous_specialist
 from src.core.clock import business_today
@@ -178,13 +184,14 @@ class HREnterpriseAgent:
 
         self._sessions.add_message(sess_id, "assistant", response.response_text, response.citations)
 
-        agent_runtime_sessions.add_turn(
-            session_id=sess_id,
-            user_prompt=user_prompt,
-            assistant_response=response.response_text,
-            citations=response.citations,
-            caller_id=caller_employee_id
-        )
+        if agent_runtime_sessions is not None:
+            agent_runtime_sessions.add_turn(
+                session_id=sess_id,
+                user_prompt=user_prompt,
+                assistant_response=response.response_text,
+                citations=response.citations,
+                caller_id=caller_employee_id,
+            )
 
         safety_overhead = round(
             max(redaction_res.processing_time_ms, armor_res.processing_time_ms) + outbound_armor_res.processing_time_ms,

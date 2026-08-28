@@ -3,6 +3,9 @@ Integration test suite for Google ADK Multi-Agent Orchestrator and Vertex AI Age
 Verifies all enterprise use cases (UC-1.1 to UC-2.3) and safety guardrails on ADK.
 """
 import pytest
+
+pytest.importorskip("google.adk", reason="google-adk package is not installed")
+
 from src.adk import (
     ADKHREnterpriseRunner,
     adk_runner,
