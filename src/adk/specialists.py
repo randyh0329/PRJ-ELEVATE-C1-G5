@@ -180,3 +180,10 @@ def create_saga_coordinator_agent(model: str = "gemini-3.7-flash") -> Agent:
             FunctionTool(func=execute_relocation_saga),
         ]
     )
+
+
+# Default agent instances for manifest entrypoints
+adk_policy_agent = create_policy_specialist_agent()
+adk_workweek_agent = create_workweek_specialist_agent()
+adk_itsm_agent = create_itsm_specialist_agent()
+adk_saga_agent = create_saga_coordinator_agent()
