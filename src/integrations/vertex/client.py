@@ -428,25 +428,79 @@ class VertexGeminiClient:
             )
         return WorkWeekToolSelection(tool_name="get_employee_balances", arguments={})
 
-    def _fallback_select_itsm_tool(self, prompt: str) -> ITSMToolSelection:
+    #: Verbs that ask for something *new* to be raised. Matched before any read
+    #: intent, because "open a ticket" and "open tickets" differ by one letter
+    #: and mean opposite things - and the read side is deliberately broad, so
+    #: without this ordering it would swallow half the create phrasings.
+    ITSM_CREATE_VERBS = (
+        "create", "raise", "file a", "file an", "log a", "log an", "submit",
+        "report", "open a", "open an", "new ticket", "new incident",
+    )
+    #: Verbs that ask after a ticket's progress.
+    ITSM_READ_VERBS = (
+        "status", "check", "details", "lookup", "look up", "how is",
+        "any news", "update on", "progress", "show", "list", "have i",
+        "do i have",
+    )
+    #: Quantifiers that scope a question to the caller's own tickets.
+    ITSM_READ_SCOPES = (
+        "my", "any", "all", "open", "active", "outstanding", "pending", "current",
+    )
+
+    @staticmethod
+    def _fallback_select_itsm_tool(prompt: str) -> ITSMToolSelection:
+        """Deterministic tool routing for when the live selector is unreachable.
+
+        Not a nicety: this is what runs during a Vertex outage, during a quota
+        block, and throughout the test suite. Order is the whole design, and
+        each step is here because the obvious arrangement gets a real sentence
+        wrong:
+
+        1. A ticket reference settles it, whatever else the sentence says.
+        2. An explicit instruction to raise something new, *before* the read
+           intents - otherwise "create an IT ticket because my VPN keeps
+           dropping" is read as a request to list the caller's tickets, on the
+           strength of the word "my".
+        3. A question that mentions tickets without naming one is a read. This
+           is the step that was missing: "any open tickets for me?" matched none
+           of the old list phrasings, fell through, and filed a ticket in answer
+           to a question about tickets.
+        4. Anything else is someone describing a problem, which is a new ticket.
+
+        A read intent has to mention a ticket at all, so "my screen is cracked,
+        can you check" reaches step 4 and gets the incident the employee wanted.
+        """
         import re
         p = prompt.lower()
         tid_match = re.search(r'\b(INC[-_]?\d{3,8})\b', prompt, re.IGNORECASE)
 
-        if tid_match or (any(k in p for k in ["status", "check", "details", "lookup", "how is"]) and not any(k in p for k in ["create", "open", "new", "report"])):
-            tid = tid_match.group(1).upper() if tid_match else "INC-5001"
+        if tid_match:
             return ITSMToolSelection(
                 tool_name="get_ticket_details",
-                ticket_id=tid,
-                reasoning="Fallback: ticket lookup."
+                ticket_id=tid_match.group(1).upper(),
+                reasoning="Fallback: ticket lookup by stated reference."
             )
 
-        if any(k in p for k in ["list", "show my tickets", "active tickets", "my tickets", "all tickets"]):
+        if any(k in p for k in VertexGeminiClient.ITSM_CREATE_VERBS):
+            return VertexGeminiClient._fallback_itsm_incident(prompt, p)
+
+        # No reference to look up, so a read can only be answered by listing.
+        # Defaulting to a hardcoded "INC-5001" here, which is what this did,
+        # reported a stranger's ticket back as though it were the caller's.
+        mentions_ticket = "ticket" in p or "incident" in p
+        if mentions_ticket and any(
+            k in p for k in (*VertexGeminiClient.ITSM_READ_VERBS, *VertexGeminiClient.ITSM_READ_SCOPES)
+        ):
             return ITSMToolSelection(
                 tool_name="list_tickets",
-                reasoning="Fallback: list user tickets."
+                reasoning="Fallback: read intent with no ticket reference."
             )
 
+        return VertexGeminiClient._fallback_itsm_incident(prompt, p)
+
+    @staticmethod
+    def _fallback_itsm_incident(prompt: str, p: str) -> ITSMToolSelection:
+        """A new incident, categorised on the vocabulary of the complaint."""
         cat = "IT_GENERAL"
         if any(k in p for k in ["vpn", "wifi", "network", "internet", "dns", "connection"]):
             cat = "IT_NETWORK"
