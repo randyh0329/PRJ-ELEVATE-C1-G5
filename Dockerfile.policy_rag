@@ -1,12 +1,12 @@
-# syntax=docker/dockerfile:1
-FROM python:3.13-slim AS base
-
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app \
-    PORT=8080
+# Dedicated container build for HR Policy RAG A2A Agent microservice
+FROM python:3.13-slim
 
 WORKDIR /app
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PORT=8080
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
@@ -18,7 +18,10 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 COPY config/ ./config/
 COPY src/ ./src/
-COPY pyproject.toml .\n\nARG GIT_COMMIT_SHA=unknown\nENV GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
+COPY pyproject.toml .
+
+ARG GIT_COMMIT_SHA=unknown
+ENV GIT_COMMIT_SHA=${GIT_COMMIT_SHA}
 
 RUN useradd -m -u 10001 appuser && \
     chown -R appuser:appuser /app
